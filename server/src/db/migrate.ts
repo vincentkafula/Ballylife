@@ -32,6 +32,11 @@ export async function migrate(): Promise<void> {
   try {
     await client.query("BEGIN");
 
+    // A previous, smaller starter-category seed may already be in place
+    // (different ids, overlapping slugs) — safe to clear since no
+    // products reference those category ids yet in this branch.
+    await client.query(`DELETE FROM mkt_categories`);
+
     for (const c of CATEGORIES) {
       await client.query(
         `INSERT INTO mkt_categories (id, name, slug, icon, parent_id, featured)
