@@ -62,35 +62,40 @@ const STATUS_COLOR: Record<string, string> = {
 // Continuously drifts a scroll container to the left (content flows right-to-
 // left) so product rows feel alive without requiring the user to drag/swipe.
 // Pauses on hover/touch and loops back to the start once it reaches the end.
-function useAutoSlide<T extends HTMLElement>(itemCount: number, speed = 0.5) {
+function useManualSlide<T extends HTMLElement>() {
   const ref = useRef<T>(null);
-  const paused = useRef(false);
-
-  useEffect(() => {
+  const scroll = (dir: -1 | 1) => {
     const el = ref.current;
-    if (!el || itemCount < 2) return;
-    let raf: number;
-    const tick = () => {
-      if (!paused.current && el) {
-        const max = el.scrollWidth - el.clientWidth;
-        if (max > 0) {
-          el.scrollLeft = el.scrollLeft >= max - 1 ? 0 : el.scrollLeft + speed;
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [itemCount, speed]);
-
-  const handlers = {
-    onMouseEnter: () => { paused.current = true; },
-    onMouseLeave: () => { paused.current = false; },
-    onTouchStart: () => { paused.current = true; },
-    onTouchEnd:   () => { paused.current = false; },
+    if (!el) return;
+    el.scrollBy({ left: dir * el.clientWidth * 0.85, behavior: "smooth" });
   };
+  return { ref, scrollLeft: () => scroll(-1), scrollRight: () => scroll(1) };
+}
 
-  return { ref, handlers };
+function SlideArrows({ onLeft, onRight }: { onLeft: () => void; onRight: () => void }) {
+  const btn = "absolute top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-gray-600 hover:text-white transition-colors";
+  return (
+    <>
+      <button
+        onClick={onLeft}
+        aria-label="Scroll left"
+        className={`${btn} left-1`}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#B8862E"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
+      >
+        <ChevronRight className="w-4 h-4 rotate-180" />
+      </button>
+      <button
+        onClick={onRight}
+        aria-label="Scroll right"
+        className={`${btn} right-1`}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#B8862E"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
+      >
+        <ChevronRight className="w-4 h-4" />
+      </button>
+    </>
+  );
 }
 
 // ─── Stars ────────────────────────────────────────────────────────────────────
@@ -238,7 +243,7 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
   onCart: (p: R) => void; slice?: [number, number];
 }) {
   const items = products.slice(...slice);
-  const { ref, handlers } = useAutoSlide<HTMLDivElement>(items.length);
+  const { ref, scrollLeft, scrollRight } = useManualSlide<HTMLDivElement>();
   if (!items.length) return null;
   return (
     <div className="mb-4">
@@ -246,12 +251,15 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
         <span className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>{title}</span>
         <button className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
       </div>
-      <div ref={ref} {...handlers} className="flex gap-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-        {items.map((p, i) => (
-          <HomeProductCard key={i} p={p}
-            onView={() => onProduct(p)}
-            onCart={() => onCart(p)} />
-        ))}
+      <div className="relative">
+        {items.length > 2 && <SlideArrows onLeft={scrollLeft} onRight={scrollRight} />}
+        <div ref={ref} className="flex gap-0 overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
+          {items.map((p, i) => (
+            <HomeProductCard key={i} p={p}
+              onView={() => onProduct(p)}
+              onCart={() => onCart(p)} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -260,12 +268,6 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
 function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void }) {
   const [index, setIndex] = useState(0);
   const items = products.slice(0, 6);
-
-  useEffect(() => {
-    if (items.length < 2) return;
-    const id = setInterval(() => setIndex(i => (i + 1) % items.length), 4000);
-    return () => clearInterval(id);
-  }, [items.length]);
 
   if (items.length === 0) return null;
   const p = items[index];
@@ -361,9 +363,9 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
   const row4 = rotate(products, 6);    // phones
   const rowHL = products.slice(1, 4);  // highlighted (red band)
   const row5 = rotate(products, 9);    // branded microwaves
-  const dealsSlide = useAutoSlide<HTMLDivElement>(row1.length || 3);
-  const phonesSlide = useAutoSlide<HTMLDivElement>((row4.length ? row4 : products.slice(2, 6)).length);
-  const flashSlide = useAutoSlide<HTMLDivElement>(flashDeals.length);
+  const dealsSlide = useManualSlide<HTMLDivElement>();
+  const phonesSlide = useManualSlide<HTMLDivElement>();
+  const flashSlide = useManualSlide<HTMLDivElement>();
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-gray-100">
@@ -450,10 +452,12 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
           {/* Deals of the day */}
           <div className="mx-2 mb-2">
             <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200">
-              <span className="text-sm font-bold text-gray-900">Deals of the day</span>
+              <span className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>Deals of the day</span>
               <button onClick={onCategory} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
             </div>
-            <div ref={dealsSlide.ref} {...dealsSlide.handlers} className="flex gap-0 bg-white overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            <div className="relative">
+              {row1.length > 2 && <SlideArrows onLeft={dealsSlide.scrollLeft} onRight={dealsSlide.scrollRight} />}
+              <div ref={dealsSlide.ref} className="flex gap-0 bg-white overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
               {row1.map((p, i) => (
                 <HomeProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)} />
               ))}
@@ -481,6 +485,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
                   ))}
                 </div>
               )}
+              </div>
             </div>
           </div>
 
@@ -504,13 +509,16 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
           {/* iPhone / phones section */}
           <div className="mx-2 mb-4">
             <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200">
-              <span className="text-sm font-bold text-gray-900">iPhone 13 Pro — now reduced</span>
+              <span className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>iPhone 13 Pro — now reduced</span>
               <button onClick={onCategory} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
             </div>
-            <div ref={phonesSlide.ref} {...phonesSlide.handlers} className="flex gap-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-              {(row4.length ? row4 : products.slice(2,6)).map((p, i) => (
-                <HomeProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)} />
-              ))}
+            <div className="relative">
+              {(row4.length ? row4 : products.slice(2,6)).length > 2 && <SlideArrows onLeft={phonesSlide.scrollLeft} onRight={phonesSlide.scrollRight} />}
+              <div ref={phonesSlide.ref} className="flex gap-0 overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
+                {(row4.length ? row4 : products.slice(2,6)).map((p, i) => (
+                  <HomeProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)} />
+                ))}
+              </div>
             </div>
           </div>
 
@@ -562,14 +570,17 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
               <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200">
                 <div className="flex items-center gap-2">
                   <Zap className="w-3.5 h-3.5 text-red-500" />
-                  <span className="text-sm font-bold text-gray-900">Flash Deals</span>
+                  <span className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>Flash Deals</span>
                 </div>
                 <button onClick={onCategory} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
               </div>
-              <div ref={flashSlide.ref} {...flashSlide.handlers} className="flex gap-0 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-                {rotate(flashDeals, 0).map((p, i) => (
-                  <HomeProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)} />
-                ))}
+              <div className="relative">
+                {flashDeals.length > 2 && <SlideArrows onLeft={flashSlide.scrollLeft} onRight={flashSlide.scrollRight} />}
+                <div ref={flashSlide.ref} className="flex gap-0 overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
+                  {rotate(flashDeals, 0).map((p, i) => (
+                    <HomeProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)} />
+                  ))}
+                </div>
               </div>
             </div>
           )}
