@@ -279,7 +279,7 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
   const go = (i: number) => setIndex((i + items.length) % items.length);
 
   return (
-    <div className="flex-1 relative overflow-hidden rounded-sm min-h-[140px]"
+    <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px]"
       style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 100%)", border: "1px solid #E8D9B5" }}>
       <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Featured today</div>
 
@@ -302,31 +302,31 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
         </>
       )}
 
-      <div className="relative h-full flex items-center justify-between gap-3 px-8 py-4 min-h-[140px] cursor-pointer" onClick={() => onView(p)}>
+      <div className="relative h-full flex items-center justify-between gap-4 px-8 sm:px-12 py-6 min-h-[300px] sm:min-h-[360px] cursor-pointer" onClick={() => onView(p)}>
         <div className="min-w-0 flex-1">
           {discount > 0 && (
             <span className="inline-block bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm mb-1.5">-{discount}% OFF</span>
           )}
-          <p className="text-sm font-bold text-gray-900 leading-snug line-clamp-2 mb-1.5">{p.name as string}</p>
+          <p className="text-base sm:text-xl font-bold text-gray-900 leading-snug line-clamp-2 mb-2">{p.name as string}</p>
           <div className="flex items-baseline gap-1.5">
             {p.compareAtPrice && (
               <span className="text-[11px] text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
             )}
-            <span className="text-lg font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(p.price))}</span>
+            <span className="text-2xl sm:text-3xl font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(p.price))}</span>
           </div>
           <button
             onClick={e => { e.stopPropagation(); onCart(p); }}
-            className="mt-2 bg-emerald-600 text-white text-xs font-bold px-4 py-1.5 rounded hover:bg-emerald-700 transition-colors"
+            className="mt-4 bg-emerald-600 text-white text-sm font-bold px-6 py-2.5 rounded-lg hover:bg-emerald-700 transition-colors"
           >
             Add to cart
           </button>
         </div>
         <div
-          className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center text-4xl sm:text-5xl shadow-sm overflow-hidden"
+          className="shrink-0 w-28 h-28 sm:w-40 sm:h-40 rounded-full flex items-center justify-center text-5xl sm:text-7xl shadow-sm overflow-hidden"
           style={{ background: `linear-gradient(135deg,${imgs?.[0] ?? "#fff"},${imgs?.[1] ?? "#e8e8e8"})` }}
         >
           {PRODUCT_ILLUSTRATIONS[p.id as string]
-            ? <div className="w-14 h-14 sm:w-16 sm:h-16">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
+            ? <div className="w-20 h-20 sm:w-28 sm:h-28">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
             : (p.emoji as string)}
         </div>
       </div>
@@ -375,7 +375,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
       {/* ── Hero: sliding featured product + benefit cards ── */}
       <div className="flex flex-col sm:flex-row gap-3 m-3 sm:m-4">
-        <div className="flex-1 min-h-[220px] sm:min-h-[260px]">
+        <div className="flex-1 min-h-[300px] sm:min-h-[360px]">
           <HeroProductSlider
             products={featured.length ? featured : products}
             onView={onProduct}
