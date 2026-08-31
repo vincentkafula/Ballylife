@@ -162,7 +162,7 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src={ballylifeLogo} alt="" style={{ height: 20, width: "auto", filter: "brightness(0) invert(1)" }} />
+            <img src={ballylifeLogo} alt="" style={{ height: 32, width: "auto", filter: "brightness(0) invert(1)" }} />
             <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }}>© Ballylife Online (Pty) Ltd.</span>
           </div>
         </div>

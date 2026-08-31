@@ -1595,7 +1595,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           onClick={() => { setView("home"); }}
           className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity"
         >
-          <img src={ballylifeLogo} alt="Ballylife" className="h-9 w-auto" />
+          <img src={ballylifeLogo} alt="Ballylife" className="h-12 w-auto" />
         </button>
 
         <div className="relative group hidden lg:block shrink-0">
