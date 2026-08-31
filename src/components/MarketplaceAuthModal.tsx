@@ -26,7 +26,7 @@ function Field({ label, value, onChange, type = "text", required = true, placeho
           onChange={e => onChange(e.target.value)}
           type={isPw ? (show ? "text" : "password") : type}
           placeholder={placeholder}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#128A43] focus:ring-1 focus:ring-[#128A43]"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#B8862E] focus:ring-1 focus:ring-[#B8862E]"
         />
         {isPw && (
           <button type="button" onClick={() => setShow(s => !s)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400">
@@ -91,7 +91,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
           ]).map(t => (
             <button key={t.id} onClick={() => { setTab(t.id); setError(null); }}
               className="flex-1 text-xs font-semibold py-2.5 border-b-2 transition-colors"
-              style={{ borderColor: tab === t.id ? "#FF9900" : "transparent", color: tab === t.id ? "#131921" : "#9CA3AF" }}>
+              style={{ borderColor: tab === t.id ? "#D4A54A" : "transparent", color: tab === t.id ? "#14110D" : "#9CA3AF" }}>
               {t.label}
             </button>
           ))}
@@ -106,7 +106,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
               <Field label="Password" value={siPassword} onChange={setSiPassword} type="password" />
               <button onClick={handleSignIn} disabled={loading}
                 className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"
-                style={{ background: "#FF9900" }}>
+                style={{ background: "#D4A54A" }}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><User className="w-4 h-4" /> Sign In</>}
               </button>
               <p className="text-[11px] text-gray-400 mt-3 text-center">Don't have an account? Use the tabs above to register.</p>
@@ -121,7 +121,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
               <Field label="Password" value={cPassword} onChange={setCPassword} type="password" placeholder="At least 8 characters" />
               <button onClick={handleCustomerRegister} disabled={loading}
                 className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"
-                style={{ background: "#131921" }}>
+                style={{ background: "#14110D" }}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><User className="w-4 h-4" /> Create customer account</>}
               </button>
             </div>
@@ -136,7 +136,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
               <p className="text-xs text-gray-500 mb-5 max-w-xs mx-auto">Our full seller application covers your account, business details, identity verification, and tax information — about 5 minutes.</p>
               <button onClick={() => setShowWizard(true)}
                 className="w-full py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2"
-                style={{ background: "#131921" }}>
+                style={{ background: "#14110D" }}>
                 <Store className="w-4 h-4" /> Start seller application
               </button>
               <p className="text-[11px] text-gray-400 mt-3">Your store won't be visible to shoppers until the marketplace team approves your application.</p>

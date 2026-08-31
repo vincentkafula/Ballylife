@@ -14,7 +14,7 @@ type R = Record<string, unknown>;
 type Tab = "overview" | "orders" | "addresses" | "payment" | "returns" | "notifications" | "security" | "analytics";
 
 const fmtZAR = formatZAR; // now converts + formats in the shopper's local currency
-const PIE_COLORS = ["#128A43", "#FF9900", "#10B981", "#34A853", "#EF4444", "#F59E0B"];
+const PIE_COLORS = ["#B8862E", "#D4A54A", "#10B981", "#34A853", "#EF4444", "#F59E0B"];
 
 const STATUS_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   pending:      { label: "Pending",    color: "#9CA3AF", icon: <Clock className="w-3.5 h-3.5" /> },
@@ -129,7 +129,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
                     <p className="text-sm text-gray-500 mt-0.5">{String(stats?.membership ?? "Standard")} Member</p>
                   </div>
                   <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#FFF4E5]">
-                    <Award className="w-4 h-4" style={{ color: "#FF9900" }} />
+                    <Award className="w-4 h-4" style={{ color: "#D4A54A" }} />
                     <span className="text-sm font-bold text-[#B75C00]">{String(stats?.rewardPoints ?? 0)} reward points</span>
                   </div>
                 </div>
@@ -144,7 +144,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                     <span className="text-sm font-bold text-gray-900">Recent Orders</span>
-                    <button onClick={() => setTab("orders")} className="text-xs font-semibold" style={{ color: "#128A43" }}>View all</button>
+                    <button onClick={() => setTab("orders")} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View all</button>
                   </div>
                   {recentOrders.length === 0 ? (
                     <p className="text-sm text-gray-400 p-6 text-center">No orders yet — start shopping to see them here.</p>
@@ -318,7 +318,7 @@ function OrderRow({ order, onChanged }: { order: R; onChanged: () => void }) {
           <td colSpan={6} className="px-4 py-3 bg-gray-50">
             <div className="flex items-center gap-2">
               <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for return"
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#128A43]" />
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-[#B8862E]" />
               <button onClick={submitReturn} disabled={busy} className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-50" style={{ background: "#34A853" }}>
                 {busy ? "Submitting..." : "Submit request"}
               </button>
@@ -349,7 +349,7 @@ function AddressBook({ userId, addresses, onChanged }: { userId: string; address
     <div className="bg-white rounded-xl border border-gray-100 p-5">
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-bold text-gray-900">Address Book</span>
-        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#128A43" }}>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#B8862E" }}>
           <Plus className="w-3.5 h-3.5" /> Add address
         </button>
       </div>
@@ -358,9 +358,9 @@ function AddressBook({ userId, addresses, onChanged }: { userId: string; address
         <div className="mb-4 p-4 border border-gray-100 rounded-lg grid grid-cols-2 gap-2">
           {(["firstName","lastName","line1","city","postalCode","phone"] as const).map(f => (
             <input key={f} placeholder={f} value={form[f]} onChange={e => setForm(prev => ({ ...prev, [f]: e.target.value }))}
-              className="border border-gray-200 rounded px-2.5 py-1.5 text-sm outline-none focus:border-[#128A43]" />
+              className="border border-gray-200 rounded px-2.5 py-1.5 text-sm outline-none focus:border-[#B8862E]" />
           ))}
-          <button onClick={save} disabled={saving} className="col-span-2 mt-1 py-2 rounded-lg text-white text-sm font-semibold" style={{ background: "#131921" }}>
+          <button onClick={save} disabled={saving} className="col-span-2 mt-1 py-2 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
             {saving ? "Saving..." : "Save address"}
           </button>
         </div>
@@ -413,7 +413,7 @@ function PaymentMethodsPanel() {
         <input placeholder="Last 4 digits" maxLength={4} value={last4} onChange={e => setLast4(e.target.value.replace(/\D/g, ""))}
           className="border border-gray-200 rounded px-2.5 py-1.5 text-sm w-32" />
         <button onClick={() => { if (last4.length === 4) { setCards(c => [...c, { brand, last4 }]); setLast4(""); } }}
-          className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#131921" }}>
+          className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
           <Plus className="w-3.5 h-3.5" /> Add card
         </button>
       </div>
@@ -442,10 +442,10 @@ function SecurityPanel() {
       <p className="text-sm font-bold text-gray-900 mb-4">Change Password</p>
       {msg && <div className={`mb-3 px-3 py-2 rounded-lg text-xs font-medium ${msg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>{msg.text}</div>}
       <input type="password" placeholder="Current password" value={current} onChange={e => setCurrent(e.target.value)}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-[#128A43]" />
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-[#B8862E]" />
       <input type="password" placeholder="New password (min 8 characters)" value={next} onChange={e => setNext(e.target.value)}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-[#128A43]" />
-      <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#131921" }}>
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-[#B8862E]" />
+      <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
         {saving ? "Updating..." : "Update password"}
       </button>
       <p className="text-[11px] text-gray-400 mt-4">Two-factor authentication and login-history tracking aren't available in this demo yet.</p>
@@ -462,7 +462,7 @@ function SpendingAnalytics({ spending }: { spending: R | null }) {
         <p className="text-sm font-bold text-gray-900 mb-3">Monthly Spending</p>
         {monthly.length === 0 ? <p className="text-sm text-gray-400 text-center py-10">No paid orders yet.</p> : (
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={monthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v: number) => fmtZAR(v)} /><Bar dataKey="total" fill="#128A43" radius={[4,4,0,0]} /></BarChart>
+            <BarChart data={monthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v: number) => fmtZAR(v)} /><Bar dataKey="total" fill="#B8862E" radius={[4,4,0,0]} /></BarChart>
           </ResponsiveContainer>
         )}
       </div>

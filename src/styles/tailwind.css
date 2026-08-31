@@ -2,3 +2,34 @@
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Fraunces', ui-serif, Georgia, serif;
+
+  /* Remap emerald -> gold, since the marketplace UI leans on emerald-*
+     utilities for its brand accent throughout (focus rings, badges,
+     hover states) and the brand color is gold, not green. */
+  --color-emerald-50:  #FBF3E1;
+  --color-emerald-100: #F5E6C3;
+  --color-emerald-200: #EBD293;
+  --color-emerald-400: #D4A54A;
+  --color-emerald-600: #B8862E;
+  --color-emerald-700: #8C6420;
+}
+
+:root {
+  /* Ballylife brand palette — pulled from the crest logo (gold + black + silver) */
+  --bly-gold:       #B8862E;
+  --bly-gold-light: #D4A54A;
+  --bly-gold-dark:  #8C6420;
+  --bly-black:      #14110D;
+  --bly-charcoal:   #211C16;
+  --bly-cream:      #FAF6EC;
+  --bly-cream-deep: #F3EBD8;
+  --bly-silver:     #A8ACB4;
+}
+
+body {
+  font-family: var(--font-sans);
+}

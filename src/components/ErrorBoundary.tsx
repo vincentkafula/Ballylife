@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <pre style={{ color: "#6B7280", fontSize: 12, whiteSpace: "pre-wrap" }}>{this.state.error.stack}</pre>
           <button
             onClick={() => this.setState({ error: null })}
-            style={{ marginTop: 16, padding: "8px 16px", background: "#128A43", color: "#fff", borderRadius: 8, border: "none", cursor: "pointer" }}
+            style={{ marginTop: 16, padding: "8px 16px", background: "#B8862E", color: "#fff", borderRadius: 8, border: "none", cursor: "pointer" }}
           >
             Try again
           </button>

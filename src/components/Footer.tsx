@@ -1,9 +1,9 @@
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 
-const BG      = "#FAF8F3";
-const HEADING = "#1B2A4A";
-const LINK    = "#3B5A8A";
-const BAR_BLUE = "#0071CE";
+const BG      = "#FAF6EC";
+const HEADING = "#211C16";
+const LINK    = "#6B5A3E";
+const BAR_BLUE = "#14110D";
 
 const COLS = [
   {
@@ -62,7 +62,7 @@ const APP_BADGES = [
 function LinkColumn({ title, links, onLinkClick }: { title: string; links: string[]; onLinkClick: (label: string) => void }) {
   return (
     <div>
-      <p style={{ color: HEADING, fontSize: 16, fontWeight: 800, marginBottom: 14 }}>{title}</p>
+      <p style={{ color: HEADING, fontSize: 16, fontFamily: "'Fraunces', serif", fontWeight: 600, marginBottom: 14 }}>{title}</p>
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 11 }}>
         {links.map((l) => (
           <li key={l}>
@@ -105,7 +105,7 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
         {/* Apps + social */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: "32px 64px", marginBottom: 32 }}>
           <div>
-            <p style={{ color: HEADING, fontSize: 16, fontWeight: 800, marginBottom: 14 }}>Download Our Apps</p>
+            <p style={{ color: HEADING, fontSize: 16, fontFamily: "'Fraunces', serif", fontWeight: 600, marginBottom: 14 }}>Download Our Apps</p>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {APP_BADGES.map((a) => (
                 <div key={a.store} style={{
@@ -122,7 +122,7 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
           </div>
 
           <div>
-            <p style={{ color: HEADING, fontSize: 16, fontWeight: 800, marginBottom: 14 }}>Follow Us</p>
+            <p style={{ color: HEADING, fontSize: 16, fontFamily: "'Fraunces', serif", fontWeight: 600, marginBottom: 14 }}>Follow Us</p>
             <div style={{ display: "flex", gap: 10 }}>
               {SOCIALS.map((s) => (
                 <a key={s.label} href="#" title={s.label}

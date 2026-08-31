@@ -100,7 +100,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
             <Clock className="w-8 h-8 text-amber-500 mx-auto mb-3" />
             <p className="text-sm font-bold text-gray-900 mb-1">Your store is pending approval</p>
             <p className="text-xs text-gray-500">The marketplace team reviews new sellers before they go live — you can still add products below, they'll appear once your store and each listing are approved.</p>
-            <button onClick={() => setTab("products")} className="mt-4 px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{ background: "#128A43" }}>Add your first product</button>
+            <button onClick={() => setTab("products")} className="mt-4 px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{ background: "#B8862E" }}>Add your first product</button>
           </div>
         ) : null}
 
@@ -110,7 +110,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
               <div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                   <StatCard label="Total revenue" value={fmtZAR(Number((sellerData?.seller as R)?.totalRevenue ?? 0))} icon={<TrendingUp className="w-4 h-4" />} accent="#10B981" />
-                  <StatCard label="Total orders" value={String(orders.length)} icon={<ShoppingBag className="w-4 h-4" />} accent="#128A43" />
+                  <StatCard label="Total orders" value={String(orders.length)} icon={<ShoppingBag className="w-4 h-4" />} accent="#B8862E" />
                   <StatCard label="Products" value={String(products.length)} icon={<Package className="w-4 h-4" />} accent="#34A853" />
                   <StatCard label="Avg. rating" value={String((sellerData?.seller as R)?.avgRating ?? 0)} icon={<Star className="w-4 h-4" />} accent="#F59E0B" />
                 </div>
@@ -119,7 +119,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
                   <p className="text-sm font-bold text-gray-900 mb-3">Daily Revenue (last 7 days)</p>
                   <p className="text-[11px] text-gray-400 mb-2">Illustrative — day-by-day revenue history isn't tracked yet, this samples typical daily variance.</p>
                   <ResponsiveContainer width="100%" height={180}>
-                    <BarChart data={revenue}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v: number) => fmtZAR(v)} /><Bar dataKey="revenue" fill="#128A43" radius={[4,4,0,0]} /></BarChart>
+                    <BarChart data={revenue}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v: number) => fmtZAR(v)} /><Bar dataKey="revenue" fill="#B8862E" radius={[4,4,0,0]} /></BarChart>
                   </ResponsiveContainer>
                 </div>
 
@@ -205,7 +205,7 @@ function SellerOrderRow({ order, onUpdated }: { order: R; onUpdated: () => void 
       <td className="px-4 py-3">
         {next[status] ? (
           <button onClick={() => advance(next[status])} disabled={saving}
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#128A43" }}>
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
             {saving ? "..." : `Mark ${next[status]}`}
           </button>
         ) : <span className="text-xs text-gray-300">—</span>}
@@ -235,7 +235,7 @@ function ProductManagement({ sellerId, products, onChanged }: { sellerId: string
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
         <span className="text-sm font-bold text-gray-900">My Products</span>
-        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#131921" }}>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
           <Plus className="w-3.5 h-3.5" /> Add product
         </button>
       </div>
@@ -251,7 +251,7 @@ function ProductManagement({ sellerId, products, onChanged }: { sellerId: string
             {["cat-01","cat-02","cat-03","cat-04","cat-05","cat-06","cat-07","cat-08","cat-09"].map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <input placeholder="Short description" value={form.shortDescription} onChange={e => setForm({ ...form, shortDescription: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
-          <button onClick={submit} disabled={saving} className="py-1.5 rounded text-white text-sm font-semibold" style={{ background: "#128A43" }}>{saving ? "Saving..." : "Submit for approval"}</button>
+          <button onClick={submit} disabled={saving} className="py-1.5 rounded text-white text-sm font-semibold" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Submit for approval"}</button>
         </div>
       )}
 
@@ -327,14 +327,14 @@ function StoreSettings({ seller, onSaved }: { seller: { id: string; storeName: s
       <label className="block mb-3">
         <span className="block text-xs font-semibold text-gray-600 mb-1">Store description</span>
         <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#128A43]" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#B8862E]" />
       </label>
       <label className="block mb-4">
         <span className="block text-xs font-semibold text-gray-600 mb-1">Contact phone</span>
         <input value={phone} onChange={e => setPhone(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#128A43]" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#B8862E]" />
       </label>
-      <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#131921" }}>
+      <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
         {saving ? "Saving..." : "Save changes"}
       </button>
       <p className="text-[11px] text-gray-400 mt-4">Logo/banner upload, coupon creation and advertising campaigns aren't available in this demo yet.</p>

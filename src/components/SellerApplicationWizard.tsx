@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 import { mktAuth, BASE, getMktToken, type MktAuthUser } from "../services/marketplaceApi";
 
-const INK = "#131921";
-const ORANGE = "#FF9900";
+const INK = "#14110D";
+const ORANGE = "#D4A54A";
 
 const STEPS = [
   { title: "Account",     icon: <Lock className="w-4 h-4" /> },
@@ -77,7 +77,7 @@ function TextField({ label, value, onChange, required, type = "text", icon, plac
           value={value} placeholder={placeholder}
           onChange={e => onChange(e.target.value)}
           type={isPw ? (show ? "text" : "password") : type}
-          className="w-full border border-gray-300 rounded-lg py-2 text-sm outline-none focus:border-[#128A43] focus:ring-1 focus:ring-[#128A43]"
+          className="w-full border border-gray-300 rounded-lg py-2 text-sm outline-none focus:border-[#B8862E] focus:ring-1 focus:ring-[#B8862E]"
           style={{ paddingLeft: icon ? 34 : 12, paddingRight: isPw ? 34 : 12 }}
         />
         {isPw && (
@@ -97,7 +97,7 @@ function SelectField({ label, value, onChange, options, required }: {
     <label className="block">
       <Label required={required}>{label}</Label>
       <select value={value} onChange={e => onChange(e.target.value)}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#128A43] bg-white">
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#B8862E] bg-white">
         <option value="">Select...</option>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -110,7 +110,7 @@ function TextArea({ label, value, onChange, required }: { label: string; value: 
     <label className="block sm:col-span-2">
       <Label required={required}>{label}</Label>
       <textarea value={value} onChange={e => onChange(e.target.value)} rows={3}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#128A43]" />
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#B8862E]" />
     </label>
   );
 }
@@ -142,7 +142,7 @@ function FileField({ label, file, onChange, required, hint }: {
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); accept(e.dataTransfer.files?.[0]); }}
         className="relative flex items-center gap-3 border border-dashed rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors"
-        style={{ borderColor: dragOver ? "#128A43" : file ? "#10B981" : "#D1D5DB", background: dragOver ? "#EFF6FF" : file ? "#F0FDF4" : "#fff" }}
+        style={{ borderColor: dragOver ? "#B8862E" : file ? "#10B981" : "#D1D5DB", background: dragOver ? "#EFF6FF" : file ? "#F0FDF4" : "#fff" }}
       >
         {preview ? (
           <img src={preview} alt="" className="w-9 h-9 rounded object-cover shrink-0 border border-gray-200" />

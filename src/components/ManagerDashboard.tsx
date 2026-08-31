@@ -71,7 +71,7 @@ function SideNavButton({ active, onClick, icon, label, badge }: { active: boolea
   return (
     <button onClick={onClick}
       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors"
-      style={{ background: active ? "#F3E8FF" : "transparent", color: active ? "#FF9900" : "#374151" }}>
+      style={{ background: active ? "#F3E8FF" : "transparent", color: active ? "#D4A54A" : "#374151" }}>
       {icon}<span className="flex-1">{label}</span>
       {Boolean(badge) && <span className="text-[10px] font-bold text-white rounded-full w-4 h-4 flex items-center justify-center" style={{ background: "#EF4444" }}>{badge}</span>}
     </button>
@@ -178,7 +178,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
             {tab === "overview" && (
               <div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                  <StatCard label="Total customers" value={String(customers.length)} icon={<Users className="w-4 h-4" />} accent="#128A43" />
+                  <StatCard label="Total customers" value={String(customers.length)} icon={<Users className="w-4 h-4" />} accent="#B8862E" />
                   <StatCard label="Total sellers" value={String(sellers.length)} icon={<Store className="w-4 h-4" />} accent="#34A853" />
                   <StatCard label="Total products" value={String(stats?.totalProducts ?? 0)} icon={<Package className="w-4 h-4" />} accent="#10B981" />
                   <StatCard label="Total orders" value={String(stats?.totalOrders ?? 0)} icon={<ShoppingBag className="w-4 h-4" />} accent="#F59E0B" />
@@ -288,7 +288,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                 <div className="grid sm:grid-cols-3 gap-3 mb-5">
                   <StatCard label="Platform revenue" value={fmtZAR(Number(stats?.totalRevenue ?? 0))} icon={<DollarSign className="w-4 h-4" />} accent="#059669" />
                   <StatCard label="Average commission" value={`${sellers.length ? (sellers.reduce((s, x) => s + Number(x.commissionPct ?? 0), 0) / sellers.length).toFixed(1) : 0}%`} icon={<Percent className="w-4 h-4" />} accent="#34A853" />
-                  <StatCard label="Total orders" value={String(orders.length)} icon={<ShoppingBag className="w-4 h-4" />} accent="#128A43" />
+                  <StatCard label="Total orders" value={String(orders.length)} icon={<ShoppingBag className="w-4 h-4" />} accent="#B8862E" />
                 </div>
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Commission by Seller</span></div>
