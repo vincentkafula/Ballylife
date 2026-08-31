@@ -352,7 +352,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
   onCart: (p: R) => void; wishlistIds: Set<string>; onWishlist: (id: string) => void;
 }) {
   const featured = products.filter(p => p.isFeatured);
-  const topPicks = products.slice(0, 6);
+  const topPicks = products.slice(0, 78);
   const sellers = Array.from(new Set(products.map(p => p.sellerName as string))).slice(0, 6);
 
   const BENEFITS = [
@@ -1312,7 +1312,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   }, [initialAction, initialProductId]);
 
   const loadInitial = useCallback(async () => {
-    const promises: Promise<unknown>[] = [mktCategories(), mktProducts.list({ sort: "popular", limit: "48" })];
+    const promises: Promise<unknown>[] = [mktCategories(), mktProducts.list({ sort: "popular", limit: "78" })];
     if (authUser) promises.push(mktCart.get(authUser.id), mktWishlist.get(authUser.id), mktAddresses(authUser.id));
     const results = await Promise.allSettled(promises);
     const [catRes, prodRes, cartRes, wishRes, addrRes] = results as PromiseSettledResult<{ data: unknown }>[];
