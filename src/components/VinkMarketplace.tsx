@@ -294,6 +294,13 @@ const DEPARTMENTS = [
   "Pets", "Sport & Training", "Toys",
 ];
 
+const NEW_ARRIVALS_SUB = [
+  "New to Ballylife", "New in Appliances", "New in Automotive", "New in Baby & Toddler",
+  "New in Beauty", "New in Books", "New in Clothing & Shoes", "New in Electronics",
+  "New in Gaming", "New in Groceries & Household", "New in Health & Personal Care",
+  "New in Homeware", "New in Liquor", "New in Sport", "New in Toys",
+];
+
 const CAT_STRIP_LABELS = [
   "Fresh Fashion", "Appliances", "Drinks", "Best Sellers",
   "Brands by Marketplace", "Deals & Promotions", "Brands Store", "Clearance",
@@ -1619,18 +1626,30 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
         <div className="relative flex-1 flex items-stretch max-w-3xl h-9 min-w-0">
           <div className="hidden sm:flex items-center bg-[#E8E8E8] hover:bg-[#DDD] px-2 text-[11px] text-gray-700 border-r border-gray-300 shrink-0 cursor-pointer relative group rounded-l">
             All <ChevronDown className="w-3 h-3 ml-1" />
-            <div className="absolute top-full left-0 mt-0 w-56 max-h-96 overflow-y-auto bg-white text-gray-800 rounded-b shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
+            <div className="absolute top-full left-0 mt-0 w-56 bg-white text-gray-800 rounded-b shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
               <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">All Categories</div>
-              <button onClick={() => setView("catalog")}
-                className="w-full text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors" style={{ color: "#B8862E" }}>
-                {DEPARTMENTS[0]}
-              </button>
-              {DEPARTMENTS.slice(1).map((dept) => (
-                <button key={dept} onClick={() => setView("catalog")}
-                  className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#B8862E] transition-colors">
-                  {dept}
+              <div className="relative group/new">
+                <button onClick={() => setView("catalog")}
+                  className="w-full flex items-center justify-between text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors hover:bg-[#FBF3E1]" style={{ color: "#B8862E" }}>
+                  {DEPARTMENTS[0]} <ChevronRight className="w-3 h-3" />
                 </button>
-              ))}
+                <div className="absolute top-0 left-full ml-0.5 w-56 max-h-96 overflow-y-auto bg-white text-gray-800 rounded shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover/new:opacity-100 group-hover/new:visible transition-all z-40">
+                  {NEW_ARRIVALS_SUB.map((item) => (
+                    <button key={item} onClick={() => setView("catalog")}
+                      className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#B8862E] transition-colors">
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                {DEPARTMENTS.slice(1).map((dept) => (
+                  <button key={dept} onClick={() => setView("catalog")}
+                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#B8862E] transition-colors">
+                    {dept}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <input
