@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment, type ReactNode, type CSSProperties } from "react";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
@@ -115,33 +115,88 @@ function Stars({ rating, size = 13 }: { rating: number; size?: number }) {
 // ─── Product Card ─────────────────────────────────────────────────────────────
 // ─── Promo banner (full-width grid interstitial) ───────────────────────────
 function PromoBanner({ onShop }: { onShop: () => void }) {
+  const PICKS = [
+    { emoji: "👟", bg: "#e8e8e8" },
+    { emoji: "⌚", bg: "#1c1c1e" },
+    { emoji: "🧴", bg: "#f5e6c8" },
+  ];
   return (
-    <div className="col-span-full relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(120deg,#0B1A3D 0%,#132A5C 100%)" }}>
+    <div className="col-span-full relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(120deg,#0B1A3D 0%,#132A5C 100%)", aspectRatio: "2164 / 726", containerType: "inline-size" } as CSSProperties}>
       {/* Repeated ghost "B" logo pattern */}
-      <div className="absolute inset-0 flex items-center justify-end pr-4 opacity-[0.07] pointer-events-none select-none overflow-hidden">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <span key={i} className="font-serif text-white shrink-0" style={{ fontSize: 180, fontWeight: 700, lineHeight: 1, marginLeft: -30 }}>B</span>
+      <div className="absolute inset-0 flex items-center justify-end opacity-[0.08] pointer-events-none select-none overflow-hidden">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <span key={i} className="font-serif text-white shrink-0" style={{ fontSize: "22cqw", fontWeight: 700, lineHeight: 1, marginLeft: "-3cqw" }}>B</span>
         ))}
       </div>
 
-      <div className="relative flex flex-col sm:flex-row items-center gap-6 sm:gap-10 px-6 sm:px-12 py-8 sm:py-10">
+      <div className="relative h-full flex items-center gap-[3%] px-[3%]">
         {/* Logo mark */}
-        <div className="flex items-center gap-3 shrink-0">
-          <img src={ballylifeLogo} alt="Ballylife" className="h-10 sm:h-12 w-auto" style={{ filter: "brightness(0) invert(1)" }} />
+        <div className="hidden sm:flex flex-col items-start shrink-0" style={{ maxWidth: "20%" }}>
+          <div className="flex items-center gap-2">
+            <img src={ballylifeLogo} alt="" className="shrink-0" style={{ height: "9cqw", width: "auto", filter: "brightness(0) invert(1)" }} />
+          </div>
         </div>
 
         {/* Headline */}
-        <div className="flex-1 text-center sm:text-left">
-          <h3 className="font-serif text-white text-2xl sm:text-3xl leading-tight mb-2" style={{ fontWeight: 600 }}>
-            Live Bold. Shop Ballylife.
+        <div className="flex-1 min-w-0">
+          <h3 className="font-serif text-white leading-tight mb-[1.5%]" style={{ fontWeight: 700, fontSize: "clamp(16px, 4.2cqw, 44px)" }}>
+            Live bold.<br />Shop Ballylife<br />in minutes.
           </h3>
-          <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.75)" }}>
-            Quality products from verified sellers, delivered to your door.
+          <p className="mb-[3%] leading-snug" style={{ color: "rgba(255,255,255,0.85)", fontSize: "clamp(10px, 1.5cqw, 16px)", maxWidth: "26ch" }}>
+            Need it now? Forgot something? We've got it! We'll be there in minutes.
           </p>
-          <button onClick={onShop} className="px-7 py-2.5 rounded-full text-sm font-bold transition-transform hover:scale-[1.03]"
-            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D" }}>
-            Shop Now
+          <button onClick={onShop} className="rounded-full font-black tracking-wide transition-transform hover:scale-[1.03]"
+            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D", padding: "clamp(6px,1.2cqw,14px) clamp(16px,3cqw,32px)", fontSize: "clamp(10px,1.5cqw,16px)" }}>
+            SHOP NOW
           </button>
+        </div>
+
+        {/* Phone mockup */}
+        <div className="hidden md:flex items-center justify-center shrink-0 h-full" style={{ width: "26%" }}>
+          <div className="relative bg-black rounded-[14%] p-[3%]" style={{ width: "62%", aspectRatio: "9 / 18.5", boxShadow: "0 10px 40px rgba(0,0,0,0.4)" }}>
+            <div className="w-full h-full rounded-[10%] overflow-hidden flex flex-col" style={{ background: "#0B1A3D" }}>
+              {/* Status bar */}
+              <div className="flex items-center justify-between px-[8%] pt-[6%] text-white" style={{ fontSize: "clamp(6px,0.8cqw,9px)" }}>
+                <span>09:48</span>
+                <span>📶 📡 🔋</span>
+              </div>
+              <div className="px-[8%] pt-[6%] flex items-center gap-1">
+                <ChevronRight className="w-3 h-3 rotate-180 text-white" />
+              </div>
+              <div className="px-[8%] pt-[3%] flex items-center gap-1.5">
+                <img src={ballylifeLogo} alt="" style={{ height: "3.5cqw", width: "auto", filter: "brightness(0) invert(1)" }} />
+              </div>
+              <p className="px-[8%] pt-[4%] text-white font-serif leading-tight" style={{ fontSize: "clamp(7px,1.1cqw,13px)", fontWeight: 700 }}>
+                Ballylife products delivered in minutes
+              </p>
+              <div className="px-[8%] pt-[4%]">
+                <span className="inline-block rounded-full font-bold" style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D", fontSize: "clamp(5px,0.7cqw,8px)", padding: "1.5% 4%" }}>
+                  Delivery: 60 mins
+                </span>
+              </div>
+              <div className="flex-1 bg-white mt-[4%] rounded-t-2xl px-[6%] pt-[5%] flex flex-col">
+                <div className="flex items-center justify-between mb-[4%]">
+                  <span className="font-black text-gray-900" style={{ fontSize: "clamp(6px,1cqw,11px)" }}>BallylifeNOW</span>
+                  <span className="text-[6px] font-bold text-gray-400" style={{ fontSize: "clamp(4px,0.6cqw,7px)" }}>BALLYLIFE now</span>
+                </div>
+                <div className="bg-gray-100 rounded-full px-[5%] py-[2.5%] mb-[4%] flex items-center gap-1">
+                  <Search className="text-gray-400" style={{ width: "2.2cqw", height: "2.2cqw" }} />
+                  <span className="text-gray-400" style={{ fontSize: "clamp(4px,0.7cqw,8px)" }}>Search Ballylife</span>
+                </div>
+                <div className="flex items-center gap-1 mb-[3%]">
+                  <Tag style={{ width: "2cqw", height: "2cqw" }} className="text-gray-900" />
+                  <span className="font-bold text-gray-900" style={{ fontSize: "clamp(5px,0.85cqw,9px)" }}>Last minute picks</span>
+                </div>
+                <div className="flex gap-[4%]">
+                  {PICKS.map((pk, i) => (
+                    <div key={i} className="flex-1 rounded-lg flex items-center justify-center" style={{ background: pk.bg, aspectRatio: "1/1", fontSize: "clamp(8px,1.6cqw,18px)" }}>
+                      {pk.emoji}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
