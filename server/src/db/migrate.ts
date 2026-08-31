@@ -22,12 +22,12 @@ export async function migrate(): Promise<void> {
   console.log("[db] Schema applied.");
 
   const { rows } = await pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_products");
-  if (Number(rows[0].count) > 0) {
+  if (Number(rows[0].count) >= PRODUCTS.length) {
     console.log("[db] Catalog already seeded — skipping.");
     return;
   }
 
-  console.log("[db] Seeding starter catalog...");
+  console.log("[db] Seeding/growing starter catalog...");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -36,6 +36,14 @@ export async function migrate(): Promise<void> {
     // (different ids, overlapping slugs) — safe to clear since no
     // products reference those category ids yet in this branch.
     await client.query(`DELETE FROM mkt_categories`);
+
+    // Products don't have a stable natural key across seed runs (ids are
+    // freshly randomUUID()'d each time), so growing the catalog means
+    // clearing and reinserting the full set rather than upserting.
+    // Cascades safely to mkt_reviews/mkt_wishlist_items; mkt_orders and
+    // mkt_carts store items as JSON snapshots, not live references, so
+    // past orders are unaffected.
+    await client.query(`DELETE FROM mkt_products`);
 
     for (const c of CATEGORIES) {
       await client.query(

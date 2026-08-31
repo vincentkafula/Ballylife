@@ -498,7 +498,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await mktProducts.list({ category: activeCat, search, sort });
+      const res = await mktProducts.list({ category: activeCat, search, sort, limit: "78" });
       setProducts(res.data as R[]);
     } finally { setLoading(false); }
   }, [activeCat, search, sort]);

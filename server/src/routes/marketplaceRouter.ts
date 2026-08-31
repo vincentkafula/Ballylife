@@ -119,7 +119,7 @@ router.get("/categories", async (_req: Request, res: Response): Promise<void> =>
 router.get("/products", async (req: Request, res: Response): Promise<void> => {
   const { category, search, minPrice, maxPrice, brand, rating, sort, page: pg, limit: lim, featured, flashDeal } = req.query as Record<string, string>;
   const page = Math.max(1, Number(pg) || 1);
-  const limit = Math.min(48, Number(lim) || 12);
+  const limit = Math.min(80, Number(lim) || 12);
 
   const where: string[] = [`p.status = 'active'`];
   const params: unknown[] = [];
@@ -286,7 +286,7 @@ router.get("/orders", requireAuth, async (req: Request, res: Response): Promise<
   // from anyone else is ignored, not trusted.
   const userId = isManager ? (req.query.userId as string | undefined) : req.user!.userId;
   const page = Math.max(1, Number(pg) || 1);
-  const limit = Math.min(48, Number(lim) || 12);
+  const limit = Math.min(80, Number(lim) || 12);
   const where: string[] = []; const params: unknown[] = [];
   if (userId) { params.push(userId); where.push(`user_id = $${params.length}`); }
   if (status) { params.push(status); where.push(`status = $${params.length}`); }
