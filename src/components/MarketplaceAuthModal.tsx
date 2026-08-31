@@ -132,7 +132,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
               <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: "#FFF4E5", color: "#B75C00" }}>
                 <Store className="w-6 h-6" />
               </div>
-              <p className="text-sm font-bold text-gray-900 mb-1">Sell on Ballylife</p>
+              <p className="font-serif text-base text-gray-900 mb-1" style={{ fontWeight: 600 }}>Sell on Ballylife</p>
               <p className="text-xs text-gray-500 mb-5 max-w-xs mx-auto">Our full seller application covers your account, business details, identity verification, and tax information — about 5 minutes.</p>
               <button onClick={() => setShowWizard(true)}
                 className="w-full py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2"

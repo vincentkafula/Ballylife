@@ -161,7 +161,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     <div className="flex-1 flex min-h-0 overflow-hidden bg-[#EAEDED]">
       <aside className="w-60 shrink-0 bg-white border-r border-gray-100 p-3 overflow-y-auto flex flex-col">
         <div className="px-1 pb-3 mb-2 border-b border-gray-100">
-          <p className="text-sm font-bold text-gray-900">{user.name}</p>
+          <p className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>{user.name}</p>
           <p className="text-[11px] text-gray-400">{tierPosition ?? "Marketplace Manager"}</p>
         </div>
         <div className="space-y-0.5 flex-1">

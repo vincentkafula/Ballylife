@@ -125,7 +125,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
               <div>
                 <div className="bg-white rounded-xl border border-gray-100 p-5 mb-5 flex items-center justify-between flex-wrap gap-4">
                   <div>
-                    <p className="text-xl font-black text-gray-900">Welcome, {user.name.split(" ")[0]}</p>
+                    <p className="font-serif text-2xl text-gray-900" style={{ fontWeight: 600 }}>Welcome, {user.name.split(" ")[0]}</p>
                     <p className="text-sm text-gray-500 mt-0.5">{String(stats?.membership ?? "Standard")} Member</p>
                   </div>
                   <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#FFF4E5]">

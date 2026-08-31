@@ -142,7 +142,7 @@ function FileField({ label, file, onChange, required, hint }: {
         onDragLeave={() => setDragOver(false)}
         onDrop={e => { e.preventDefault(); setDragOver(false); accept(e.dataTransfer.files?.[0]); }}
         className="relative flex items-center gap-3 border border-dashed rounded-lg px-3 py-2.5 text-sm cursor-pointer transition-colors"
-        style={{ borderColor: dragOver ? "#B8862E" : file ? "#10B981" : "#D1D5DB", background: dragOver ? "#EFF6FF" : file ? "#F0FDF4" : "#fff" }}
+        style={{ borderColor: dragOver ? "#B8862E" : file ? "#10B981" : "#D1D5DB", background: dragOver ? "#FBF3E1" : file ? "#F0FDF4" : "#fff" }}
       >
         {preview ? (
           <img src={preview} alt="" className="w-9 h-9 rounded object-cover shrink-0 border border-gray-200" />
@@ -177,9 +177,9 @@ function FileField({ label, file, onChange, required, hint }: {
 function SectionIntro({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
   return (
     <div className="flex items-start gap-3 mb-5">
-      <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FFF4E5", color: "#B75C00" }}>{icon}</span>
+      <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#B8862E" }}>{icon}</span>
       <div>
-        <p className="text-base font-bold text-gray-900">{title}</p>
+        <p className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>{title}</p>
         <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>
       </div>
     </div>

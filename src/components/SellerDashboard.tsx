@@ -81,7 +81,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
     <div className="flex-1 flex min-h-0 overflow-hidden bg-[#EAEDED]">
       <aside className="w-56 shrink-0 bg-white border-r border-gray-100 p-3 overflow-y-auto flex flex-col">
         <div className="px-1 pb-3 mb-2 border-b border-gray-100">
-          <p className="text-sm font-bold text-gray-900">{seller.storeName}</p>
+          <p className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>{seller.storeName}</p>
           <p className="text-[11px] mt-0.5" style={{ color: seller.status === "active" ? "#10B981" : "#F59E0B" }}>
             {seller.status === "active" ? "● Store live" : "● Pending approval"}
           </p>

@@ -1034,7 +1034,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
       {/* Related */}
       {related.length > 0 && (
         <div className="px-4 pb-8 bg-white border-t border-gray-50">
-          <h3 className="text-sm font-bold text-gray-900 my-4">Related Products</h3>
+          <h3 className="font-serif text-lg text-gray-900 my-4" style={{ fontWeight: 600 }}>Related Products</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {related.map((r, i) => (
               <ProductCard key={i} p={r} onView={() => onCart(r)} onCart={() => onCart(r)}
@@ -1062,7 +1062,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
   if (items.length === 0) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" style={{ background: "#FAF6EC" }}>
       <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl" style={{ background: "#EAF7EE" }}>🛒</div>
-      <h2 className="text-lg font-bold text-gray-900">Your cart is empty</h2>
+      <h2 className="font-serif text-xl text-gray-900" style={{ fontWeight: 600 }}>Your cart is empty</h2>
       <p className="text-sm text-gray-400">Browse products and add items to get started</p>
     </div>
   );
@@ -1071,7 +1071,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
     <div className="flex-1 flex overflow-hidden" style={{ background: "#FAF6EC" }}>
       {/* Items */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        <h2 className="text-base font-bold text-gray-900">Cart ({items.length})</h2>
+        <h2 className="font-serif text-xl text-gray-900" style={{ fontWeight: 600 }}>Cart ({items.length})</h2>
         {items.map((item, i) => (
           <div key={i} className="bg-white rounded-2xl p-4 flex items-center gap-4 border border-gray-100">
             <div className="w-16 h-16 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 bg-gray-50">
@@ -1119,7 +1119,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
 
       {/* Summary */}
       <div className="w-72 flex-shrink-0 p-4 bg-white border-l border-gray-100 overflow-y-auto">
-        <h3 className="text-sm font-bold text-gray-900 mb-4">Order Summary</h3>
+        <h3 className="font-serif text-base text-gray-900 mb-4" style={{ fontWeight: 600 }}>Order Summary</h3>
         <div className="space-y-2.5 mb-5">
           {[
             { label: "Subtotal",      value: fmtZAR(Number(cart?.subtotal ?? 0)) },
@@ -1161,16 +1161,24 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
   const [shipping, setShipping] = useState("standard");
   const [payment, setPayment] = useState("card");
   const [placing, setPlacing] = useState(false);
+  const [placeError, setPlaceError] = useState<string | null>(null);
   const STEPS: CheckoutStep[] = ["address","shipping","payment","confirmation"];
   const si = STEPS.indexOf(step);
 
   const handlePlace = async () => {
     setPlacing(true);
+    setPlaceError(null);
     try {
       const { mktOrders: api } = await import("../services/marketplaceApi");
       const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod: payment });
-      setStep("confirmation");
-      onComplete(res.data as R);
+      if ((res as { success: boolean }).success) {
+        setStep("confirmation");
+        onComplete(res.data as R);
+      } else {
+        setPlaceError((res as { error?: string }).error ?? "We couldn't place your order. Please check your details and try again.");
+      }
+    } catch {
+      setPlaceError("Something went wrong placing your order. Please try again.");
     } finally { setPlacing(false); }
   };
 
@@ -1194,7 +1202,7 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
 
       {step === "address" && (
         <div className="max-w-lg mx-auto space-y-4">
-          <h2 className="text-base font-bold text-gray-900">Delivery Address</h2>
+          <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Delivery Address</h2>
           {addresses.map((a, i) => (
             <button key={i} onClick={() => setSelAddr(i)}
               className={`w-full p-4 rounded-2xl text-left border transition-all ${selAddr === i ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
@@ -1220,7 +1228,7 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
 
       {step === "shipping" && (
         <div className="max-w-lg mx-auto space-y-3">
-          <h2 className="text-base font-bold text-gray-900">Shipping Method</h2>
+          <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Shipping Method</h2>
           {[
             { id:"standard", label:"Standard Delivery", sub:"3–5 business days", price:"R99" },
             { id:"express",  label:"Express Delivery",  sub:"Next business day", price:"R199" },
@@ -1245,7 +1253,7 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
 
       {step === "payment" && (
         <div className="max-w-lg mx-auto space-y-4">
-          <h2 className="text-base font-bold text-gray-900">Payment Method</h2>
+          <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Payment Method</h2>
           <div className="grid grid-cols-3 gap-2">
             {[
               { id:"card",       label:"Card",              icon:"💳" },
@@ -1284,6 +1292,11 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
             </div>
             <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1"><Shield className="w-3 h-3" />256-bit SSL · PCI DSS compliant</p>
           </div>
+          {placeError && (
+            <div className="rounded-xl px-4 py-3 text-sm font-medium text-red-700 bg-red-50 border border-red-100">
+              {placeError}
+            </div>
+          )}
           <div className="flex gap-3">
             <button onClick={() => setStep("shipping")} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold border border-gray-200">Back</button>
             <button onClick={handlePlace} disabled={placing}
@@ -1366,7 +1379,7 @@ function OrdersView() {
 
   return (
     <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
-      <h2 className="text-base font-bold text-gray-900 mb-4">My Orders</h2>
+      <h2 className="font-serif text-xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>My Orders</h2>
       {orders.length === 0 ? (
         <div className="text-center py-16 text-gray-400"><Package className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No orders yet</p></div>
       ) : (
@@ -1398,17 +1411,17 @@ function OrdersView() {
 }
 
 // ─── WISHLIST ─────────────────────────────────────────────────────────────────
-function WishlistView({ wishlistIds, onProduct, onCart, onWishlist }: {
-  wishlistIds: Set<string>; onProduct: (p: R) => void;
+function WishlistView({ authUser, wishlistIds, onProduct, onCart, onWishlist }: {
+  authUser: { id: string }; wishlistIds: Set<string>; onProduct: (p: R) => void;
   onCart: (p: R) => void; onWishlist: (id: string) => void;
 }) {
   const [items, setItems]   = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { mktWishlist.get("demo-customer-001").then(r => { setItems(r.data as R[]); setLoading(false); }); }, []);
+  useEffect(() => { mktWishlist.get(authUser.id).then(r => { setItems(r.data as R[]); setLoading(false); }); }, [authUser.id]);
   if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#B8862E" }} /></div>;
   return (
     <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
-      <h2 className="text-base font-bold text-gray-900 mb-4">My Wishlist ({items.length})</h2>
+      <h2 className="font-serif text-xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>My Wishlist ({items.length})</h2>
       {items.length === 0
         ? <div className="text-center py-16 text-gray-400"><Heart className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No saved items</p></div>
         : <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -1783,6 +1796,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
           {view === "wishlist" && authUser && (
             <WishlistView
+              authUser={authUser}
               wishlistIds={wishlistIds}
               onProduct={p => { setSelProductId(String(p.id)); setView("product"); }}
               onCart={handleAddToCart} onWishlist={handleWishlist}
