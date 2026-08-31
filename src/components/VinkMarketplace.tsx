@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import {
   X, Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
@@ -1543,11 +1544,9 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
       <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#131921" }}>
         <button
           onClick={() => { setView("home"); }}
-          className="flex items-baseline gap-1 px-2 py-1.5 rounded border border-transparent hover:border-white/40 shrink-0"
+          className="flex items-center px-2 py-1 rounded border border-transparent hover:border-white/40 shrink-0"
         >
-          <span className="text-white text-xl font-black tracking-tight">vink</span>
-          <span className="text-[#FF9900] text-lg font-black">.</span>
-          <span className="hidden sm:inline text-white/50 text-[10px] font-medium ml-1">marketplace</span>
+          <img src={ballylifeLogo} alt="Ballylife" className="h-9 w-auto" />
         </button>
 
         <div className="relative group hidden lg:block shrink-0">

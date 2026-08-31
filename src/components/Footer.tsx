@@ -1,3 +1,5 @@
+import ballylifeLogo from "../imports/ballylife-logo.png";
+
 const BG       = "#0B2E1C";
 const DARK_BAR = "#1A0F4A";
 const CARD_BG  = "#5B21B6";
@@ -121,7 +123,7 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
 
         {/* Top strip: wordmark + social */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 20, marginBottom: 48, paddingBottom: 32, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-          <p style={{ color: "#fff", fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>Ballylife</p>
+          <img src={ballylifeLogo} alt="Ballylife" style={{ height: 64, width: "auto" }} />
 
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>

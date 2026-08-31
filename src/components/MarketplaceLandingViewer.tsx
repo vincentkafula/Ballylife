@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ShoppingBag, Store, Tag, ArrowRight, X, Star, Loader2 } from "lucide-react";
 import heroBg from "../imports/assets/marketplace-hero-wide-bg.png";
+import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import { mktProducts } from "../services/marketplaceApi";
 import { formatZAR, useCurrency } from "../services/currencyStore";
 import { Footer } from "./Footer";
@@ -95,6 +96,8 @@ export function MarketplaceLandingViewer({ isOpen, onClose, onShop, onSell }: Pr
       <div className="relative overflow-hidden">
         <img src={heroBg} alt="" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-white/10" />
+
+        <img src={ballylifeLogo} alt="Ballylife" className="absolute top-5 left-5 z-10 h-10 w-auto" />
 
         <button
           onClick={onClose}
