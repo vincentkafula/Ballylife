@@ -487,12 +487,6 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
     { icon: <User className="w-4 h-4" />,    label: "Ballylife Support", sub: "We're here to help" },
   ];
 
-  const PROMOS = [
-    { title: "ALOT For Less", sub: "Unbeatable deals you'll love", cta: "Shop Deals", emoji: "🛒" },
-    { title: "New Arrivals",  sub: "Fresh finds every week",       cta: "Shop Now",   emoji: "✨" },
-    { title: "Get It Fast",   sub: "Fast delivery. Happy you.",    cta: "Learn More", emoji: "⚡" },
-  ];
-
   return (
     <div className="flex-1 overflow-y-auto bg-gray-50" style={{ scrollbarWidth: "thin" }}>
 
@@ -516,37 +510,6 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             </div>
           ))}
         </div>
-      </div>
-
-      {/* ── Category icons ── */}
-      {categories.length > 0 && (
-        <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4 flex items-center gap-6 overflow-x-auto" style={{ scrollbarWidth: "thin" }}>
-          {categories.map((c) => (
-            <button key={c.id as string} onClick={onCategory} className="flex flex-col items-center gap-2 flex-shrink-0 group">
-              <span className="w-14 h-14 rounded-full flex items-center justify-center text-2xl transition-transform group-hover:scale-105" style={{ background: "#FBF3E1" }}>
-                {c.icon as string}
-              </span>
-              <span className="text-[11px] font-medium text-gray-700 whitespace-nowrap">{c.name as string}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── Promo cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mx-3 sm:mx-4 mb-3">
-        {PROMOS.map((p, i) => (
-          <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center justify-between gap-3">
-            <div>
-              <p className="font-serif text-base text-gray-900 mb-1" style={{ fontWeight: 600 }}>{p.title}</p>
-              <p className="text-xs text-gray-500 mb-3">{p.sub}</p>
-              <button onClick={onCategory} className="text-xs font-bold px-4 py-2 rounded-lg text-white transition-transform hover:scale-[1.03]"
-                style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-                {p.cta}
-              </button>
-            </div>
-            <span className="text-4xl shrink-0 opacity-90">{p.emoji}</span>
-          </div>
-        ))}
       </div>
 
       {/* ── Featured Brands ── */}
