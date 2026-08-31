@@ -1593,9 +1593,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
       <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#14110D" }}>
         <button
           onClick={() => { setView("home"); }}
-          className="flex items-center px-2 py-1 rounded border border-transparent hover:border-white/40 shrink-0"
+          className="flex items-center px-3 py-1.5 rounded-lg bg-white shrink-0 hover:opacity-90 transition-opacity"
         >
-          <img src={ballylifeLogo} alt="Ballylife" className="h-9 w-auto" />
+          <img src={ballylifeLogo} alt="Ballylife" className="h-8 w-auto" />
         </button>
 
         <div className="relative group hidden lg:block shrink-0">

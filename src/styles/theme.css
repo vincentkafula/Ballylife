@@ -1,17 +1,11 @@
 @custom-variant dark (&:is(.dark *));
 
-/* ── Site-wide background image ──────────────────────────────────────────
-   Applied to <body> so it shows behind every page. Full-screen views with
-   their own opaque background (dashboards, viewers, the marketplace shop)
-   paint over it as normal — this only shows through where a page doesn't
-   set its own background, which is the correct/expected behavior rather
-   than forcing a busy graphic behind dense data screens. */
+/* Plain warm neutral background behind the app shell — the previous
+   site-bg.png was a leftover Vink asset (bright orange/green), which
+   flashed visibly before the app mounted and clashed with the gold/black
+   brand. */
 body {
-  background-image: url("/site-bg.png");
-  background-size: cover;
-  background-position: center top;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+  background-color: #FAF6EC;
 }
 
 :root {
