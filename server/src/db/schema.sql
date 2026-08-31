@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS mkt_categories (
 
 CREATE TABLE IF NOT EXISTS mkt_sellers (
   id              TEXT PRIMARY KEY,
-  user_id         TEXT REFERENCES users(id),
+  user_id         TEXT,
   store_name      TEXT NOT NULL,
   store_slug      TEXT UNIQUE NOT NULL,
   description     TEXT,
