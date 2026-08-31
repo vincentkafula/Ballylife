@@ -1407,6 +1407,11 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
   const [authUser, setAuthUser]   = useState<MktAuthUser | null>(null);
   const [authSeller, setAuthSeller] = useState<{ id: string; storeName: string; status: string } | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [navSearch, setNavSearch] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [navSuggests, setNavSuggests] = useState<R[]>([]);
+  const [showSuggests, setShowSuggests] = useState(false);
+  const navSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const MANAGER_ROLES = ["superadmin", "noc_engineer", "billing_admin", "marketplace_admin"];
   const role: "customer" | "seller" | "manager" | null =
@@ -1507,12 +1512,6 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
     if (!authUser) { setShowAuthModal(true); return; }
     setView(dest);
   };
-
-  const [navSearch, setNavSearch] = useState("");
-  const [submittedSearch, setSubmittedSearch] = useState("");
-  const [navSuggests, setNavSuggests] = useState<R[]>([]);
-  const [showSuggests, setShowSuggests] = useState(false);
-  const navSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const runSearch = (q: string) => {
     setSubmittedSearch(q);
