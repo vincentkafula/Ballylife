@@ -1590,7 +1590,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#EAEDED]" style={{ fontFamily: "'Amazon Ember', Arial, sans-serif" }}>
       {/* ── Tier 1: dark top strip ── */}
-      <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#14110D" }}>
+      <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20 border-b border-gray-200" style={{ background: "#FAF6EC" }}>
         <button
           onClick={() => { setView("home"); }}
           className="flex items-center px-3 py-1.5 rounded-lg bg-white shrink-0 hover:opacity-90 transition-opacity"
@@ -1599,8 +1599,8 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
         </button>
 
         <div className="relative group hidden lg:block shrink-0">
-          <button className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white">
-            <span className="flex items-center gap-1 text-[10px] text-white/60 leading-none">
+          <button className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-gray-300 text-gray-800">
+            <span className="flex items-center gap-1 text-[10px] text-gray-500 leading-none">
               <MapPin className="w-3 h-3" /> Deliver to
             </span>
             <span className="text-xs font-bold leading-tight mt-0.5">{currency.country.country ?? currency.country.countryCode}</span>
@@ -1690,8 +1690,8 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
 
         <div className="flex items-center gap-0.5 sm:gap-1 ml-auto shrink-0">
           <div className="relative group hidden md:block">
-            <button onClick={() => { if (!authUser) setShowAuthModal(true); }} className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white">
-              <span className="text-[10px] text-white/60 leading-none flex items-center gap-1">
+            <button onClick={() => { if (!authUser) setShowAuthModal(true); }} className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-gray-300 text-gray-800">
+              <span className="text-[10px] text-gray-500 leading-none flex items-center gap-1">
                 <User className="w-3 h-3" /> Hello, {authUser ? authUser.name.split(" ")[0] : "sign in"}
               </span>
               <span className="text-xs font-bold leading-tight mt-0.5 flex items-center gap-0.5">
@@ -1719,21 +1719,21 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           </div>
 
           {role === "customer" && (
-            <button onClick={() => gateOrPrompt("account")} className="hidden sm:flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white">
-              <span className="text-[10px] text-white/60 leading-none">Returns</span>
+            <button onClick={() => gateOrPrompt("account")} className="hidden sm:flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-gray-300 text-gray-800">
+              <span className="text-[10px] text-gray-500 leading-none">Returns</span>
               <span className="text-xs font-bold leading-tight mt-0.5">&amp; Orders</span>
             </button>
           )}
 
           {role !== "seller" && role !== "manager" && (
-            <button onClick={() => gateOrPrompt("wishlist")} className="relative p-2 rounded border border-transparent hover:border-white/40 text-white">
+            <button onClick={() => gateOrPrompt("wishlist")} className="relative p-2 rounded border border-transparent hover:border-gray-300 text-gray-800">
               <Heart className={`w-5 h-5 ${wishlistIds.size > 0 ? "fill-[#D4A54A] text-[#D4A54A]" : ""}`} />
               {wishlistIds.size > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#D4A54A] text-[#14110D] text-[9px] font-bold rounded-full flex items-center justify-center">{wishlistIds.size}</span>}
             </button>
           )}
 
           {role !== "seller" && role !== "manager" && (
-            <button onClick={() => gateOrPrompt("cart")} className="relative flex items-end gap-1 px-2 py-1 rounded border border-transparent hover:border-white/40 text-white">
+            <button onClick={() => gateOrPrompt("cart")} className="relative flex items-end gap-1 px-2 py-1 rounded border border-transparent hover:border-gray-300 text-gray-800">
               <span className="relative">
                 <ShoppingCart className="w-7 h-7" />
                 <span className="absolute -top-1 left-3.5 text-[13px] font-black" style={{ color: "#D4A54A" }}>{cartCount}</span>
