@@ -269,7 +269,14 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
 
 function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void }) {
   const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
   const items = products.slice(0, 6);
+
+  useEffect(() => {
+    if (paused || items.length < 2) return;
+    const id = setInterval(() => setIndex(i => (i + 1) % items.length), 5000);
+    return () => clearInterval(id);
+  }, [items.length, paused]);
 
   if (items.length === 0) return null;
   const p = items[index];
@@ -280,6 +287,10 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
 
   return (
     <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px]"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={() => setPaused(true)}
+      onTouchEnd={() => setPaused(false)}
       style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 100%)", border: "1px solid #E8D9B5" }}>
       <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Featured today</div>
 
