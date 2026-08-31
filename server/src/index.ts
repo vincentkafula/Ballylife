@@ -56,7 +56,7 @@ async function start() {
   }
   await migrate();
   app.listen(PORT, () => {
-    console.log(`Vink Marketplace backend listening on port ${PORT}`);
+    console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);
     console.log(`  API    → http://localhost:${PORT}/api`);
   });
