@@ -33,17 +33,11 @@ export async function migrate(): Promise<void> {
     await client.query("BEGIN");
 
     // A previous, smaller starter-category seed may already be in place
-    // (different ids, overlapping slugs) — safe to clear since no
-    // products reference those category ids yet in this branch.
-    await client.query(`DELETE FROM mkt_categories`);
-
-    // Products don't have a stable natural key across seed runs (ids are
-    // freshly randomUUID()'d each time), so growing the catalog means
-    // clearing and reinserting the full set rather than upserting.
-    // Cascades safely to mkt_reviews/mkt_wishlist_items; mkt_orders and
-    // mkt_carts store items as JSON snapshots, not live references, so
-    // past orders are unaffected.
+    // (different ids, overlapping slugs). Products reference categories
+    // via a FK, so products must be cleared first or this violates the
+    // constraint — order matters here.
     await client.query(`DELETE FROM mkt_products`);
+    await client.query(`DELETE FROM mkt_categories`);
 
     for (const c of CATEGORIES) {
       await client.query(
