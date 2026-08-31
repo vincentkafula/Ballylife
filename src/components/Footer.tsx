@@ -3,7 +3,7 @@ import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 const BG      = "#FAF6EC";
 const HEADING = "#211C16";
 const LINK    = "#6B5A3E";
-const BAR_BLUE = "#F3EBD8";
+const BAR_BLUE = "#D2691E";
 
 const COLS = [
   {
@@ -154,16 +154,16 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
       </div>
 
       {/* Bottom bar */}
-      <div style={{ background: BAR_BLUE, borderTop: "1px solid #E8D9B5" }}>
+      <div style={{ background: BAR_BLUE }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "16px 40px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             {PAYMENT_BADGES.map((p) => (
-              <span key={p} style={{ color: "#5C4A2A", fontSize: 12, fontWeight: 700, opacity: 0.85, whiteSpace: "nowrap" }}>{p}</span>
+              <span key={p} style={{ color: "#fff", fontSize: 12, fontWeight: 700, opacity: 0.92, whiteSpace: "nowrap" }}>{p}</span>
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src={ballylifeLogo} alt="" style={{ height: 20, width: "auto" }} />
-            <span style={{ color: "#6B5A3E", fontSize: 12 }}>© Ballylife Online (Pty) Ltd.</span>
+            <img src={ballylifeLogo} alt="" style={{ height: 20, width: "auto", filter: "brightness(0) invert(1)" }} />
+            <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }}>© Ballylife Online (Pty) Ltd.</span>
           </div>
         </div>
       </div>
