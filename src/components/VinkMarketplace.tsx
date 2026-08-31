@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment, type ReactNode } from "react";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
@@ -113,6 +113,41 @@ function Stars({ rating, size = 13 }: { rating: number; size?: number }) {
 }
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
+// ─── Promo banner (full-width grid interstitial) ───────────────────────────
+function PromoBanner({ onShop }: { onShop: () => void }) {
+  return (
+    <div className="col-span-full relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(120deg,#0B1A3D 0%,#132A5C 100%)" }}>
+      {/* Repeated ghost "B" logo pattern */}
+      <div className="absolute inset-0 flex items-center justify-end pr-4 opacity-[0.07] pointer-events-none select-none overflow-hidden">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <span key={i} className="font-serif text-white shrink-0" style={{ fontSize: 180, fontWeight: 700, lineHeight: 1, marginLeft: -30 }}>B</span>
+        ))}
+      </div>
+
+      <div className="relative flex flex-col sm:flex-row items-center gap-6 sm:gap-10 px-6 sm:px-12 py-8 sm:py-10">
+        {/* Logo mark */}
+        <div className="flex items-center gap-3 shrink-0">
+          <img src={ballylifeLogo} alt="Ballylife" className="h-10 sm:h-12 w-auto" style={{ filter: "brightness(0) invert(1)" }} />
+        </div>
+
+        {/* Headline */}
+        <div className="flex-1 text-center sm:text-left">
+          <h3 className="font-serif text-white text-2xl sm:text-3xl leading-tight mb-2" style={{ fontWeight: 600 }}>
+            Live Bold. Shop Ballylife.
+          </h3>
+          <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.75)" }}>
+            Quality products from verified sellers, delivered to your door.
+          </p>
+          <button onClick={onShop} className="px-7 py-2.5 rounded-full text-sm font-bold transition-transform hover:scale-[1.03]"
+            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D" }}>
+            Shop Now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
   p: R; onView: () => void; onCart: () => void;
   wishlistIds: Set<string>; onWishlist: () => void;
@@ -446,8 +481,11 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {topPicks.map((p, i) => (
-              <ProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)}
-                wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(p.id))} />
+              <Fragment key={i}>
+                <ProductCard p={p} onView={() => onProduct(p)} onCart={() => onCart(p)}
+                  wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(p.id))} />
+                {(i === 53 || i === 65) && <PromoBanner onShop={onCategory} />}
+              </Fragment>
             ))}
           </div>
         </div>
