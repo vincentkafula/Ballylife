@@ -358,7 +358,7 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
         <button className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
       </div>
       <div className="relative">
-        {items.length > 2 && <SlideArrows onLeft={scrollLeft} onRight={scrollRight} />}
+        {items.length > 1 && <SlideArrows onLeft={scrollLeft} onRight={scrollRight} />}
         <div ref={ref} className="flex gap-0 overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
           {items.map((p, i) => (
             <HomeProductCard key={i} p={p}
@@ -517,7 +517,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
           <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.15em] mb-3">Featured Brands</p>
           <div className="relative">
-            {brands.length > 5 && <SlideArrows onLeft={brandsSlide.scrollLeft} onRight={brandsSlide.scrollRight} />}
+            {brands.length > 1 && <SlideArrows onLeft={brandsSlide.scrollLeft} onRight={brandsSlide.scrollRight} />}
             <div ref={brandsSlide.ref} className="flex items-center gap-8 overflow-x-auto scroll-smooth px-8 divide-x divide-gray-100" style={{ scrollbarWidth: "none" }}>
               {brands.map((b) => (
                 <span key={b} className="shrink-0 font-serif text-xl text-gray-700 hover:text-[#B8862E] transition-colors whitespace-nowrap cursor-default pl-8 first:pl-0" style={{ fontWeight: 700 }}>
