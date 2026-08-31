@@ -1616,8 +1616,8 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           </div>
         </div>
 
-        <div className="relative flex-1 flex items-stretch max-w-3xl rounded overflow-hidden h-9 min-w-0">
-          <div className="hidden sm:flex items-center bg-[#E8E8E8] hover:bg-[#DDD] px-2 text-[11px] text-gray-700 border-r border-gray-300 shrink-0 cursor-pointer relative group">
+        <div className="relative flex-1 flex items-stretch max-w-3xl h-9 min-w-0">
+          <div className="hidden sm:flex items-center bg-[#E8E8E8] hover:bg-[#DDD] px-2 text-[11px] text-gray-700 border-r border-gray-300 shrink-0 cursor-pointer relative group rounded-l">
             All <ChevronDown className="w-3 h-3 ml-1" />
             <div className="absolute top-full left-0 mt-0 w-56 max-h-96 overflow-y-auto bg-white text-gray-800 rounded-b shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
               <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">All Categories</div>
@@ -1640,9 +1640,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             onFocus={() => { if (navSuggests.length) setShowSuggests(true); }}
             onBlur={() => setTimeout(() => setShowSuggests(false), 150)}
             placeholder="Search Ballylife"
-            className="flex-1 min-w-0 bg-white px-3 text-sm outline-none text-gray-800"
+            className="flex-1 min-w-0 bg-white sm:bg-white px-3 text-sm outline-none text-gray-800 rounded-l sm:rounded-l-none"
           />
-          <button onClick={() => runSearch(navSearch)} className="w-11 flex items-center justify-center shrink-0" style={{ background: "#D4A54A" }}>
+          <button onClick={() => runSearch(navSearch)} className="w-11 flex items-center justify-center shrink-0 rounded-r" style={{ background: "#D4A54A" }}>
             <Search className="w-4 h-4 text-[#14110D]" />
           </button>
 
