@@ -66,4 +66,28 @@ router.get("/me", requireAuth, async (req: Request, res: Response): Promise<void
   res.json({ success: true, data: mapUser(rows[0]) });
 });
 
+// ── Change password ────────────────────────────────────────────────────
+router.post("/change-password", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { currentPassword, newPassword } = req.body ?? {};
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ success: false, error: "currentPassword and newPassword are required" });
+    return;
+  }
+  if (typeof newPassword !== "string" || newPassword.length < 8) {
+    res.status(400).json({ success: false, error: "New password must be at least 8 characters" });
+    return;
+  }
+
+  const { rows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [req.user!.userId]);
+  const user = rows[0];
+  if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
+    res.status(401).json({ success: false, error: "Current password is incorrect" });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await pool!.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, user.id]);
+  res.json({ success: true, message: "Password updated successfully" });
+});
+
 export default router;

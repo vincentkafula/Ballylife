@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 import { API_BASE as BASE } from "./config";
-const STORAGE_KEY = "vink_country_code";
+const STORAGE_KEY = "ballylife_country_code";
 
 export interface CountryOption {
   countryCode: string;
@@ -11,17 +11,17 @@ export interface CountryOption {
   name: string;   // currency name
 }
 
-const ZA_DEFAULT: CountryOption = { countryCode: "ZA", country: "South Africa", code: "ZAR", symbol: "R", name: "South African Rand" };
+const ZM_DEFAULT: CountryOption = { countryCode: "ZM", country: "Zambia", code: "ZMW", symbol: "K", name: "Zambian Kwacha" };
 
 interface CurrencyState {
   loading: boolean;
   country: CountryOption;
   countries: CountryOption[];
-  rate: number | null; // 1 ZAR = `rate` units of country.code
+  rate: number | null; // 1 ZMW = `rate` units of country.code (function names kept as formatZAR/convertZAR from the original — base currency is ZMW here, not ZAR)
   ratesStale: boolean;
 }
 
-let state: CurrencyState = { loading: true, country: ZA_DEFAULT, countries: [ZA_DEFAULT], rate: 1, ratesStale: false };
+let state: CurrencyState = { loading: true, country: ZM_DEFAULT, countries: [ZM_DEFAULT], rate: 1, ratesStale: false };
 const listeners = new Set<() => void>();
 
 function setState(patch: Partial<CurrencyState>) {
@@ -58,18 +58,18 @@ export async function initCurrency(): Promise<void> {
   // Resolve the country first (manual override > IP geolocation > ZA default),
   // then fetch rates using that final country code — avoids a race where the
   // rate lookup runs against whichever country happened to be set first.
-  let resolvedCountry = ZA_DEFAULT;
+  let resolvedCountry = ZM_DEFAULT;
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try { resolvedCountry = JSON.parse(saved) as CountryOption; }
     catch { /* corrupt saved value — fall through to IP detection */ }
   }
-  if (resolvedCountry === ZA_DEFAULT) {
+  if (resolvedCountry === ZM_DEFAULT) {
     try {
       const r = await fetch(`${BASE}/api/geo/detect`).then(res => res.json());
       if (r.success) resolvedCountry = r.data;
     } catch {
-      // Silent — ZA_DEFAULT remains active
+      // Silent — ZM_DEFAULT remains active
     }
   }
   setState({ country: resolvedCountry, loading: false });
@@ -77,7 +77,7 @@ export async function initCurrency(): Promise<void> {
   try {
     const r = await fetch(`${BASE}/api/currency/rates`).then(res => res.json());
     if (r.success) {
-      const rate = resolvedCountry.code === "ZAR" ? 1 : (r.data.rates[resolvedCountry.code] ?? null);
+      const rate = resolvedCountry.code === "ZMW" ? 1 : (r.data.rates[resolvedCountry.code] ?? null);
       setState({ rate, ratesStale: Boolean(r.stale) });
     }
   } catch { /* keep whatever rate state already had (initial default: 1) */ }
@@ -91,7 +91,7 @@ export function setCountryManually(countryCode: string): void {
   // Re-fetch/resolve the rate for the newly selected currency.
   fetch(`${BASE}/api/currency/rates`).then(r => r.json()).then(r => {
     if (!r.success) return;
-    const rate = match.code === "ZAR" ? 1 : (r.data.rates[match.code] ?? null);
+    const rate = match.code === "ZMW" ? 1 : (r.data.rates[match.code] ?? null);
     setState({ rate });
   }).catch(() => {});
 }
