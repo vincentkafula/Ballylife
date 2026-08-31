@@ -18,11 +18,11 @@ const VinkMarketplace = lazy(() =>
  */
 export default function App() {
   const [showMarketplace, setShowMarketplace] = useState(false);
-  const [initialAction, setInitialAction] = useState<"sell" | null>(null);
+  const [initialAction, setInitialAction] = useState<"sell" | "shop" | null>(null);
   const [initialProductId, setInitialProductId] = useState<string | null>(null);
 
   const openShop = useCallback((productId?: string) => {
-    setInitialAction(null);
+    setInitialAction(productId ? null : "shop");
     setInitialProductId(productId ?? null);
     setShowMarketplace(true);
   }, []);

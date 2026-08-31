@@ -1392,7 +1392,7 @@ function WishlistView({ wishlistIds, onProduct, onCart, onWishlist }: {
 
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-interface VinkMarketplaceProps { isOpen: boolean; onClose: () => void; initialAction?: "sell" | null; initialProductId?: string | null }
+interface VinkMarketplaceProps { isOpen: boolean; onClose: () => void; initialAction?: "sell" | "shop" | null; initialProductId?: string | null }
 
 export function VinkMarketplace({ isOpen, onClose, initialAction, initialProductId }: VinkMarketplaceProps) {
   const currency = useCurrency(); // subscribes this whole tree to live currency/rate updates
@@ -1425,7 +1425,8 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
 
   useEffect(() => {
     if (isOpen && initialProductId) { setSelProductId(initialProductId); setView("product"); }
-  }, [isOpen, initialProductId]);
+    else if (isOpen && initialAction === "shop") { setView("catalog"); }
+  }, [isOpen, initialAction, initialProductId]);
 
   const loadInitial = useCallback(async () => {
     const promises: Promise<unknown>[] = [mktCategories(), mktProducts.list({ sort: "popular", limit: "48" })];
