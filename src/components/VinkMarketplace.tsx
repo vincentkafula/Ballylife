@@ -124,11 +124,11 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
   const imgs = p.images as string[];
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-xl hover:-translate-y-0.5 hover:border-[#D4A54A]/40 transition-all duration-200 group" style={{ boxShadow: "0 1px 3px rgba(20,17,13,0.06)" }}>
-      {/* Image */}
-      <div className="relative cursor-pointer" style={{ height: 180 }} onClick={onView}>
-        <div className="w-full h-full flex items-center justify-center text-7xl"
-          style={{ background: `linear-gradient(135deg,${imgs?.[0] ?? "#F3F4F6"},${imgs?.[1] ?? "#E5E7EB"})` }}>
+    <div className="bg-white rounded-lg overflow-hidden border border-gray-200 hover:shadow-lg hover:border-[#D4A54A]/50 transition-all duration-200 group flex flex-col h-full" style={{ boxShadow: "0 1px 2px rgba(20,17,13,0.05)" }}>
+      {/* Image — portrait, not square, on a neutral mat like real product photography would sit on */}
+      <div className="relative cursor-pointer bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
+        <div className="absolute inset-0 flex items-center justify-center text-6xl p-6"
+          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"}22,${imgs?.[1] ?? "#E5E7EB"}33)` }}>
           {PRODUCT_ILLUSTRATIONS[p.id as string]
             ? <div className="w-24 h-24">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
             : (p.emoji as string)}
@@ -149,27 +149,29 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
         </button>
       </div>
 
-      <div className="p-3 cursor-pointer" onClick={onView}>
+      <div className="p-3 cursor-pointer flex-1 flex flex-col" onClick={onView}>
         <p className="text-[10px] text-gray-400 mb-0.5">{p.brand as string}</p>
-        <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mb-1">{p.name as string}</p>
+        <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mb-1.5">{p.name as string}</p>
         <div className="flex items-center gap-1 mb-2">
           <Stars rating={Number(p.avgRating)} size={11} />
           <span className="text-[10px] text-gray-400">({Number(p.reviewCount).toLocaleString()})</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-base font-black text-gray-900">{fmtZAR(Number(p.price))}</span>
-          {p.compareAtPrice && (
-            <span className="text-xs text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
+        <div className="mt-auto">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-black text-gray-900">{fmtZAR(Number(p.price))}</span>
+            {p.compareAtPrice && (
+              <span className="text-xs text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
+            )}
+          </div>
+          {Number(p.stock) > 0 && Number(p.stock) < 10 && (
+            <p className="text-[10px] text-orange-500 font-semibold mt-0.5">Only {p.stock as number} left</p>
           )}
         </div>
-        {Number(p.stock) > 0 && Number(p.stock) < 10 && (
-          <p className="text-[10px] text-orange-500 font-semibold mt-0.5">Only {p.stock as number} left</p>
-        )}
       </div>
 
       <div className="px-3 pb-3">
         <button onClick={e => { e.stopPropagation(); onCart(); }}
-          className="w-full py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90"
+          className="w-full py-2 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90"
           style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
           <ShoppingCart className="w-3.5 h-3.5" />Add to Cart
         </button>
@@ -199,16 +201,16 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
     ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
   const imgs = p.images as string[];
   return (
-    <div className="bg-white border border-gray-200 flex flex-col cursor-pointer hover:shadow-md transition-shadow min-w-[150px] max-w-[190px] flex-shrink-0">
-      <div className="relative" onClick={onView}>
-        <div className="w-full flex items-center justify-center text-5xl py-4"
-          style={{ background: `linear-gradient(135deg,${imgs?.[0] ?? "#f5f5f5"},${imgs?.[1] ?? "#e8e8e8"})`, minHeight: 100 }}>
+    <div className="bg-white rounded-lg border border-gray-200 flex flex-col cursor-pointer hover:shadow-md transition-shadow min-w-[160px] max-w-[190px] flex-shrink-0 overflow-hidden">
+      <div className="relative bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
+        <div className="absolute inset-0 flex items-center justify-center text-5xl p-5"
+          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#f5f5f5"}22,${imgs?.[1] ?? "#e8e8e8"}33)` }}>
           {PRODUCT_ILLUSTRATIONS[p.id as string]
             ? <div className="w-16 h-16">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
             : (p.emoji as string)}
         </div>
         {discount > 0 && (
-          <div className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5">-{discount}%</div>
+          <div className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">-{discount}%</div>
         )}
       </div>
       <div className="p-2 flex flex-col flex-1">
@@ -228,7 +230,7 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
           )}
           <p className="text-sm font-bold text-gray-900 mb-2">{fmtZAR(Number(p.price))}</p>
           <button onClick={e => { e.stopPropagation(); onCart(); }}
-            className="w-full text-xs font-semibold py-1.5 border-2 transition-colors hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
+            className="w-full text-xs font-semibold py-1.5 rounded-md border-2 transition-colors hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
             style={{ borderColor: "#B8862E", color: "#B8862E" }}>
             Add to cart
           </button>
