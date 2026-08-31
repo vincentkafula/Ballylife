@@ -287,11 +287,11 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
 // ─── HOME ──────────────────────────────────────────────────────────────────────
 // ─── Home: static product rows ────────────────────────────────────────────────
 const DEPARTMENTS = [
-  "Electronics & DJI", "Baby & Toddler", "Books & Comics", "Camping & Outdoor",
-  "Cellphones & Smartphones", "DIY", "Fashion & Luggage", "Computers & Electronics",
-  "Drinks", "Garden, Pool & Patio", "Groceries & Household", "Health & Personal Care",
-  "Home & Appliances", "Liquor", "Office & Stationery", "Pet", "Sport & Training",
-  "Toys", "TV Audio & Media",
+  "New Arrivals", "Appliances", "Automotive & DIY", "Baby & Toddler", "Beauty",
+  "Books & Courses", "Camping & Outdoor", "Clothing & Shoes", "Electronics",
+  "Gaming & Media", "Garden, Pool & Patio", "Groceries & Household",
+  "Health & Personal Care", "Homeware", "Liquor", "Office & Stationery",
+  "Pets", "Sport & Training", "Toys",
 ];
 
 const CAT_STRIP_LABELS = [
@@ -1620,8 +1620,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           <div className="hidden sm:flex items-center bg-[#E8E8E8] hover:bg-[#DDD] px-2 text-[11px] text-gray-700 border-r border-gray-300 shrink-0 cursor-pointer relative group">
             All <ChevronDown className="w-3 h-3 ml-1" />
             <div className="absolute top-full left-0 mt-0 w-56 max-h-96 overflow-y-auto bg-white text-gray-800 rounded-b shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
-              <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">Shop by Department</div>
-              {DEPARTMENTS.map((dept) => (
+              <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">All Categories</div>
+              <button onClick={() => setView("catalog")}
+                className="w-full text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors" style={{ color: "#B8862E" }}>
+                {DEPARTMENTS[0]}
+              </button>
+              {DEPARTMENTS.slice(1).map((dept) => (
                 <button key={dept} onClick={() => setView("catalog")}
                   className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#B8862E] transition-colors">
                   {dept}
