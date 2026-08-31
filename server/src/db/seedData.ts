@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import type { Seller, Category, Product, Coupon } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -45,9 +46,9 @@ const SEED: Omit<Product, "id" | "slug" | "createdAt" | "updatedAt">[] = [
   { sellerId:"sel-06", sellerName:"BookWorld", categoryId:"cat-06", categoryName:"Books & Media", name:"Atomic Habits", shortDescription:"Proven framework for building good habits", description:"A bestselling guide to making small changes that deliver remarkable results.", price:149, compareAtPrice:179, currency:"ZMW", images:["#1A237E","#283593"], emoji:"📖", status:"active", stock:500, sku:"BK-AH", brand:"BookWorld Press", tags:["self-help","habits","bestseller"], attributes:{Format:"Paperback",Pages:"320"}, variants:[{id:vid(),type:"style",value:"Paperback",additionalPrice:0,stock:400,sku:"AH-PB"},{id:vid(),type:"style",value:"Hardcover",additionalPrice:60,stock:100,sku:"AH-HC"}], avgRating:4.9, reviewCount:1204, totalSold:892, isFeatured:true, isFlashDeal:false, flashDealEndsAt:null },
 ];
 
-export const PRODUCTS: Product[] = SEED.map((p, i) => ({
+export const PRODUCTS: Product[] = SEED.map((p) => ({
   ...p,
-  id: `prod-${String(i + 1).padStart(3, "0")}`,
+  id: randomUUID(),
   slug: p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
   createdAt: ago(rand(720, 43800)),
   updatedAt: ago(rand(0, 720)),
