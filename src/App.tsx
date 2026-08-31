@@ -1,5 +1,6 @@
 import { useState, useCallback, Suspense, lazy } from "react";
 import { Toaster } from "sonner";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const MarketplaceLandingViewer = lazy(() =>
   import("./components/MarketplaceLandingViewer").then((m) => ({ default: m.MarketplaceLandingViewer }))
@@ -37,22 +38,26 @@ export default function App() {
 
   return (
     <>
-      <Suspense fallback={null}>
-        <MarketplaceLandingViewer
-          isOpen={!showMarketplace}
-          onClose={() => { /* nothing above this to close to — landing is the home view */ }}
-          onShop={openShop}
-          onSell={openSell}
-        />
-      </Suspense>
-      <Suspense fallback={null}>
-        <VinkMarketplace
-          isOpen={showMarketplace}
-          onClose={closeMarketplace}
-          initialAction={initialAction}
-          initialProductId={initialProductId}
-        />
-      </Suspense>
+      <ErrorBoundary label="Marketplace Landing">
+        <Suspense fallback={null}>
+          <MarketplaceLandingViewer
+            isOpen={!showMarketplace}
+            onClose={() => { /* nothing above this to close to — landing is the home view */ }}
+            onShop={openShop}
+            onSell={openSell}
+          />
+        </Suspense>
+      </ErrorBoundary>
+      <ErrorBoundary label="Marketplace">
+        <Suspense fallback={null}>
+          <VinkMarketplace
+            isOpen={showMarketplace}
+            onClose={closeMarketplace}
+            initialAction={initialAction}
+            initialProductId={initialProductId}
+          />
+        </Suspense>
+      </ErrorBoundary>
       <Toaster position="top-right" richColors closeButton duration={4000} />
     </>
   );
