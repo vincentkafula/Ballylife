@@ -44,6 +44,20 @@ type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "w
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
+// ─── Recently viewed products (localStorage, no backend needed) ───────────
+const RECENT_KEY = "ballylife_recently_viewed";
+function getRecentlyViewed(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]"); } catch { return []; }
+}
+function addRecentlyViewed(id: string) {
+  const list = getRecentlyViewed().filter(x => x !== id);
+  list.unshift(id);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 12))); } catch { /* storage unavailable */ }
+}
+function clearRecentlyViewed() {
+  try { localStorage.removeItem(RECENT_KEY); } catch { /* storage unavailable */ }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtZAR = formatZAR; // now converts + formats in the shopper's local currency
 const ago = (iso: string) => {
@@ -457,6 +471,15 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
   const featured = products.filter(p => p.isFeatured);
   const topPicks = products.slice(0, 78);
   const sellers = Array.from(new Set(products.map(p => p.sellerName as string))).slice(0, 6);
+  const brands = Array.from(new Set(products.map(p => p.brand as string))).filter(Boolean).slice(0, 8);
+
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  useEffect(() => { setRecentIds(getRecentlyViewed()); }, []);
+  const recentProducts = recentIds
+    .map(id => products.find(p => String(p.id) === id))
+    .filter((p): p is R => Boolean(p));
+  const brandsSlide = useManualSlide<HTMLDivElement>();
+  const recentSlide = useManualSlide<HTMLDivElement>();
 
   const BENEFITS = [
     { icon: <Truck className="w-4 h-4" />,   label: "Free Delivery",    sub: "On orders over R500" },
@@ -527,11 +550,52 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         ))}
       </div>
 
-      {/* ── Top Picks — 6 across ── */}
+      {/* ── Featured Brands ── */}
+      {brands.length > 0 && (
+        <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
+          <p className="font-serif text-base text-gray-900 mb-3" style={{ fontWeight: 600 }}>Featured Brands</p>
+          <div className="relative">
+            {brands.length > 5 && <SlideArrows onLeft={brandsSlide.scrollLeft} onRight={brandsSlide.scrollRight} />}
+            <div ref={brandsSlide.ref} className="flex items-center gap-8 overflow-x-auto scroll-smooth px-8" style={{ scrollbarWidth: "none" }}>
+              {brands.map((b) => (
+                <span key={b} className="shrink-0 font-serif text-xl text-gray-400 hover:text-gray-700 transition-colors whitespace-nowrap cursor-default" style={{ fontWeight: 700 }}>
+                  {b}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pick Up Where You Left Off ── */}
+      {recentProducts.length > 0 && (
+        <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Pick Up Where You Left Off</span>
+            <div className="flex items-center gap-2">
+              <button onClick={onCategory} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors">View More</button>
+              <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors">Clear All</button>
+            </div>
+          </div>
+          <div className="relative">
+            {recentProducts.length > 5 && <SlideArrows onLeft={recentSlide.scrollLeft} onRight={recentSlide.scrollRight} />}
+            <div ref={recentSlide.ref} className="flex gap-3 overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
+              {recentProducts.map((p, i) => (
+                <div key={i} className="w-40 shrink-0">
+                  <ProductCard p={p} onView={() => onProduct(p)} onCart={() => onCart(p)}
+                    wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(p.id))} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── What to Explore Next — 6 across ── */}
       {topPicks.length > 0 && (
         <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Top Picks: Loved by You</span>
+            <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>What to Explore Next</span>
             <button onClick={onCategory} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -748,7 +812,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
   useEffect(() => {
     setLoading(true);
     mktProducts.get(productId)
-      .then(res => { setData(res.data as typeof data); setLoading(false); })
+      .then(res => { setData(res.data as typeof data); setLoading(false); addRecentlyViewed(productId); })
       .catch(() => setLoading(false));
   }, [productId]);
 
