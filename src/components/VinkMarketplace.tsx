@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import {
-  X, Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
+  Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
   Package, Truck, CheckCircle, Tag, TrendingUp, BarChart3,
   Settings, Menu, Clock, Shield, Zap, RotateCcw, Loader2,
@@ -36,6 +36,7 @@ import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
+import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -577,6 +578,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             ))}
           </div>
 
+          <Footer />
         </div>
       </div>
     </div>
@@ -594,8 +596,6 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
   const [activeCat, setActiveCat] = useState("");
   const [sort, setSort]         = useState("popular");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [suggests, setSuggests] = useState<R[]>([]);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => { if (initialSearch) setSearch(initialSearch); }, [initialSearch]);
 
@@ -609,39 +609,13 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
 
   useEffect(() => { load(); }, [load]);
 
-  const handleSearch = (v: string) => {
-    setSearch(v);
-    clearTimeout(timer.current);
-    if (v.length > 1) {
-      timer.current = setTimeout(async () => {
-        const res = await mktProducts.suggest(v);
-        setSuggests(res.data as R[]);
-      }, 300);
-    } else { setSuggests([]); }
-  };
-
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
       {/* Top filters bar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-white flex-shrink-0 flex-wrap">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input value={search} onChange={e => handleSearch(e.target.value)}
-            placeholder="Search products, brands…"
-            className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl outline-none focus:border-emerald-400" />
-          {suggests.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden">
-              {suggests.map((s, i) => (
-                <button key={i} onClick={() => { setSearch(String(s.name)); setSuggests([]); }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 border-b last:border-0 border-gray-50">
-                  <span className="text-lg">{s.emoji as string}</span>
-                  <p className="text-sm font-medium text-gray-900 flex-1 text-left truncate">{s.name as string}</p>
-                  <p className="text-sm font-bold flex-shrink-0" style={{ color: "#128A43" }}>{fmtZAR(Number(s.price))}</p>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Active search / category context, if any */}
+        <div className="flex-1 min-w-[120px] text-sm font-semibold text-gray-700">
+          {search ? `Results for "${search}"` : "All products"}
         </div>
         {/* Sort */}
         <select value={sort} onChange={e => setSort(e.target.value)}
@@ -681,6 +655,11 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
 
       {/* Products */}
       <div className="flex-1 overflow-y-auto p-4" style={{ background: "#F8F7FF" }}>
+        {!loading && !activeCat && !search && products.length > 0 && (
+          <div className="-mx-4 -mt-4 mb-4">
+            <ProductRow title="Popular right now" products={products} onProduct={onProduct} onCart={onCart} slice={[0, 10]} />
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#128A43" }} />
@@ -727,6 +706,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
             })}
           </div>
         )}
+        <Footer />
       </div>
     </div>
   );
@@ -1013,6 +993,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           </div>
         </div>
       )}
+      <Footer />
     </div>
   );
 }
@@ -1393,9 +1374,9 @@ function WishlistView({ wishlistIds, onProduct, onCart, onWishlist }: {
 
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-interface VinkMarketplaceProps { isOpen: boolean; onClose: () => void; initialAction?: "sell" | "shop" | null; initialProductId?: string | null }
+interface VinkMarketplaceProps { initialAction?: "sell" | "shop" | null; initialProductId?: string | null }
 
-export function VinkMarketplace({ isOpen, onClose, initialAction, initialProductId }: VinkMarketplaceProps) {
+export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketplaceProps) {
   const currency = useCurrency(); // subscribes this whole tree to live currency/rate updates
   const [view, setView]           = useState<View>("home");
   const [categories, setCategories] = useState<R[]>([]);
@@ -1426,13 +1407,13 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
   }, []);
 
   useEffect(() => {
-    if (isOpen && initialAction === "sell" && !mktAuth.restoreSession()) setShowAuthModal(true);
-  }, [isOpen, initialAction]);
+    if (initialAction === "sell" && !mktAuth.restoreSession()) setShowAuthModal(true);
+  }, [initialAction]);
 
   useEffect(() => {
-    if (isOpen && initialProductId) { setSelProductId(initialProductId); setView("product"); }
-    else if (isOpen && initialAction === "shop") { setView("catalog"); }
-  }, [isOpen, initialAction, initialProductId]);
+    if (initialProductId) { setSelProductId(initialProductId); setView("product"); }
+    else if (initialAction === "shop") { setView("catalog"); }
+  }, [initialAction, initialProductId]);
 
   const loadInitial = useCallback(async () => {
     const promises: Promise<unknown>[] = [mktCategories(), mktProducts.list({ sort: "popular", limit: "48" })];
@@ -1450,10 +1431,8 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
     }
   }, [authUser]);
 
-  useEffect(() => { if (isOpen) loadInitial(); }, [isOpen, loadInitial]);
+  useEffect(() => { loadInitial(); }, [loadInitial]);
   useEffect(() => { setCartCount(((cart?.items as R[]) ?? []).length); }, [cart]);
-
-  if (!isOpen) return null;
 
   const handleAddToCart = async (p: R, variantId?: string) => {
     if (!authUser) { setShowAuthModal(true); return; }
@@ -1667,10 +1646,6 @@ export function VinkMarketplace({ isOpen, onClose, initialAction, initialProduct
               <span className="hidden lg:inline text-xs font-bold pb-1">Cart</span>
             </button>
           )}
-
-          <button onClick={onClose} className="p-2 rounded border border-transparent hover:border-white/40 text-white/70 ml-1">
-            <X className="w-4 h-4" />
-          </button>
         </div>
       </header>
 

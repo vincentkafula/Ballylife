@@ -1,103 +1,77 @@
-import ballylifeLogo from "../imports/ballylife-logo.png";
+import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 
-const BG       = "#0B2E1C";
-const DARK_BAR = "#1A0F4A";
-const CARD_BG  = "#5B21B6";
-const LINK_HL  = "#00BFFF";
+const BG      = "#FAF8F3";
+const HEADING = "#1B2A4A";
+const LINK    = "#3B5A8A";
+const BAR_BLUE = "#0071CE";
 
 const COLS = [
   {
     title: "Shop",
-    links: [
-      "All Categories",
-      "Today's Deals",
-      "New Arrivals",
-      "Track My Order",
-      "Returns & Refunds",
-    ],
+    links: ["Deals", "ALOT For Less", "Clearance Sale", "Gift Vouchers", "Ballylife Deals"],
   },
   {
-    title: "Sell on Ballylife",
-    links: [
-      "Become a Seller",
-      "Seller Dashboard",
-      "Seller Help Centre",
-      "Fees & Commission",
-    ],
+    title: "Account",
+    links: ["My Account", "Track Order", "Returns", "Invoices", "Ballylife", "Coupons", "Personal Details"],
+  },
+  {
+    title: "Help",
+    links: ["Help Centre", "Contact Us", "Returns", "Submit an Idea", "Suggest a Product", "Shipping & Delivery", "Ballylife Pickup Points", "Log Intellectual Property Complaint"],
   },
   {
     title: "Company",
-    links: [
-      "About Ballylife",
-      "Careers",
-      "Contact Us",
-    ],
+    links: ["About Us", "Careers", "Sell on Ballylife", "Deliver for Ballylife", "Press & News", "Competitions", "Ballylife for Business", "Ballylife Home Loan Hub", "Ballylife.credit"],
   },
   {
-    title: "Legal",
-    links: [
-      "Terms of Use",
-      "Privacy Statement",
-      "Returns Policy",
-    ],
+    title: "Terms and Policies",
+    links: ["Platform Terms", "Returns Policy", "Privacy Policy", "BallylifeMORE Terms", "Ballylife for Business Terms", "Ballylife.credit Terms", "Responsible Disclosure Policy", "Human Rights Statement", "Speak Up Process", "Code of Advertising Practice"],
   },
-  {
-    title: "Support",
-    links: [
-      "Help Centre",
-      "Send Feedback",
-    ],
-  },
+];
+
+const CATEGORY_LINKS = [
+  "Automotive", "Baby & Toddler", "Beauty", "Books", "Cameras", "Camping & Outdoors",
+  "Cellphones & Wearables", "Computers & Tablets", "DIY Tools & Machinery", "Fashion", "Gaming",
+  "Garden, Pool & Patio", "Health", "Home & Kitchen", "Household, Food & Beverages", "Liquor",
+  "Luggage & Travel", "Movies & Series", "Music", "Office & Stationery", "Pets", "Sport",
+  "TV, Audio & Video", "Toys", "Vouchers",
 ];
 
 const SOCIALS = [
-  {
-    label: "Facebook",
-    icon: (
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="white">
-        <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-      </svg>
-    ),
-  },
-  {
-    label: "Twitter",
-    icon: (
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="white">
-        <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
-      </svg>
-    ),
-  },
-  {
-    label: "Instagram",
-    icon: (
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="white" strokeWidth="2">
-        <rect x="2" y="2" width="20" height="20" rx="5" />
-        <circle cx="12" cy="12" r="4" />
-        <circle cx="17.5" cy="6.5" r="1" fill="white" stroke="none" />
-      </svg>
-    ),
-  },
+  { label: "Facebook", bg: "#1877F2", icon: (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="white"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" /></svg>
+  ) },
+  { label: "X", bg: "#000000", icon: (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="white"><path d="M18.9 2H22l-7.6 8.7L23.3 22h-7.1l-5.6-6.9L4.2 22H1l8.2-9.3L1 2h7.3l5 6.4L18.9 2Zm-1.2 18h1.9L7.4 4H5.4l12.3 16Z"/></svg>
+  ) },
+  { label: "Instagram", bg: "linear-gradient(45deg,#F58529,#DD2A7B,#8134AF,#515BD4)", icon: (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="white" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="1" fill="white" stroke="none" /></svg>
+  ) },
 ];
 
-function LinkColumn({ title, links, onLinkClick }: { title: string; links: string[]; onLinkClick?: (label: string) => void }) {
+const PAYMENT_BADGES = [
+  "VISA", "Mastercard", "American Express", "Diners Club", "PayFast", "Ozow",
+  "eBucks", "Mobicred", "Discovery Miles", "PayFlex", "PayJustNow",
+];
+
+const APP_BADGES = [
+  { store: "App Store", cta: "Download on the", brand: "App Store" },
+  { store: "Google Play", cta: "GET IT ON", brand: "Google Play" },
+  { store: "AppGallery", cta: "EXPLORE IT ON", brand: "AppGallery" },
+];
+
+function LinkColumn({ title, links, onLinkClick }: { title: string; links: string[]; onLinkClick: (label: string) => void }) {
   return (
     <div>
-      {/* Column heading with accent underline */}
-      <div style={{ marginBottom: 18 }}>
-        <p style={{ color: "#fff", fontSize: 16, fontWeight: 700, lineHeight: "22px", letterSpacing: "0.01em" }}>
-          {title}
-        </p>
-        <div style={{ width: 28, height: 2, background: LINK_HL, borderRadius: 2, marginTop: 6 }} />
-      </div>
-      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+      <p style={{ color: HEADING, fontSize: 16, fontWeight: 800, marginBottom: 14 }}>{title}</p>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 11 }}>
         {links.map((l) => (
           <li key={l}>
             <a
               href="#"
-              onClick={(e) => { e.preventDefault(); onLinkClick?.(l); }}
-              style={{ color: "rgba(255,255,255,0.68)", fontSize: 14, lineHeight: "20px", textDecoration: "none", display: "block" }}
-              onMouseEnter={(e) => { (e.target as HTMLAnchorElement).style.color = "#fff"; (e.target as HTMLAnchorElement).style.paddingLeft = "4px"; }}
-              onMouseLeave={(e) => { (e.target as HTMLAnchorElement).style.color = "rgba(255,255,255,0.68)"; (e.target as HTMLAnchorElement).style.paddingLeft = "0"; }}
+              onClick={(e) => { e.preventDefault(); onLinkClick(l); }}
+              style={{ color: LINK, fontSize: 14, lineHeight: "19px", textDecoration: "none" }}
+              onMouseEnter={(e) => { (e.target as HTMLAnchorElement).style.textDecoration = "underline"; }}
+              onMouseLeave={(e) => { (e.target as HTMLAnchorElement).style.textDecoration = "none"; }}
             >
               {l}
             </a>
@@ -111,39 +85,48 @@ function LinkColumn({ title, links, onLinkClick }: { title: string; links: strin
 export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void }) {
   // Falls back to a global CustomEvent when no explicit handler is passed,
   // so pages that render Footer don't all need to prop-drill a handler
-  // through from App.tsx.
+  // through from App.tsx. None of these link out anywhere real yet --
+  // they're the footer's structure, not wired-up destinations.
   const handleLinkClick = onLinkClick ?? ((label: string) => {
     window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
   });
+
   return (
-    <footer style={{ background: BG, fontFamily: "'Inter','Roboto',sans-serif" }}>
+    <footer style={{ background: BG, fontFamily: "'Inter','Roboto',sans-serif", borderTop: "1px solid #E8E4DA" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 40px 32px" }}>
 
-      {/* ── SECTION 1: Main columns ─────────────────────────────────────────── */}
-      <div style={{ maxWidth: 1080, margin: "0 auto", padding: "64px 40px 56px" }}>
+        {/* Link columns */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "32px 24px", marginBottom: 40 }}>
+          {COLS.map((c) => (
+            <LinkColumn key={c.title} title={c.title} links={c.links} onLinkClick={handleLinkClick} />
+          ))}
+        </div>
 
-        {/* Top strip: wordmark + social */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 20, marginBottom: 48, paddingBottom: 32, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-          <img src={ballylifeLogo} alt="Ballylife" style={{ height: 64, width: "auto" }} />
+        {/* Apps + social */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "32px 64px", marginBottom: 32 }}>
+          <div>
+            <p style={{ color: HEADING, fontSize: 16, fontWeight: 800, marginBottom: 14 }}>Download Our Apps</p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {APP_BADGES.map((a) => (
+                <div key={a.store} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#000", borderRadius: 8, padding: "7px 14px",
+                  opacity: 0.85, cursor: "default",
+                }}>
+                  <span style={{ color: "#fff", fontSize: 9, lineHeight: 1.3 }}>
+                    {a.cta}<br /><strong style={{ fontSize: 13 }}>{a.brand}</strong>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
-            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", margin: 0 }}>
-              Follow Us
-            </p>
+          <div>
+            <p style={{ color: HEADING, fontSize: 16, fontWeight: 800, marginBottom: 14 }}>Follow Us</p>
             <div style={{ display: "flex", gap: 10 }}>
               {SOCIALS.map((s) => (
-                <a
-                  key={s.label}
-                  href="#"
-                  title={s.label}
-                  style={{
-                    width: 34, height: 34, borderRadius: "50%",
-                    background: "rgba(255,255,255,0.12)",
-                    border: "1px solid rgba(255,255,255,0.18)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = CARD_BG; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.background = "rgba(255,255,255,0.12)"; }}
+                <a key={s.label} href="#" title={s.label}
+                  style={{ width: 32, height: 32, borderRadius: "50%", background: s.bg, display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
                   {s.icon}
                 </a>
@@ -152,89 +135,38 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
           </div>
         </div>
 
-        {/* Link columns + download card */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "40px 32px" }}>
-          <LinkColumn title={COLS[0].title} links={COLS[0].links} onLinkClick={handleLinkClick} />
-          <LinkColumn title={COLS[1].title} links={COLS[1].links} onLinkClick={handleLinkClick} />
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 36 }}>
-            <LinkColumn title={COLS[2].title} links={COLS[2].links} onLinkClick={handleLinkClick} />
-            <LinkColumn title={COLS[3].title} links={COLS[3].links} onLinkClick={handleLinkClick} />
-          </div>
-
-          <LinkColumn title={COLS[4].title} links={COLS[4].links} onLinkClick={handleLinkClick} />
-
-          {/* ── Download apps ────────────────────────── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* App Store -- Coming Soon: not yet published */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 12,
-              background: "linear-gradient(180deg,#1a1a1a,#000)", borderRadius: 10,
-              padding: "11px 18px",
-              border: "1px solid rgba(255,255,255,0.15)",
-              opacity: 0.55,
-            }}>
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="white">
-                <path d="M17.05 12.5c-.03-2.4 1.96-3.56 2.05-3.61-1.12-1.63-2.86-1.86-3.48-1.88-1.48-.15-2.89.87-3.64.87-.75 0-1.9-.85-3.13-.83-1.6.02-3.09.94-3.92 2.38-1.68 2.9-.43 7.19 1.2 9.55.8 1.15 1.75 2.45 3 2.4 1.21-.05 1.66-.78 3.12-.78 1.46 0 1.87.78 3.15.75 1.3-.02 2.13-1.17 2.92-2.32.92-1.33 1.3-2.62 1.32-2.69-.03-.01-2.53-.97-2.56-3.84h-.03z"/>
-                <path d="M14.7 5.42c.66-.8 1.11-1.92 .99-3.03-.95.04-2.11.63-2.8 1.43-.61.7-1.15 1.86-1 2.94 1.06.08 2.15-.53 2.81-1.34z"/>
-              </svg>
-              <div>
-                <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 9.5, lineHeight: 1, margin: 0, letterSpacing: "0.06em" }}>App Store</p>
-                <p style={{ color: "#fff", fontSize: 15, fontWeight: 600, lineHeight: "20px", margin: "3px 0 0", letterSpacing: "-0.01em" }}>Coming Soon</p>
-              </div>
-            </div>
-
-            {/* Google Play -- Coming Soon: not yet published */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 12,
-              background: "linear-gradient(180deg,#1a1a1a,#000)", borderRadius: 10,
-              padding: "11px 18px",
-              border: "1px solid rgba(255,255,255,0.15)",
-              opacity: 0.55,
-            }}>
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none">
-                <path d="M3 3L13.5 12 3 21V3Z"           fill="#EA4335" />
-                <path d="M3 3L13.5 12 21 7.5 7.5 1 3 3Z" fill="#FBBC04" />
-                <path d="M3 21L13.5 12 21 16.5 7.5 23 3 21Z" fill="#34A853" />
-                <path d="M13.5 12L21 7.5V16.5L13.5 12Z"  fill="#4285F4" />
-              </svg>
-              <div>
-                <p style={{ color: "rgba(255,255,255,0.6)", fontSize: 9.5, lineHeight: 1, margin: 0, letterSpacing: "0.06em" }}>Google Play</p>
-                <p style={{ color: "#fff", fontSize: 15, fontWeight: 600, lineHeight: "20px", margin: "3px 0 0", letterSpacing: "-0.01em" }}>Coming Soon</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── SECTION 2: Dark bottom bar ──────────────────────────────────────── */}
-      <div style={{ background: DARK_BAR }}>
-        <div style={{ maxWidth: 1080, margin: "0 auto", padding: "0 40px" }}>
-          {/* Legal links row */}
-          <div style={{ height: 56, display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: "6px 0" }}>
-            {["Terms Of Use", "Privacy Statement"].map((item, i, arr) => (
-              <span key={item} style={{ display: "flex", alignItems: "center" }}>
-                <a href="#" onClick={(e) => { e.preventDefault(); handleLinkClick(item); }} style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: 700, textDecoration: "none", padding: "0 12px", whiteSpace: "nowrap" }}
-                  onMouseEnter={(e) => { (e.target as HTMLAnchorElement).style.color = "#fff"; }}
-                  onMouseLeave={(e) => { (e.target as HTMLAnchorElement).style.color = "rgba(255,255,255,0.55)"; }}
+        {/* Category links */}
+        <div style={{ borderTop: "1px solid #E8E4DA", paddingTop: 20 }}>
+          <p style={{ fontSize: 13, lineHeight: "26px" }}>
+            {CATEGORY_LINKS.map((c, i) => (
+              <span key={c}>
+                <a href="#" onClick={(e) => { e.preventDefault(); handleLinkClick(c); }} style={{ color: LINK, textDecoration: "none" }}
+                  onMouseEnter={(e) => { (e.target as HTMLAnchorElement).style.textDecoration = "underline"; }}
+                  onMouseLeave={(e) => { (e.target as HTMLAnchorElement).style.textDecoration = "none"; }}
                 >
-                  {item}
+                  {c}
                 </a>
-                {i < arr.length - 1 && (
-                  <span style={{ color: "rgba(255,255,255,0.2)", fontSize: 12 }}>|</span>
-                )}
+                {i < CATEGORY_LINKS.length - 1 && <span style={{ color: "#B8B2A3" }}> &nbsp;/&nbsp; </span>}
               </span>
             ))}
-          </div>
-          {/* Copyright */}
-          <div style={{ paddingBottom: 16, textAlign: "center" }}>
-            <p style={{ color: "rgba(255,255,255,0.28)", fontSize: 12, margin: 0 }}>
-              © Copyright Ballylife. All Rights Reserved.
-            </p>
-          </div>
+          </p>
         </div>
       </div>
 
+      {/* Bottom bar */}
+      <div style={{ background: BAR_BLUE }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "16px 40px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            {PAYMENT_BADGES.map((p) => (
+              <span key={p} style={{ color: "#fff", fontSize: 12, fontWeight: 700, opacity: 0.92, whiteSpace: "nowrap" }}>{p}</span>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img src={ballylifeLogo} alt="" style={{ height: 20, width: "auto", filter: "brightness(0) invert(1)" }} />
+            <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }}>© Ballylife Online (Pty) Ltd.</span>
+          </div>
+        </div>
+      </div>
     </footer>
   );
 }
