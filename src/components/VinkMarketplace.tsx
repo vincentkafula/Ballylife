@@ -352,6 +352,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
   onCart: (p: R) => void; wishlistIds: Set<string>; onWishlist: (id: string) => void;
 }) {
   const [activeCatStrip, setActiveCatStrip] = useState(0);
+  const [showDepartments, setShowDepartments] = useState(false);
   const flashDeals = products.filter(p => p.isFlashDeal);
   const featured   = products.filter(p => p.isFeatured);
   // Rotate the full product pool per row (instead of thin fixed slices) so every
@@ -409,8 +410,14 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* ── Departments sidebar ── */}
         <aside className="hidden md:flex flex-col w-44 flex-shrink-0 bg-white border-r border-gray-200 overflow-y-auto">
-          <div className="px-3 py-2 text-[11px] font-bold text-gray-500 uppercase tracking-wide border-b border-gray-100">Departments</div>
-          {DEPARTMENTS.map((dept) => (
+          <button
+            onClick={() => setShowDepartments(v => !v)}
+            className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold text-gray-500 uppercase tracking-wide border-b border-gray-100 hover:text-gray-800 transition-colors"
+          >
+            Departments
+            <ChevronDown className={`w-3 h-3 transition-transform ${showDepartments ? "rotate-180" : ""}`} />
+          </button>
+          {showDepartments && DEPARTMENTS.map((dept) => (
             <button key={dept} onClick={onCategory}
               className="w-full text-left px-3 py-2 text-[11px] text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors border-b border-gray-50 leading-snug">
               {dept}
