@@ -3,7 +3,7 @@ import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 const BG      = "#FAF6EC";
 const HEADING = "#211C16";
 const LINK    = "#6B5A3E";
-const BAR_BLUE = "#D2691E";
+const BAR_BLUE = "#1E7B4D";
 
 const COLS = [
   {

@@ -1590,12 +1590,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#EAEDED]" style={{ fontFamily: "'Amazon Ember', Arial, sans-serif" }}>
       {/* ── Tier 1: dark top strip ── */}
-      <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#D2691E" }}>
+      <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#1E7B4D" }}>
         <button
           onClick={() => { setView("home"); }}
-          className="flex items-center px-3 py-1.5 rounded-lg bg-white shrink-0 hover:opacity-90 transition-opacity"
+          className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity"
         >
-          <img src={ballylifeLogo} alt="Ballylife" className="h-8 w-auto" />
+          <img src={ballylifeLogo} alt="Ballylife" className="h-9 w-auto" />
         </button>
 
         <div className="relative group hidden lg:block shrink-0">
