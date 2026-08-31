@@ -5,7 +5,7 @@ import {
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
   Package, Truck, CheckCircle, Tag, TrendingUp, BarChart3,
   Settings, Menu, Clock, Shield, Zap, RotateCcw, Loader2,
-  Home, Filter, MapPin, ChevronDown, User, LogOut,
+  Home, Filter, MapPin, ChevronDown, User, LogOut, ShoppingBag,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
@@ -479,7 +479,6 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
     .map(id => products.find(p => String(p.id) === id))
     .filter((p): p is R => Boolean(p));
   const brandsSlide = useManualSlide<HTMLDivElement>();
-  const recentSlide = useManualSlide<HTMLDivElement>();
 
   const BENEFITS = [
     { icon: <Truck className="w-4 h-4" />,   label: "Free Delivery",    sub: "On orders over R500" },
@@ -553,12 +552,12 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
       {/* ── Featured Brands ── */}
       {brands.length > 0 && (
         <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
-          <p className="font-serif text-base text-gray-900 mb-3" style={{ fontWeight: 600 }}>Featured Brands</p>
+          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.15em] mb-3">Featured Brands</p>
           <div className="relative">
             {brands.length > 5 && <SlideArrows onLeft={brandsSlide.scrollLeft} onRight={brandsSlide.scrollRight} />}
-            <div ref={brandsSlide.ref} className="flex items-center gap-8 overflow-x-auto scroll-smooth px-8" style={{ scrollbarWidth: "none" }}>
+            <div ref={brandsSlide.ref} className="flex items-center gap-8 overflow-x-auto scroll-smooth px-8 divide-x divide-gray-100" style={{ scrollbarWidth: "none" }}>
               {brands.map((b) => (
-                <span key={b} className="shrink-0 font-serif text-xl text-gray-400 hover:text-gray-700 transition-colors whitespace-nowrap cursor-default" style={{ fontWeight: 700 }}>
+                <span key={b} className="shrink-0 font-serif text-xl text-gray-700 hover:text-[#B8862E] transition-colors whitespace-nowrap cursor-default pl-8 first:pl-0" style={{ fontWeight: 700 }}>
                   {b}
                 </span>
               ))}
@@ -567,25 +566,40 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         </div>
       )}
 
-      {/* ── Pick Up Where You Left Off ── */}
+      {/* ── Pick Up Where You Left Off — one product, editorial treatment ── */}
       {recentProducts.length > 0 && (
-        <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Pick Up Where You Left Off</span>
-            <div className="flex items-center gap-2">
-              <button onClick={onCategory} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors">View More</button>
-              <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:border-gray-400 transition-colors">Clear All</button>
+        <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl" style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 45%,#E8D9B5 100%)" }}>
+          {/* Decorative blobs */}
+          <div className="absolute -top-16 -right-10 w-72 h-72 rounded-full opacity-40 pointer-events-none" style={{ background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
+          <div className="absolute -bottom-24 right-24 w-96 h-96 rounded-full opacity-30 pointer-events-none" style={{ background: "radial-gradient(circle,#B8862E 0%,transparent 70%)" }} />
+
+          <div className="relative flex flex-col sm:flex-row items-center gap-6 sm:gap-10 p-6 sm:p-10">
+            {/* Buttons */}
+            <div className="absolute top-5 right-5 sm:top-8 sm:right-8 flex items-center gap-2 z-10">
+              <button onClick={onCategory} className="flex items-center gap-1 text-xs sm:text-sm font-bold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-white transition-transform hover:scale-[1.03]"
+                style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+                View More <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }} className="text-xs sm:text-sm font-bold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-white text-gray-700 border border-gray-200 hover:border-gray-300 transition-colors">
+                Clear All
+              </button>
             </div>
-          </div>
-          <div className="relative">
-            {recentProducts.length > 5 && <SlideArrows onLeft={recentSlide.scrollLeft} onRight={recentSlide.scrollRight} />}
-            <div ref={recentSlide.ref} className="flex gap-3 overflow-x-auto scroll-smooth" style={{ scrollbarWidth: "none" }}>
-              {recentProducts.map((p, i) => (
-                <div key={i} className="w-40 shrink-0">
-                  <ProductCard p={p} onView={() => onProduct(p)} onCart={() => onCart(p)}
-                    wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(p.id))} />
-                </div>
-              ))}
+
+            {/* Single most-recent product */}
+            <div className="shrink-0 mt-10 sm:mt-0" style={{ width: 220 }}>
+              <ProductCard p={recentProducts[0]} onView={() => onProduct(recentProducts[0])} onCart={() => onCart(recentProducts[0])}
+                wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(recentProducts[0].id))} />
+            </div>
+
+            {/* Headline */}
+            <div className="flex-1 text-center sm:text-left">
+              <h3 className="font-serif leading-tight mb-3" style={{ fontWeight: 700, fontSize: "clamp(24px,4vw,40px)" }}>
+                <span className="text-gray-900">Pick Up Where</span><br />
+                <span style={{ background: "linear-gradient(135deg,#D4A54A,#8C6420)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>You Left Off</span>
+              </h3>
+              <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto sm:mx-0">
+                See the items you viewed recently and pick up right where you left off.
+              </p>
             </div>
           </div>
         </div>
@@ -595,8 +609,15 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
       {topPicks.length > 0 && (
         <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>What to Explore Next</span>
-            <button onClick={onCategory} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#B8862E" }}>
+                <ShoppingBag className="w-5 h-5" />
+              </span>
+              <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>What to Explore Next</span>
+            </div>
+            <button onClick={onCategory} className="flex items-center gap-1 text-sm font-semibold" style={{ color: "#B8862E" }}>
+              View All <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {topPicks.map((p, i) => (
