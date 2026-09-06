@@ -37,6 +37,7 @@ export async function migrate(): Promise<void> {
     await seedRevenueAuthorities();
     await seedDefaultAuthorityLogin();
     await seedVehiclesCategoryAndDuty();
+    await seedVehicleListings();
     return;
   }
 
@@ -114,6 +115,7 @@ export async function migrate(): Promise<void> {
   await seedRevenueAuthorities();
   await seedDefaultAuthorityLogin();
   await seedVehiclesCategoryAndDuty();
+  await seedVehicleListings();
 }
 
 /**
@@ -446,6 +448,64 @@ async function seedVehiclesCategoryAndDuty(): Promise<void> {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[db] Vehicles department seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Turns the seeded vehicle supplier-catalog items into actual live seller
+ * listings (mkt_products, status 'active') so they show up on the
+ * storefront immediately, rather than waiting for a seller to manually
+ * import + a manager to approve. Looks up the already-seeded supplier
+ * products by category (not by the seed array's in-memory ids, which are
+ * freshly randomised on every server start and won't match what's
+ * actually in the database from a prior run).
+ */
+async function seedVehicleListings(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_products WHERE category_id = 'cat-07'");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Vehicle listings already seeded — skipping.");
+    return;
+  }
+
+  const { rows: vehicleSupplierProducts } = await pool!.query(`SELECT * FROM mkt_supplier_products WHERE category_id = 'cat-07'`);
+  if (!vehicleSupplierProducts.length) {
+    console.log("[db] No vehicle supplier products found to list yet — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding vehicle listings...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    for (const sp of vehicleSupplierProducts) {
+      const vd = sp.vehicle_details ?? {};
+      const attributes = {
+        Year: String(vd.year ?? ""), Make: String(vd.make ?? ""), Model: String(vd.model ?? ""),
+        Mileage: `${Number(vd.mileageKm ?? 0).toLocaleString()} km`, Engine: `${vd.engineCc ?? ""}cc`,
+        "Body type": String(vd.bodyType ?? "").replace(/_/g, " "), Transmission: String(vd.transmission ?? ""),
+        "Fuel type": String(vd.fuelType ?? ""), Condition: sp.condition === "new" ? "New" : "Used",
+      };
+      const slug = `${String(sp.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${sp.id.slice(0, 8)}`;
+      await client.query(
+        `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
+           currency, images, emoji, status, stock, brand, tags, attributes, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'active',$11,$12,$13,$14,'imported',$15,$16,$17,$18,$19)`,
+        [
+          "sel-01", "cat-07", sp.name, slug, sp.description, sp.description, sp.retail_price, sp.compare_at_price,
+          JSON.stringify(sp.images), sp.emoji, sp.condition === "new" ? 3 : 1, vd.make ?? "Vehicle", JSON.stringify([sp.condition, "vehicle"]),
+          JSON.stringify(attributes), sp.id, JSON.stringify(sp.vehicle_details), sp.condition, sp.nrcs_approved, sp.nrcs_reference,
+        ]
+      );
+      await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [sp.id]);
+    }
+    await client.query("COMMIT");
+    console.log(`[db] Seeded ${vehicleSupplierProducts.length} live vehicle listings.`);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Vehicle listings seed failed, rolled back:", err);
     throw err;
   } finally {
     client.release();
