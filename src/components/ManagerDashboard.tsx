@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   BarChart3, Users, Store, Package, ShoppingBag, DollarSign, CheckCircle, XCircle,
-  Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck,
+  Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { mktAdmin, mktSellers, getMktToken, type MktAuthUser } from "../services/marketplaceApi";
+import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser } from "../services/marketplaceApi";
 import { toast } from "sonner";
 
 type R = Record<string, unknown>;
@@ -360,23 +360,28 @@ const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
 };
 
 function SupplyChainPanel() {
-  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments">("orders");
+  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments" | "catalog">("orders");
   const [suppliers, setSuppliers] = useState<R[]>([]);
   const [warehouses, setWarehouses] = useState<R[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<R[]>([]);
   const [shipments, setShipments] = useState<R[]>([]);
+  const [catalog, setCatalog] = useState<R[]>([]);
+  const [categories, setCategories] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [supRes, whRes, soRes, shRes] = await Promise.allSettled([
+    const [supRes, whRes, soRes, shRes, catRes, catgRes] = await Promise.allSettled([
       mktAdmin.suppliers.list(), mktAdmin.warehouses.list(), mktAdmin.supplierOrders.list(), mktAdmin.shipments.list(),
+      mktAdmin.supplierProducts.list(), mktCategories(),
     ]);
     if (supRes.status === "fulfilled") setSuppliers(supRes.value.data as R[]);
     if (whRes.status === "fulfilled") setWarehouses(whRes.value.data as R[]);
     if (soRes.status === "fulfilled") setSupplierOrders(soRes.value.data as R[]);
     if (shRes.status === "fulfilled") setShipments(shRes.value.data as R[]);
+    if (catRes.status === "fulfilled") setCatalog(catRes.value.data as R[]);
+    if (catgRes.status === "fulfilled") setCategories(catgRes.value.data as R[]);
     setLoading(false);
   }, []);
 
@@ -403,6 +408,7 @@ function SupplyChainPanel() {
     { id: "shipments", label: "Shipments", icon: <Truck className="w-3.5 h-3.5" /> },
     { id: "warehouses", label: "Warehouses", icon: <Warehouse className="w-3.5 h-3.5" /> },
     { id: "suppliers", label: "Suppliers", icon: <Globe2 className="w-3.5 h-3.5" /> },
+    { id: "catalog", label: "Supplier Catalog", icon: <Store className="w-3.5 h-3.5" /> },
   ];
 
   if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
@@ -490,44 +496,212 @@ function SupplyChainPanel() {
         </div>
       )}
 
-      {subTab === "warehouses" && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {warehouses.map((w, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-bold text-gray-900">{String(w.name)}</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: w.type === "origin" ? "#EFF6FF" : "#ECFDF5", color: w.type === "origin" ? "#1D4ED8" : "#059669" }}>{String(w.type)}</span>
-              </div>
-              <p className="text-xs text-gray-400">{String(w.country)} · {String(w.address ?? "")}</p>
-            </div>
-          ))}
+      {subTab === "warehouses" && <WarehouseManagement warehouses={warehouses} onChanged={load} />}
+
+      {subTab === "suppliers" && <SupplierManagement suppliers={suppliers} onChanged={load} />}
+
+      {subTab === "catalog" && <SupplierCatalogManagement catalog={catalog} suppliers={suppliers} categories={categories} onChanged={load} />}
+    </div>
+  );
+}
+
+function WarehouseManagement({ warehouses, onChanged }: { warehouses: R[]; onChanged: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", country: "CN", type: "origin", address: "" });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!form.name) return;
+    setSaving(true);
+    const res = await mktAdmin.warehouses.create(form);
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not create warehouse."); return; }
+    setAdding(false);
+    setForm({ name: "", country: "CN", type: "origin", address: "" });
+    onChanged();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Warehouses ({warehouses.length})</span>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+          <Plus className="w-3.5 h-3.5" /> Add warehouse
+        </button>
+      </div>
+
+      {adding && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-2 gap-2 mb-4">
+          <input placeholder="Warehouse name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <select value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            {["CN", "JP", "KR", "ZA", "ZM"].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            <option value="origin">Origin (near suppliers)</option>
+            <option value="destination">Destination (customer-facing)</option>
+          </select>
+          <input placeholder="Address" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <button onClick={submit} disabled={saving || !form.name} className="sm:col-span-2 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add warehouse"}</button>
         </div>
       )}
 
-      {subTab === "suppliers" && (
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Suppliers ({suppliers.length})</span></div>
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-              <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
-              <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
-              <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
-            </tr></thead>
-            <tbody>
-              {suppliers.map((s, i) => (
-                <tr key={i} className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
-                  <td className="px-4 py-2.5">{s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {warehouses.map((w, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-bold text-gray-900">{String(w.name)}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: w.type === "origin" ? "#EFF6FF" : "#ECFDF5", color: w.type === "origin" ? "#1D4ED8" : "#059669" }}>{String(w.type)}</span>
+            </div>
+            <p className="text-xs text-gray-400">{String(w.country)} · {String(w.address ?? "")}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChanged: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", country: "CN", contactName: "", contactEmail: "", contactPhone: "", platform: "", paymentTerms: "", leadTimeDays: "14", verified: false });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!form.name) return;
+    setSaving(true);
+    const res = await mktAdmin.suppliers.create({ ...form, leadTimeDays: Number(form.leadTimeDays) || 14 });
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not create supplier."); return; }
+    setAdding(false);
+    setForm({ name: "", country: "CN", contactName: "", contactEmail: "", contactPhone: "", platform: "", paymentTerms: "", leadTimeDays: "14", verified: false });
+    onChanged();
+  };
+
+  const toggleVerified = async (s: R) => {
+    await mktAdmin.suppliers.update(String(s.id), { verified: !s.verified });
+    onChanged();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Suppliers ({suppliers.length})</span>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+          <Plus className="w-3.5 h-3.5" /> Add supplier
+        </button>
+      </div>
+
+      {adding && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">
+          <input placeholder="Supplier / company name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
+          <select value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            {["CN", "JP", "KR"].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input placeholder="Contact name" value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Contact email" value={form.contactEmail} onChange={e => setForm({ ...form, contactEmail: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Contact phone" value={form.contactPhone} onChange={e => setForm({ ...form, contactPhone: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Platform (e.g. Alibaba, KOTRA)" value={form.platform} onChange={e => setForm({ ...form, platform: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Payment terms" value={form.paymentTerms} onChange={e => setForm({ ...form, paymentTerms: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Lead time (days)" type="number" value={form.leadTimeDays} onChange={e => setForm({ ...form, leadTimeDays: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <label className="flex items-center gap-2 text-xs text-gray-600 px-1">
+            <input type="checkbox" checked={form.verified} onChange={e => setForm({ ...form, verified: e.target.checked })} /> Verified (sample order confirmed)
+          </label>
+          <button onClick={submit} disabled={saving || !form.name} className="sm:col-span-3 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add supplier"}</button>
         </div>
       )}
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
+            <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
+            <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
+          </tr></thead>
+          <tbody>
+            {suppliers.map((s, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
+                <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
+                <td className="px-4 py-2.5">
+                  <button onClick={() => toggleVerified(s)} className="flex items-center gap-1">
+                    {s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }: { catalog: R[]; suppliers: R[]; categories: R[]; onChanged: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", moq: "10", originCountry: "CN", emoji: "📦" });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!form.supplierId || !form.name || !form.costPrice) return;
+    setSaving(true);
+    const res = await mktAdmin.supplierProducts.create({ ...form, costPrice: Number(form.costPrice), moq: Number(form.moq) || 1 });
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not add catalog item."); return; }
+    setAdding(false);
+    setForm({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", moq: "10", originCountry: "CN", emoji: "📦" });
+    onChanged();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Supplier Catalog ({catalog.length}) — what sellers can import</span>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+          <Plus className="w-3.5 h-3.5" /> Add catalog item
+        </button>
+      </div>
+
+      {adding && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">
+          <select value={form.supplierId} onChange={e => {
+            const sup = suppliers.find(s => s.id === e.target.value);
+            setForm({ ...form, supplierId: e.target.value, originCountry: (sup?.country as string) ?? form.originCountry });
+          }} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2">
+            <option value="">Select supplier...</option>
+            {suppliers.map(s => <option key={String(s.id)} value={String(s.id)}>{String(s.name)} ({String(s.country)})</option>)}
+          </select>
+          <select value={form.categoryId} onChange={e => setForm({ ...form, categoryId: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            <option value="">Select category...</option>
+            {categories.map(c => <option key={String(c.id)} value={String(c.id)}>{String(c.name)}</option>)}
+          </select>
+          <input placeholder="Item name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
+          <input placeholder="Emoji" value={form.emoji} onChange={e => setForm({ ...form, emoji: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Cost price" type="number" step="0.01" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            {["USD", "CNY", "JPY", "KRW"].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input placeholder="MOQ" type="number" value={form.moq} onChange={e => setForm({ ...form, moq: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-3" />
+          <button onClick={submit} disabled={saving || !form.supplierId || !form.name || !form.costPrice} className="sm:col-span-3 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add to catalog"}</button>
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {catalog.map((item, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-2xl">{String(item.emoji ?? "📦")}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{String(item.originCountry)}</span>
+            </div>
+            <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
+            <p className="text-[11px] text-gray-400 mb-1">{String(item.supplierName)} · MOQ {String(item.moq)}</p>
+            <p className="text-xs font-semibold text-gray-600">Cost: {String(item.currency)} {Number(item.costPrice).toFixed(2)} · Imported {String(item.importCount ?? 0)}x</p>
+          </div>
+        ))}
+        {!catalog.length && <p className="text-sm text-gray-400 p-6 text-center col-span-full">No catalog items yet.</p>}
+      </div>
     </div>
   );
 }
