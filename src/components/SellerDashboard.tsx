@@ -297,7 +297,6 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
   const [country, setCountry] = useState<string>("");
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState<string | null>(null);
-  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -313,11 +312,9 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
   useEffect(() => { load(); }, [load]);
 
   const importItem = async (item: R) => {
-    const retailPrice = Number(priceDraft[String(item.id)]);
-    if (!retailPrice || retailPrice < Number(item.costPrice)) return;
     setImportingId(String(item.id));
     setMessage(null);
-    const res = await mktSellers.importListing(sellerId, { supplierProductId: item.id, retailPrice });
+    const res = await mktSellers.importListing(sellerId, { supplierProductId: item.id });
     setImportingId(null);
     if (res.success) {
       setMessage(res.message ?? "Imported to your store.");
@@ -331,7 +328,7 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
     <div>
       <div className="mb-4">
         <p className="text-sm font-bold text-gray-900 mb-1">Import from Suppliers</p>
-        <p className="text-xs text-gray-500">Pick an item from Ballylife's vetted China / Japan / South Korea supplier catalog, set your own retail price, and it becomes a listing in your store. Sourcing, warehouse QC, customs, and delivery are all handled centrally — you never deal with the supplier directly.</p>
+        <p className="text-xs text-gray-500">Pick an item from Ballylife's vetted China / Japan / South Korea supplier catalog and it becomes a listing in your store, at the price the supplier relationship is sold at. Sourcing, pricing, warehouse QC, customs, and delivery are all handled centrally — you never deal with the supplier directly, and price/discount changes need marketplace-team approval.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -358,9 +355,9 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {items.map(item => {
-            const cost = Number(item.costPrice);
-            const draft = priceDraft[String(item.id)] ?? "";
-            const suggested = Math.ceil(cost * 18 * 1.4); // rough USD->ZAR + markup starting point
+            const retail = Number(item.retailPrice ?? 0);
+            const compareAt = item.compareAtPrice !== null && item.compareAtPrice !== undefined ? Number(item.compareAtPrice) : null;
+            const priceNotSet = !retail || retail <= 0;
             return (
               <div key={String(item.id)} className="bg-white rounded-xl border border-gray-100 p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -369,17 +366,21 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                 </div>
                 <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
                 <p className="text-xs text-gray-400 mb-2 line-clamp-2">{String(item.description ?? "")}</p>
-                <p className="text-[11px] text-gray-400 mb-1">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
-                <p className="text-xs font-semibold text-gray-600 mb-3">Cost: {String(item.currency)} {cost.toFixed(2)} / unit</p>
-                <div className="flex items-center gap-2">
-                  <input type="number" placeholder={`e.g. ${suggested}`} value={draft}
-                    onChange={e => setPriceDraft({ ...priceDraft, [String(item.id)]: e.target.value })}
-                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-24" />
-                  <button onClick={() => importItem(item)} disabled={importingId === item.id || !draft}
-                    className="flex-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#B8862E" }}>
-                    {importingId === item.id ? "Importing..." : "Import to my store"}
-                  </button>
+                <p className="text-[11px] text-gray-400 mb-2">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
+                <div className="flex items-baseline gap-2 mb-3">
+                  {priceNotSet ? (
+                    <span className="text-xs font-semibold text-amber-600">Price not set yet</span>
+                  ) : (
+                    <>
+                      <span className="text-sm font-bold text-gray-900">R{retail.toFixed(2)}</span>
+                      {compareAt && compareAt > retail && <span className="text-xs text-gray-400 line-through">R{compareAt.toFixed(2)}</span>}
+                    </>
+                  )}
                 </div>
+                <button onClick={() => importItem(item)} disabled={importingId === item.id || priceNotSet}
+                  className="w-full text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#B8862E" }}>
+                  {importingId === item.id ? "Importing..." : "Import to my store"}
+                </button>
               </div>
             );
           })}

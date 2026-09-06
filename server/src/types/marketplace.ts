@@ -269,6 +269,8 @@ export interface SupplierProduct {
   description: string | null;
   costPrice: number;
   currency: string;
+  retailPrice: number;
+  compareAtPrice: number | null;
   moq: number;
   images: string[];
   emoji: string | null;

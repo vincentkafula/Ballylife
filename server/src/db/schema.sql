@@ -264,24 +264,30 @@ CREATE INDEX IF NOT EXISTS idx_mkt_suppliers_country ON mkt_suppliers(country);
 
 -- The vetted, cost-priced catalog local sellers import listings from.
 -- cost_price is what Ballylife pays the supplier (landed at the origin
--- warehouse); it is never shown to customers, only to sellers deciding
--- their markup and to admins reconciling supplier payouts.
+-- warehouse); it is never shown to customers, only to admins reconciling
+-- supplier payouts. retail_price / compare_at_price are the price and any
+-- discount the supplier relationship is sold at — set here by a manager on
+-- the supplier's behalf, not by the seller. Importing a listing copies
+-- these onto the resulting mkt_products row; editing them afterward is
+-- restricted to managers (see PATCH /sellers/:id/products/:productId).
 CREATE TABLE IF NOT EXISTS mkt_supplier_products (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  supplier_id     TEXT NOT NULL REFERENCES mkt_suppliers(id),
-  category_id     TEXT REFERENCES mkt_categories(id),
-  name            TEXT NOT NULL,
-  description     TEXT,
-  cost_price      NUMERIC(12,2) NOT NULL,
-  currency        TEXT NOT NULL DEFAULT 'USD',
-  moq             INTEGER NOT NULL DEFAULT 1,
-  images          JSONB NOT NULL DEFAULT '[]',
-  emoji           TEXT,
-  origin_country  TEXT NOT NULL, -- CN | JP | KR
-  status          TEXT NOT NULL DEFAULT 'active', -- active | inactive
-  import_count    INTEGER NOT NULL DEFAULT 0, -- how many SellerListings currently reference this
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  supplier_id       TEXT NOT NULL REFERENCES mkt_suppliers(id),
+  category_id       TEXT REFERENCES mkt_categories(id),
+  name              TEXT NOT NULL,
+  description       TEXT,
+  cost_price        NUMERIC(12,2) NOT NULL,
+  currency          TEXT NOT NULL DEFAULT 'USD',
+  retail_price      NUMERIC(12,2) NOT NULL DEFAULT 0, -- ZAR — supplier/manager-set selling price
+  compare_at_price  NUMERIC(12,2), -- ZAR — supplier/manager-set "was" price for a discount, if any
+  moq               INTEGER NOT NULL DEFAULT 1,
+  images            JSONB NOT NULL DEFAULT '[]',
+  emoji             TEXT,
+  origin_country    TEXT NOT NULL, -- CN | JP | KR
+  status            TEXT NOT NULL DEFAULT 'active', -- active | inactive
+  import_count      INTEGER NOT NULL DEFAULT 0, -- how many SellerListings currently reference this
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_mkt_supplier_products_supplier ON mkt_supplier_products(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_mkt_supplier_products_status   ON mkt_supplier_products(status);

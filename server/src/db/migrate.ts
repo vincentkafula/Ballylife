@@ -141,11 +141,11 @@ async function seedSupplyChain(): Promise<void> {
 
     for (const sp of SUPPLIER_PRODUCTS) {
       await client.query(
-        `INSERT INTO mkt_supplier_products (id, supplier_id, category_id, name, description, cost_price, currency,
+        `INSERT INTO mkt_supplier_products (id, supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price,
            moq, images, emoji, origin_country, status, import_count, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (id) DO NOTHING`,
-        [sp.id, sp.supplierId, sp.categoryId, sp.name, sp.description, sp.costPrice, sp.currency, sp.moq,
-         JSON.stringify(sp.images), sp.emoji, sp.originCountry, sp.status, sp.importCount, sp.createdAt, sp.updatedAt]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (id) DO NOTHING`,
+        [sp.id, sp.supplierId, sp.categoryId, sp.name, sp.description, sp.costPrice, sp.currency, sp.retailPrice, sp.compareAtPrice,
+         sp.moq, JSON.stringify(sp.images), sp.emoji, sp.originCountry, sp.status, sp.importCount, sp.createdAt, sp.updatedAt]
       );
     }
 

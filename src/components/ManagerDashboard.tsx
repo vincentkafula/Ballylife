@@ -640,17 +640,41 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
 
 function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }: { catalog: R[]; suppliers: R[]; categories: R[]; onChanged: () => void }) {
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", moq: "10", originCountry: "CN", emoji: "📦" });
+  const [form, setForm] = useState({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", retailPrice: "", compareAtPrice: "", moq: "10", originCountry: "CN", emoji: "📦" });
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [priceEdit, setPriceEdit] = useState({ retailPrice: "", compareAtPrice: "" });
+  const [savingPrice, setSavingPrice] = useState(false);
 
   const submit = async () => {
     if (!form.supplierId || !form.name || !form.costPrice) return;
     setSaving(true);
-    const res = await mktAdmin.supplierProducts.create({ ...form, costPrice: Number(form.costPrice), moq: Number(form.moq) || 1 });
+    const res = await mktAdmin.supplierProducts.create({
+      ...form, costPrice: Number(form.costPrice), moq: Number(form.moq) || 1,
+      retailPrice: Number(form.retailPrice) || 0, compareAtPrice: form.compareAtPrice ? Number(form.compareAtPrice) : undefined,
+    });
     setSaving(false);
     if (!res.success) { toast.error(res.error ?? "Could not add catalog item."); return; }
     setAdding(false);
-    setForm({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", moq: "10", originCountry: "CN", emoji: "📦" });
+    setForm({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", retailPrice: "", compareAtPrice: "", moq: "10", originCountry: "CN", emoji: "📦" });
+    onChanged();
+  };
+
+  const startEditPrice = (item: R) => {
+    setEditingId(String(item.id));
+    setPriceEdit({ retailPrice: String(item.retailPrice ?? ""), compareAtPrice: item.compareAtPrice !== null && item.compareAtPrice !== undefined ? String(item.compareAtPrice) : "" });
+  };
+
+  const savePrice = async (id: string) => {
+    if (!priceEdit.retailPrice) return;
+    setSavingPrice(true);
+    const res = await mktAdmin.supplierProducts.update(id, {
+      retailPrice: Number(priceEdit.retailPrice),
+      compareAtPrice: priceEdit.compareAtPrice ? Number(priceEdit.compareAtPrice) : null,
+    });
+    setSavingPrice(false);
+    if (!res.success) { toast.error(res.error ?? "Could not update price."); return; }
+    setEditingId(null);
     onChanged();
   };
 
@@ -662,6 +686,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           <Plus className="w-3.5 h-3.5" /> Add catalog item
         </button>
       </div>
+      <p className="text-xs text-gray-400 mb-3">Retail price and discount are set here by the marketplace team on the supplier's behalf — sellers who import an item get this price as-is and can't change it themselves.</p>
 
       {adding && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">
@@ -683,6 +708,8 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
             {["USD", "CNY", "JPY", "KRW"].map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <input placeholder="MOQ" type="number" value={form.moq} onChange={e => setForm({ ...form, moq: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Retail price (ZAR)" type="number" step="0.01" value={form.retailPrice} onChange={e => setForm({ ...form, retailPrice: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Discount / was-price (ZAR, optional)" type="number" step="0.01" value={form.compareAtPrice} onChange={e => setForm({ ...form, compareAtPrice: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
           <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-3" />
           <button onClick={submit} disabled={saving || !form.supplierId || !form.name || !form.costPrice} className="sm:col-span-3 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add to catalog"}</button>
         </div>
@@ -697,7 +724,39 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
             </div>
             <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
             <p className="text-[11px] text-gray-400 mb-1">{String(item.supplierName)} · MOQ {String(item.moq)}</p>
-            <p className="text-xs font-semibold text-gray-600">Cost: {String(item.currency)} {Number(item.costPrice).toFixed(2)} · Imported {String(item.importCount ?? 0)}x</p>
+            <p className="text-xs font-semibold text-gray-600 mb-2">Cost: {String(item.currency)} {Number(item.costPrice).toFixed(2)} · Imported {String(item.importCount ?? 0)}x</p>
+
+            {editingId === item.id ? (
+              <div className="space-y-1.5">
+                <input placeholder="Retail price (ZAR)" type="number" step="0.01" value={priceEdit.retailPrice}
+                  onChange={e => setPriceEdit({ ...priceEdit, retailPrice: e.target.value })}
+                  className="w-full border border-gray-200 rounded px-2 py-1 text-xs" />
+                <input placeholder="Discount / was-price (optional)" type="number" step="0.01" value={priceEdit.compareAtPrice}
+                  onChange={e => setPriceEdit({ ...priceEdit, compareAtPrice: e.target.value })}
+                  className="w-full border border-gray-200 rounded px-2 py-1 text-xs" />
+                <div className="flex gap-1.5">
+                  <button onClick={() => savePrice(String(item.id))} disabled={savingPrice || !priceEdit.retailPrice}
+                    className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                    {savingPrice ? "Saving..." : "Save"}
+                  </button>
+                  <button onClick={() => setEditingId(null)} className="text-[11px] font-semibold px-2 py-1.5 rounded-lg border border-gray-200 text-gray-600">Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-baseline gap-1.5">
+                  {Number(item.retailPrice) > 0 ? (
+                    <>
+                      <span className="text-sm font-bold text-gray-900">R{Number(item.retailPrice).toFixed(2)}</span>
+                      {item.compareAtPrice && Number(item.compareAtPrice) > Number(item.retailPrice) && (
+                        <span className="text-[11px] text-gray-400 line-through">R{Number(item.compareAtPrice).toFixed(2)}</span>
+                      )}
+                    </>
+                  ) : <span className="text-xs font-semibold text-amber-600">No price set</span>}
+                </div>
+                <button onClick={() => startEditPrice(item)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit price</button>
+              </div>
+            )}
           </div>
         ))}
         {!catalog.length && <p className="text-sm text-gray-400 p-6 text-center col-span-full">No catalog items yet.</p>}
@@ -705,3 +764,4 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
     </div>
   );
 }
+

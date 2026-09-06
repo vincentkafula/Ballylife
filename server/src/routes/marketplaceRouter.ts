@@ -73,7 +73,8 @@ const mapSupplier = (r: any) => ({
 const mapSupplierProduct = (r: any) => ({
   id: r.id, supplierId: r.supplier_id, supplierName: r.supplier_name, supplierCountry: r.supplier_country,
   categoryId: r.category_id, name: r.name, description: r.description, costPrice: Number(r.cost_price),
-  currency: r.currency, moq: r.moq, images: r.images, emoji: r.emoji, originCountry: r.origin_country,
+  currency: r.currency, retailPrice: Number(r.retail_price), compareAtPrice: r.compare_at_price !== null && r.compare_at_price !== undefined ? Number(r.compare_at_price) : null,
+  moq: r.moq, images: r.images, emoji: r.emoji, originCountry: r.origin_country,
   status: r.status, importCount: r.import_count, createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
@@ -906,12 +907,13 @@ router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req
 });
 
 // Import a supplier-catalog item into this seller's own store — the seller
-// never sees the supplier, warehouse, or cost price beyond what's needed to
-// pick a sane retail price; fulfilment (QC, customs, delivery) is handled
-// centrally by mkt_supplier_orders once a customer actually buys it.
+// never sees the supplier, warehouse, or cost price, and never sets the
+// retail price either: that's set by the supplier relationship (entered by
+// a manager on mkt_supplier_products) and copied onto the listing as-is.
+// Sellers only choose whether to list it and how much stock to carry.
 router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
-  const { supplierProductId, retailPrice, compareAtPrice, stock } = req.body;
-  if (!supplierProductId || !retailPrice) { res.status(400).json({ success: false, error: "supplierProductId and retailPrice are required" }); return; }
+  const { supplierProductId, stock } = req.body;
+  if (!supplierProductId) { res.status(400).json({ success: false, error: "supplierProductId is required" }); return; }
 
   const { rows: spRows } = await pool!.query(
     `SELECT * FROM mkt_supplier_products WHERE id::text = $1 AND status = 'active'`, [supplierProductId]
@@ -919,11 +921,8 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
   if (!spRows.length) { res.status(404).json({ success: false, error: "Supplier catalog item not found or no longer available" }); return; }
   const sp = spRows[0];
 
-  if (Number(retailPrice) < Number(sp.cost_price)) {
-    res.status(400).json({ success: false, error: `Retail price must be at least the cost price (${sp.currency} ${sp.cost_price})` });
-    return;
-  }
   if (!sp.category_id) { res.status(400).json({ success: false, error: "This catalog item has no category set — ask the marketplace team to assign one before importing." }); return; }
+  if (Number(sp.retail_price) <= 0) { res.status(400).json({ success: false, error: "This catalog item has no retail price set yet — ask a manager to set one before importing." }); return; }
 
   const slug = `${String(sp.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
   const client = await pool!.connect();
@@ -933,7 +932,7 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
       `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
          currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13) RETURNING *`,
-      [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", retailPrice, compareAtPrice ?? null,
+      [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", sp.retail_price, sp.compare_at_price ?? null,
        JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId]
     );
     await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [supplierProductId]);
@@ -951,7 +950,23 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
 router.patch("/sellers/:id/products/:productId", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
   const { rows: existing } = await pool!.query(`SELECT * FROM mkt_products WHERE id::text = $1 AND seller_id = $2`, [req.params.productId, req.params.id]);
   if (!existing.length) { res.status(404).json({ success: false, error: "Product not found" }); return; }
-  const fields = ["name","shortDescription","description","price","compareAtPrice","stock","sku","brand","emoji"] as const;
+
+  // Price and discount (compareAtPrice) are manager-only, regardless of
+  // fulfillment type — for imported listings they come from the supplier
+  // relationship (mkt_supplier_products.retail_price/compare_at_price) and
+  // for local listings they still need marketplace-team sign-off before
+  // changing. A seller's own request never carries these through, even if
+  // they own the store — requireSellerOwner lets a manager through too, so
+  // check the actual role, not just ownership.
+  const isManager = MANAGER_ROLES.includes(req.user!.role as any);
+  if (!isManager && (req.body.price !== undefined || req.body.compareAtPrice !== undefined)) {
+    res.status(403).json({ success: false, error: "Only the marketplace team can change price or discount — everything else on this listing is still yours to edit." });
+    return;
+  }
+
+  const fields = isManager
+    ? (["name","shortDescription","description","price","compareAtPrice","stock","sku","brand","emoji"] as const)
+    : (["name","shortDescription","description","stock","sku","brand","emoji"] as const);
   const colMap: Record<string,string> = { name:"name", shortDescription:"short_description", description:"description", price:"price", compareAtPrice:"compare_at_price", stock:"stock", sku:"sku", brand:"brand", emoji:"emoji" };
   const sets: string[] = []; const vals: unknown[] = [];
   for (const f of fields) {
@@ -1087,21 +1102,21 @@ router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES
 });
 
 router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
-  const { supplierId, categoryId, name, description, costPrice, currency, moq, images, emoji, originCountry } = req.body;
+  const { supplierId, categoryId, name, description, costPrice, currency, retailPrice, compareAtPrice, moq, images, emoji, originCountry } = req.body;
   if (!supplierId || !name || costPrice === undefined || !originCountry) {
     res.status(400).json({ success: false, error: "supplierId, name, costPrice and originCountry are required" }); return;
   }
   const { rows } = await pool!.query(
-    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, moq, images, emoji, origin_country)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-    [supplierId, categoryId ?? null, name, description ?? "", costPrice, currency ?? "USD", moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", originCountry]
+    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+    [supplierId, categoryId ?? null, name, description ?? "", costPrice, currency ?? "USD", retailPrice ?? 0, compareAtPrice ?? null, moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", originCountry]
   );
   res.status(201).json({ success: true, data: mapSupplierProduct(rows[0]) });
 });
 
 router.patch("/admin/supplier-products/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
-  const fields = ["categoryId","name","description","costPrice","currency","moq","emoji","status"] as const;
-  const colMap: Record<string,string> = { categoryId:"category_id", name:"name", description:"description", costPrice:"cost_price", currency:"currency", moq:"moq", emoji:"emoji", status:"status" };
+  const fields = ["categoryId","name","description","costPrice","currency","retailPrice","compareAtPrice","moq","emoji","status"] as const;
+  const colMap: Record<string,string> = { categoryId:"category_id", name:"name", description:"description", costPrice:"cost_price", currency:"currency", retailPrice:"retail_price", compareAtPrice:"compare_at_price", moq:"moq", emoji:"emoji", status:"status" };
   const sets: string[] = []; const vals: unknown[] = [];
   for (const f of fields) { if (req.body[f] !== undefined) { vals.push(req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); } }
   if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
