@@ -32,6 +32,7 @@ export async function migrate(): Promise<void> {
     await seedSupplyChain();
     await seedTaxRates();
     await seedDefaultLogins();
+    await seedDefaultSupplierLogin();
     return;
   }
 
@@ -104,6 +105,7 @@ export async function migrate(): Promise<void> {
   await seedSupplyChain();
   await seedTaxRates();
   await seedDefaultLogins();
+  await seedDefaultSupplierLogin();
 }
 
 /**
@@ -256,6 +258,48 @@ async function seedDefaultLogins(): Promise<void> {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[db] Default login seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Creates one default supplier dashboard login, linked to the first
+ * seeded supplier (sup-cn-01 / Guangzhou Fortune Trading Co.) — gated
+ * independently of seedDefaultLogins (mkt_suppliers.user_id, not
+ * users.role), since that gate already tripped in production before this
+ * feature existed and would otherwise never run again.
+ *
+ * SECURITY: same as the other default logins — a throwaway starter
+ * credential. Sign in and change the password before real use.
+ */
+async function seedDefaultSupplierLogin(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_suppliers WHERE user_id IS NOT NULL");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Default supplier login already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding default supplier login...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const passwordHash = await bcrypt.hash("Ballylife@2026", 10);
+    const { rows: userRows } = await client.query(
+      `INSERT INTO users (username, password_hash, role, name, email)
+       VALUES ('supplier1', $1, 'supplier', 'Guangzhou Fortune Trading Co.', 'liwei@fortunetrading.example')
+       ON CONFLICT (username) DO NOTHING RETURNING id`,
+      [passwordHash]
+    );
+    if (userRows.length) {
+      await client.query(`UPDATE mkt_suppliers SET user_id = $1 WHERE id = 'sup-cn-01'`, [userRows[0].id]);
+    }
+    await client.query("COMMIT");
+    console.log("[db] Seeded default supplier login: supplier1 (linked to Guangzhou Fortune Trading Co.).");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Default supplier login seed failed, rolled back:", err);
     throw err;
   } finally {
     client.release();
