@@ -8,7 +8,7 @@ type Tab = "signin" | "customer" | "seller";
 
 interface Props {
   onClose: () => void;
-  onAuthenticated: (user: MktAuthUser, seller: { id: string; storeName: string; status: string } | null, supplier?: Record<string, unknown> | null) => void;
+  onAuthenticated: (user: MktAuthUser, seller: { id: string; storeName: string; status: string } | null, supplier?: Record<string, unknown> | null, authority?: Record<string, unknown> | null) => void;
   initialTab?: "signin" | "customer" | "seller";
 }
 
@@ -60,7 +60,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     setLoading(true);
     const r = await mktAuth.login(siUsername, siPassword);
     setLoading(false);
-    if (r.success && r.token) onAuthenticated(r.user, JSON.parse(localStorage.getItem("mkt_seller") ?? "null"), JSON.parse(localStorage.getItem("mkt_supplier") ?? "null"));
+    if (r.success && r.token) onAuthenticated(r.user, JSON.parse(localStorage.getItem("mkt_seller") ?? "null"), JSON.parse(localStorage.getItem("mkt_supplier") ?? "null"), JSON.parse(localStorage.getItem("mkt_authority") ?? "null"));
     else setError((r as { error?: string }).error ?? "Sign in failed. Check your username and password.");
   };
 

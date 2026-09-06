@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate } from "../types/marketplace";
+import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const future = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
@@ -182,4 +182,13 @@ export const DUTY_RATES: DutyRate[] = [
   { id: randomUUID(), country: "ZA", categoryId: "cat-02", dutyRatePct: 45, notes: "SARS Schedule 1, Chapters 61-62 (clothing)." },
   { id: randomUUID(), country: "ZA", categoryId: "cat-06", dutyRatePct: 0,  notes: "Books typically duty-free." },
   { id: randomUUID(), country: "ZM", categoryId: "cat-06", dutyRatePct: 0,  notes: "Educational materials commonly exempt — verify per ASYCUDA classification." },
+];
+
+// ─── Revenue authorities ──────────────────────────────────────────────────────
+// status starts 'not_agreed' for both — being listed here is Ballylife's own
+// record of intent, not a real reporting/data-sharing agreement with either
+// authority. Update via the admin UI once an actual agreement is in place.
+export const REVENUE_AUTHORITIES: RevenueAuthority[] = [
+  { id: "auth-za-sars", name: "South African Revenue Service (SARS)", country: "ZA", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", createdAt: new Date().toISOString() },
+  { id: "auth-zm-zra", name: "Zambia Revenue Authority (ZRA)", country: "ZM", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", createdAt: new Date().toISOString() },
 ];

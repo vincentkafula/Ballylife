@@ -376,3 +376,16 @@ export interface CustomsRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+// ─── Revenue authority (read-only, country-scoped tax portal) ────────────────
+export interface RevenueAuthority {
+  id: string;
+  name: string;
+  country: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  status: "not_agreed" | "agreement_pending" | "active";
+  notes: string | null;
+  userId?: string | null;
+  createdAt: string;
+}

@@ -448,3 +448,24 @@ CREATE INDEX IF NOT EXISTS idx_mkt_customs_records_status ON mkt_customs_records
 -- landed-cost picture is visible to admins reconciling against
 -- mkt_customs_records).
 ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS duty_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Revenue authority portal — a read-only, country-scoped view of VAT/duty
+-- figures for whichever national tax authority (SARS, ZRA, or another
+-- country's equivalent) Ballylife has an actual reporting/data-sharing
+-- agreement with. This is NOT a payment channel: no money moves through
+-- this system to any authority, and being listed here does not constitute
+-- or imply that agreement exists — mkt_revenue_authorities.status tracks
+-- Ballylife's own record of where that relationship actually stands.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS mkt_revenue_authorities (
+  id            TEXT PRIMARY KEY, -- e.g. 'sars-za', 'zra-zm'
+  name          TEXT NOT NULL,    -- e.g. "South African Revenue Service"
+  country       TEXT NOT NULL UNIQUE REFERENCES mkt_tax_rates(country), -- one authority per country
+  contact_name  TEXT,
+  contact_email TEXT,
+  status        TEXT NOT NULL DEFAULT 'not_agreed', -- not_agreed | agreement_pending | active
+  notes         TEXT,
+  user_id       UUID REFERENCES users(id), -- set once an admin onboards a login for them
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);

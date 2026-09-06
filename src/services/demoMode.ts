@@ -726,6 +726,11 @@ const MKT_DUTY_RATES: Record<string, unknown>[] = [
 
 const MKT_CUSTOMS_RECORDS: Record<string, unknown>[] = [];
 
+const MKT_REVENUE_AUTHORITIES: R[] = [
+  { id: "auth-za-sars", name: "South African Revenue Service (SARS)", country: "ZA", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", userId: null, createdAt: ago(4380*60) },
+  { id: "auth-zm-zra", name: "Zambia Revenue Authority (ZRA)", country: "ZM", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", userId: null, createdAt: ago(4380*60) },
+];
+
 export const mktMock = {
   categories: () => ({ success:true, data:MKT_CATS }),
   products: (qs?: Record<string,string>) => {
@@ -1107,5 +1112,46 @@ export const mktMock = {
     if (s.userId) return { success:false, error:"This supplier already has a login" };
     s.userId = `demo-supplier-user-${id}`;
     return { success:true, message:"Login created — share the username and password with the supplier directly; they aren't stored anywhere else." };
+  },
+  adminRevenueAuthorities: () => ({ success:true, data:MKT_REVENUE_AUTHORITIES }),
+  adminCreateRevenueAuthority: (body: R) => {
+    if (!body.name || !body.country) return { success:false, error:"name and country are required" };
+    const a: R = { id:`auth-${String(body.country).toLowerCase()}-${uuid()}`, name:body.name, country:body.country, contactName:body.contactName ?? null,
+      contactEmail:body.contactEmail ?? null, status:body.status ?? "not_agreed", notes:body.notes ?? null, userId:null, createdAt:new Date().toISOString() };
+    MKT_REVENUE_AUTHORITIES.push(a);
+    return { success:true, data:a };
+  },
+  adminUpdateRevenueAuthority: (id: string, body: R) => {
+    const a = MKT_REVENUE_AUTHORITIES.find(x => x.id === id);
+    if (!a) return { success:false, error:"Revenue authority not found" };
+    Object.assign(a, body);
+    return { success:true, data:a };
+  },
+  adminCreateAuthorityLogin: (id: string, body: R) => {
+    if (!body.username || !body.password) return { success:false, error:"username and password are required" };
+    if (typeof body.password !== "string" || body.password.length < 8) return { success:false, error:"Password must be at least 8 characters" };
+    const a = MKT_REVENUE_AUTHORITIES.find(x => x.id === id);
+    if (!a) return { success:false, error:"Revenue authority not found" };
+    if (a.userId) return { success:false, error:"This authority already has a login" };
+    a.userId = `demo-authority-user-${id}`;
+    return { success:true, message:"Login created — share the username and password with the authority directly; they aren't stored anywhere else." };
+  },
+  authorityByUser: (_userId: string) => {
+    const a = MKT_REVENUE_AUTHORITIES.find(x => x.id === "auth-za-sars");
+    return a ? { success:true, data:a } : { success:false, error:"No revenue authority account linked to this login" };
+  },
+  authorityGet: (id: string) => {
+    const a = MKT_REVENUE_AUTHORITIES.find(x => x.id === id);
+    return a ? { success:true, data:a } : { success:false, error:"Revenue authority not found" };
+  },
+  authorityTaxSummary(id: string) {
+    const a = MKT_REVENUE_AUTHORITIES.find(x => x.id === id);
+    const country = (a?.country as string) ?? "ZA";
+    const full = this.adminTaxSummary().data as R;
+    const byPeriod = (full.byPeriod as R[]).filter(r => r.country === country).map(r => ({ period:r.period, orderCount:r.orderCount, subtotal:r.subtotal, vatCollected:r.vatCollected, dutyLiability:r.dutyLiability, totalAmount:r.totalAmount }));
+    const customsByStatus = (full.customsByStatus as R[]).filter(r => r.country === country);
+    const vatCollected = byPeriod.reduce((s, r) => s + Number(r.vatCollected), 0);
+    const dutyLiability = byPeriod.reduce((s, r) => s + Number(r.dutyLiability), 0);
+    return { success:true, data:{ country, byPeriod, customsByStatus, totals:{ totalVatCollected:vatCollected, totalDutyEstimated:dutyLiability, totalDutyCleared:0, totalDutyOutstanding:0 } } };
   },
 };

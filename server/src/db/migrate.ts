@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -34,6 +34,7 @@ export async function migrate(): Promise<void> {
     await seedDefaultLogins();
     await seedDefaultSupplierLogin();
     await seedDefaultCustomerLogin();
+    await seedRevenueAuthorities();
     return;
   }
 
@@ -108,6 +109,7 @@ export async function migrate(): Promise<void> {
   await seedDefaultLogins();
   await seedDefaultSupplierLogin();
   await seedDefaultCustomerLogin();
+  await seedRevenueAuthorities();
 }
 
 /**
@@ -330,4 +332,28 @@ async function seedDefaultCustomerLogin(): Promise<void> {
     [passwordHash]
   );
   console.log("[db] Seeded default customer login: customer1.");
+}
+
+/**
+ * Seeds the two revenue-authority placeholder records (SARS, ZRA) — gated
+ * on mkt_revenue_authorities being empty. These represent Ballylife's own
+ * intent to report to each authority, not a confirmed agreement; status
+ * starts 'not_agreed' and should only change once that's actually true.
+ */
+async function seedRevenueAuthorities(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_revenue_authorities");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Revenue authorities already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding revenue authorities...");
+  for (const a of REVENUE_AUTHORITIES) {
+    await pool!.query(
+      `INSERT INTO mkt_revenue_authorities (id, name, country, contact_name, contact_email, status, notes, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      [a.id, a.name, a.country, a.contactName, a.contactEmail, a.status, a.notes, a.createdAt]
+    );
+  }
+  console.log(`[db] Seeded ${REVENUE_AUTHORITIES.length} revenue authority placeholders.`);
 }

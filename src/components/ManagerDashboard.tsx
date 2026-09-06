@@ -307,6 +307,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                   ))}
                 </div>
                 <TaxRevenueSummary />
+                <RevenueAuthorityManagement />
                 <p className="text-[11px] text-gray-400 mt-3">Payout scheduling and chargebacks aren't wired up in this demo. Tax/duty figures below are calculated and tracked — see the note there on what still requires your own SARS/ZRA filing.</p>
               </div>
             )}
@@ -1275,6 +1276,154 @@ function TaxRevenueSummary() {
         your own eFiling/ASYCUDA login, an accountant, or (once accredited) your own customs broker access. Download the CSV under Reports for handing to
         whoever files the return.
       </p>
+    </div>
+  );
+}
+
+// Onboards and manages the country-scoped, read-only tax portal for a
+// national revenue authority (SARS, ZRA, or another country's
+// equivalent). Adding a record or a login here is Ballylife's own intent
+// tracker — it does not by itself constitute a real reporting agreement;
+// status stays 'not_agreed' until that's genuinely true.
+const AUTHORITY_STATUS_META: Record<string, { label: string; color: string }> = {
+  not_agreed: { label: "No agreement", color: "#6B7280" },
+  agreement_pending: { label: "Agreement pending", color: "#B8862E" },
+  active: { label: "Active", color: "#10B981" },
+};
+
+function RevenueAuthorityManagement() {
+  const [authorities, setAuthorities] = useState<R[]>([]);
+  const [taxRates, setTaxRates] = useState<R[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", country: "", contactName: "", contactEmail: "", status: "not_agreed" });
+  const [saving, setSaving] = useState(false);
+  const [loginFor, setLoginFor] = useState<string | null>(null);
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [creatingLogin, setCreatingLogin] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [authRes, taxRes] = await Promise.allSettled([mktAdmin.revenueAuthorities.list(), mktAdmin.taxRates.list()]);
+    if (authRes.status === "fulfilled") setAuthorities(authRes.value.data as R[]);
+    if (taxRes.status === "fulfilled") setTaxRates(taxRes.value.data as R[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submit = async () => {
+    if (!form.name || !form.country) return;
+    setSaving(true);
+    const res = await mktAdmin.revenueAuthorities.create(form);
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not add revenue authority."); return; }
+    setAdding(false);
+    setForm({ name: "", country: "", contactName: "", contactEmail: "", status: "not_agreed" });
+    load();
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    const res = await mktAdmin.revenueAuthorities.update(id, { status });
+    if (!res.success) toast.error(res.error ?? "Could not update status.");
+    load();
+  };
+
+  const createLogin = async (id: string) => {
+    if (!loginForm.username || loginForm.password.length < 8) { toast.error("Username and an 8+ character password are required."); return; }
+    setCreatingLogin(true);
+    const res = await mktAdmin.revenueAuthorities.createLogin(id, loginForm);
+    setCreatingLogin(false);
+    if (!res.success) { toast.error(res.error ?? "Could not create a login."); return; }
+    toast.success("Login created — share these credentials with the authority directly.");
+    setLoginFor(null);
+    setLoginForm({ username: "", password: "" });
+    load();
+  };
+
+  if (loading) return <div className="flex items-center justify-center h-24"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Revenue Authorities</span>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+          <Plus className="w-3.5 h-3.5" /> Add authority
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mb-3">A country-scoped, read-only login that shows only that country's VAT/duty figures. Adding one here is Ballylife's own record — it doesn't create or imply a real reporting agreement with SARS, ZRA, or anyone else.</p>
+
+      {adding && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">
+          <input placeholder="Authority name (e.g. SARS)" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
+          <select value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            <option value="">Select country...</option>
+            {taxRates.map(t => <option key={String(t.country)} value={String(t.country)}>{String(t.country)}</option>)}
+          </select>
+          <input placeholder="Contact name" value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Contact email" value={form.contactEmail} onChange={e => setForm({ ...form, contactEmail: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            <option value="not_agreed">No agreement</option>
+            <option value="agreement_pending">Agreement pending</option>
+            <option value="active">Active</option>
+          </select>
+          <button onClick={submit} disabled={saving || !form.name || !form.country} className="sm:col-span-3 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add authority"}</button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
+            <th className="px-4 py-2 font-medium">Agreement status</th><th className="px-4 py-2 font-medium">Dashboard login</th>
+          </tr></thead>
+          <tbody>
+            {authorities.map((a, i) => {
+              const meta = AUTHORITY_STATUS_META[String(a.status)] ?? { label: String(a.status), color: "#6B7280" };
+              return (
+                <Fragment key={i}>
+                  <tr className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(a.name)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(a.country)}</td>
+                    <td className="px-4 py-2.5">
+                      <select value={String(a.status)} onChange={e => updateStatus(String(a.id), e.target.value)}
+                        className="text-xs font-semibold px-2 py-1 rounded-full border-0" style={{ color: meta.color, background: `${meta.color}15` }}>
+                        <option value="not_agreed">No agreement</option>
+                        <option value="agreement_pending">Agreement pending</option>
+                        <option value="active">Active</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {a.userId ? (
+                        <span className="text-[11px] font-semibold text-green-600">Has login</span>
+                      ) : (
+                        <button onClick={() => setLoginFor(loginFor === a.id ? null : String(a.id))} className="text-[11px] font-semibold text-amber-700 hover:underline">
+                          {loginFor === a.id ? "Cancel" : "Create login"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {loginFor === a.id && (
+                    <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
+                      <td colSpan={4} className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Username" value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                          <input placeholder="Password (min 8 chars)" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                          <button onClick={() => createLogin(String(a.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                            {creatingLogin ? "Creating..." : "Create"}
+                          </button>
+                          <span className="text-[11px] text-gray-400">Share these with the authority yourself — not stored or emailed anywhere by this system.</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+            {!authorities.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No revenue authorities added yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

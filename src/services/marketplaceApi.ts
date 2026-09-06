@@ -105,6 +105,13 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/customs-records"))   return mktMock.adminCustomsRecords();
   if (path.includes("/sellers") && path.includes("/supplier-orders")) return mktMock.sellerSupplierOrders(path.split("/sellers/")[1].split("/supplier-orders")[0]);
   if (path.includes("/sellers"))                 return mktMock.sellers();
+  if (path.includes("/admin/revenue-authorities") && path.includes("/create-login")) return mktMock.adminCreateAuthorityLogin(path.split("/admin/revenue-authorities/")[1].split("/create-login")[0], body);
+  if (path.includes("/admin/revenue-authorities") && method === "GET")   return mktMock.adminRevenueAuthorities();
+  if (path.includes("/admin/revenue-authorities") && method === "POST")  return mktMock.adminCreateRevenueAuthority(body);
+  if (path.includes("/admin/revenue-authorities") && method === "PATCH") return mktMock.adminUpdateRevenueAuthority(path.split("/admin/revenue-authorities/")[1], body);
+  if (path.includes("/revenue-authorities/by-user/")) return mktMock.authorityByUser(path.split("/revenue-authorities/by-user/")[1]);
+  if (path.match(/\/revenue-authorities\/[^/]+\/tax-summary$/)) return mktMock.authorityTaxSummary(path.split("/revenue-authorities/")[1].split("/tax-summary")[0]);
+  if (path.match(/\/revenue-authorities\/[^/?]+$/)) return mktMock.authorityGet(path.split("/revenue-authorities/")[1].split("?")[0]);
   if (path.includes("/admin/tax-summary"))       return mktMock.adminTaxSummary();
   if (path.includes("/admin/stats"))             return mktMock.adminStats();
   if (path.includes("/admin/orders"))            return mktMock.orders();
@@ -169,6 +176,12 @@ export const mktAdmin = {
   approveSeller: (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/approve`, { method: "PATCH" }),
   rejectSeller:  (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/reject`, { method: "PATCH" }),
   taxSummary: () => api<{ success: boolean; data: unknown }>("/api/marketplace/admin/tax-summary"),
+  revenueAuthorities: {
+    list:        () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/revenue-authorities"),
+    create:      (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/revenue-authorities", { method: "POST", body: JSON.stringify(body) }),
+    update:      (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/revenue-authorities/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    createLogin: (id: string, body: unknown) => api<{ success: boolean; message?: string; error?: string }>(`/api/marketplace/admin/revenue-authorities/${id}/create-login`, { method: "POST", body: JSON.stringify(body) }),
+  },
   customers: () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/customers"),
   reportUrl: (report: "orders" | "products" | "tax") => `${BASE}/api/marketplace/admin/reports/${report}.csv`,
   allProducts: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: Record<string, unknown> }>(`/api/marketplace/admin/products?${new URLSearchParams(params)}`),
@@ -222,6 +235,13 @@ export const mktAddAddress = (userId: string, body: unknown) =>
 export const mktDeleteAddress = (userId: string, addressId: string) =>
   api(`/api/marketplace/addresses/${userId}/${addressId}`, { method: "DELETE" });
 
+// ── Revenue authority self-service (read-only, country-scoped) ───────────────
+export const mktAuthoritySelf = {
+  byUser:     (userId: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/revenue-authorities/by-user/${userId}`),
+  get:        (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/revenue-authorities/${id}`),
+  taxSummary: (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/revenue-authorities/${id}/tax-summary`),
+};
+
 // ── Supplier self-service (only for suppliers an admin has onboarded with
 // a login — see mktAdmin.createSupplierLogin below) ──────────────────────────
 export const mktSuppliersSelf = {
@@ -263,6 +283,9 @@ export const mktAuth = {
       } else if (user.role === "supplier") {
         const supplierRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/suppliers/by-user/${user.id}`);
         if (supplierRes.success) localStorage.setItem("mkt_supplier", JSON.stringify(supplierRes.data));
+      } else if (user.role === "revenue_authority") {
+        const authorityRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/revenue-authorities/by-user/${user.id}`);
+        if (authorityRes.success) localStorage.setItem("mkt_authority", JSON.stringify(authorityRes.data));
       }
       // Flatten to the shape callers expect (token/user at the top level)
       // — the backend nests them under data, but every caller here (and
@@ -285,10 +308,10 @@ export const mktAuth = {
     if (r.success && r.token) { setMktToken(r.token); localStorage.setItem("mkt_user", JSON.stringify(r.user)); localStorage.setItem("mkt_seller", JSON.stringify(r.seller)); }
     return r;
   },
-  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); },
+  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); localStorage.removeItem("mkt_authority"); },
   changePassword: (currentPassword: string, newPassword: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
-  restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null } | null => {
+  restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null; authority: Record<string, unknown> | null } | null => {
     if (!getMktToken()) return null;
     const raw = localStorage.getItem("mkt_user");
     if (!raw) return null;
@@ -296,7 +319,8 @@ export const mktAuth = {
       const user = JSON.parse(raw) as MktAuthUser;
       const sellerRaw = localStorage.getItem("mkt_seller");
       const supplierRaw = localStorage.getItem("mkt_supplier");
-      return { user, seller: sellerRaw ? JSON.parse(sellerRaw) : null, supplier: supplierRaw ? JSON.parse(supplierRaw) : null };
+      const authorityRaw = localStorage.getItem("mkt_authority");
+      return { user, seller: sellerRaw ? JSON.parse(sellerRaw) : null, supplier: supplierRaw ? JSON.parse(supplierRaw) : null, authority: authorityRaw ? JSON.parse(authorityRaw) : null };
     } catch { return null; }
   },
 };

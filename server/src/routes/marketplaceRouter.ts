@@ -47,6 +47,19 @@ async function requireSupplierOwner(req: Request, res: Response, next: NextFunct
   next();
 }
 
+// Only the revenue-authority account linked to this record (or a
+// marketplace manager) may view it — a country's authority never sees
+// another country's figures, and never anything beyond read access.
+async function requireAuthorityOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (MANAGER_ROLES.includes(req.user!.role as any)) { next(); return; }
+  const { rows } = await pool!.query(`SELECT user_id FROM mkt_revenue_authorities WHERE id = $1`, [req.params.id]);
+  if (!rows.length || rows[0].user_id !== req.user!.userId) {
+    res.status(403).json({ success: false, error: "You can only view your own authority's data" });
+    return;
+  }
+  next();
+}
+
 const router: ReturnType<typeof Router> = Router();
 
 // ─── Row → API shape mappers (snake_case columns → camelCase JSON) ──────────
@@ -162,6 +175,11 @@ const mapCustomsRecord = (r: any) => ({
   originWarehouseName: r.origin_warehouse_name, destinationWarehouseName: r.destination_warehouse_name,
   orderCount: r.order_count !== undefined ? Number(r.order_count) : undefined,
   createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+const mapRevenueAuthority = (r: any) => ({
+  id: r.id, name: r.name, country: r.country, contactName: r.contact_name, contactEmail: r.contact_email,
+  status: r.status, notes: r.notes, userId: r.user_id ?? null, createdAt: r.created_at,
 });
 
 // Valid forward transitions for a customs record — mirrors the real
@@ -1377,6 +1395,69 @@ router.get("/suppliers/:id/orders", requireAuth, requireSupplierOwner, async (re
   res.json({ success: true, data: rows.map(mapSupplierOrder), meta: { total: rows.length } });
 });
 
+// ── REVENUE AUTHORITY SELF-SERVICE (read-only, country-scoped) ─────────────
+// Only for an authority an admin has onboarded with a login. Everything
+// here is read-only by design — an authority views what's been calculated
+// for its own country; it can't edit rates, orders, or anything else.
+router.get("/revenue-authorities/by-user/:userId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  if (req.user!.userId !== req.params.userId && !MANAGER_ROLES.includes(req.user!.role as any)) {
+    res.status(403).json({ success: false, error: "Forbidden" }); return;
+  }
+  const { rows } = await pool!.query(`SELECT * FROM mkt_revenue_authorities WHERE user_id = $1`, [req.params.userId]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "No revenue authority account linked to this login" }); return; }
+  res.json({ success: true, data: mapRevenueAuthority(rows[0]) });
+});
+
+router.get("/revenue-authorities/:id", requireAuth, requireAuthorityOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_revenue_authorities WHERE id = $1`, [req.params.id]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Revenue authority not found" }); return; }
+  res.json({ success: true, data: mapRevenueAuthority(rows[0]) });
+});
+
+// The same shape as /admin/tax-summary, but hard-filtered to this
+// authority's own country at the query level — never returns another
+// country's figures, regardless of what's requested.
+router.get("/revenue-authorities/:id/tax-summary", requireAuth, requireAuthorityOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows: authRows } = await pool!.query(`SELECT country FROM mkt_revenue_authorities WHERE id = $1`, [req.params.id]);
+  if (!authRows.length) { res.status(404).json({ success: false, error: "Revenue authority not found" }); return; }
+  const country = authRows[0].country;
+
+  const { rows: byPeriod } = await pool!.query(
+    `SELECT to_char(placed_at, 'YYYY-MM') AS period, COUNT(*)::int AS order_count, SUM(subtotal) AS subtotal,
+       SUM(tax_amount) AS vat_collected, SUM(duty_amount) AS duty_liability, SUM(total_amount) AS total_amount
+     FROM mkt_orders WHERE status != 'refunded' AND shipping_address->>'country' = $1
+     GROUP BY period ORDER BY period DESC`,
+    [country]
+  );
+  const { rows: customsByStatus } = await pool!.query(
+    `SELECT status, COUNT(*)::int AS record_count, SUM(declared_value) AS declared_value,
+       SUM(duty_amount) AS duty_amount, SUM(vat_amount) AS vat_amount, SUM(total_payable) AS total_payable
+     FROM mkt_customs_records WHERE destination_country = $1 GROUP BY status ORDER BY status`,
+    [country]
+  );
+  const { rows: totalsRows } = await pool!.query(
+    `SELECT
+       COALESCE((SELECT SUM(tax_amount) FROM mkt_orders WHERE status != 'refunded' AND shipping_address->>'country' = $1), 0) AS total_vat_collected,
+       COALESCE((SELECT SUM(duty_amount) FROM mkt_orders WHERE status != 'refunded' AND shipping_address->>'country' = $1), 0) AS total_duty_estimated,
+       COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE destination_country = $1 AND status = 'cleared'), 0) AS total_duty_cleared,
+       COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE destination_country = $1 AND status != 'cleared'), 0) AS total_duty_outstanding`,
+    [country]
+  );
+  const t = totalsRows[0];
+  res.json({
+    success: true,
+    data: {
+      country,
+      byPeriod: byPeriod.map(r => ({ period: r.period, orderCount: r.order_count, subtotal: Number(r.subtotal), vatCollected: Number(r.vat_collected), dutyLiability: Number(r.duty_liability), totalAmount: Number(r.total_amount) })),
+      customsByStatus: customsByStatus.map(r => ({ status: r.status, recordCount: r.record_count, declaredValue: Number(r.declared_value), dutyAmount: Number(r.duty_amount), vatAmount: Number(r.vat_amount), totalPayable: Number(r.total_payable) })),
+      totals: {
+        totalVatCollected: Number(t.total_vat_collected), totalDutyEstimated: Number(t.total_duty_estimated),
+        totalDutyCleared: Number(t.total_duty_cleared), totalDutyOutstanding: Number(t.total_duty_outstanding),
+      },
+    },
+  });
+});
+
 // ── ADMIN: SUPPLY CHAIN (suppliers, catalog, warehouses, shipments) ─────────
 // All gated to marketplace_admin — this is Ballylife's own sourcing/ops
 // team managing supplier relationships and the fulfilment pipeline, never
@@ -1755,6 +1836,74 @@ router.patch("/admin/duty-rates/:id", requireAuth, requireRole(...MANAGER_ROLES)
   const { rows } = await pool!.query(`UPDATE mkt_duty_rates SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
   if (!rows.length) { res.status(404).json({ success: false, error: "Duty rate not found" }); return; }
   res.json({ success: true, data: mapDutyRate(rows[0]) });
+});
+
+// ── ADMIN: REVENUE AUTHORITIES ───────────────────────────────────────────────
+router.get("/admin/revenue-authorities", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_revenue_authorities ORDER BY country`);
+  res.json({ success: true, data: rows.map(mapRevenueAuthority) });
+});
+
+router.post("/admin/revenue-authorities", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { name, country, contactName, contactEmail, status, notes } = req.body;
+  if (!name || !country) { res.status(400).json({ success: false, error: "name and country are required" }); return; }
+  const { rows: taxRateRows } = await pool!.query(`SELECT 1 FROM mkt_tax_rates WHERE country = $1`, [country]);
+  if (!taxRateRows.length) { res.status(400).json({ success: false, error: "Set a VAT/duty rate for this country under Tax Rates before adding its authority." }); return; }
+  const id = `auth-${String(country).toLowerCase()}-${Date.now().toString(36)}`;
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_revenue_authorities (id, name, country, contact_name, contact_email, status, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [id, name, country, contactName ?? null, contactEmail ?? null, status ?? "not_agreed", notes ?? null]
+  );
+  res.status(201).json({ success: true, data: mapRevenueAuthority(rows[0]) });
+});
+
+router.patch("/admin/revenue-authorities/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const fields = ["name", "contactName", "contactEmail", "status", "notes"] as const;
+  const colMap: Record<string, string> = { name: "name", contactName: "contact_name", contactEmail: "contact_email", status: "status", notes: "notes" };
+  const sets: string[] = []; const vals: unknown[] = [];
+  for (const f of fields) { if (req.body[f] !== undefined) { vals.push(req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); } }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_revenue_authorities SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Revenue authority not found" }); return; }
+  res.json({ success: true, data: mapRevenueAuthority(rows[0]) });
+});
+
+// Onboards a revenue authority with its own read-only dashboard login.
+// Doing this does NOT constitute or imply a real reporting agreement —
+// status on the authority record tracks that separately, and starts at
+// 'not_agreed' regardless of whether a login exists.
+router.post("/admin/revenue-authorities/:id/create-login", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { username, password } = req.body;
+  if (!username || !password) { res.status(400).json({ success: false, error: "username and password are required" }); return; }
+  if (typeof password !== "string" || password.length < 8) { res.status(400).json({ success: false, error: "Password must be at least 8 characters" }); return; }
+
+  const { rows: authRows } = await pool!.query(`SELECT * FROM mkt_revenue_authorities WHERE id = $1`, [req.params.id]);
+  if (!authRows.length) { res.status(404).json({ success: false, error: "Revenue authority not found" }); return; }
+  if (authRows[0].user_id) { res.status(409).json({ success: false, error: "This authority already has a login" }); return; }
+
+  const { rows: existingUser } = await pool!.query(`SELECT id FROM users WHERE username = $1`, [username]);
+  if (existingUser.length) { res.status(409).json({ success: false, error: "That username is already taken" }); return; }
+
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const passwordHash = await bcrypt.hash(password, 10);
+    const { rows: userRows } = await client.query(
+      `INSERT INTO users (username, password_hash, role, name, email) VALUES ($1,$2,'revenue_authority',$3,$4) RETURNING id`,
+      [username, passwordHash, authRows[0].name, authRows[0].contact_email ?? `${username}@ballylife.example`]
+    );
+    await client.query(`UPDATE mkt_revenue_authorities SET user_id = $1 WHERE id = $2`, [userRows[0].id, req.params.id]);
+    await client.query("COMMIT");
+    res.status(201).json({ success: true, message: "Login created — share the username and password with the authority directly; they aren't stored anywhere else." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Revenue authority login creation failed:", err);
+    res.status(500).json({ success: false, error: "Could not create a login for this authority, please try again." });
+  } finally {
+    client.release();
+  }
 });
 
 router.get("/admin/customs-records", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
