@@ -237,27 +237,36 @@ export const mktCustomer = {
 export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; }
 export const mktAuth = {
   login: async (username: string, password: string) => {
-    const r = await api<{ success: boolean; token: string; user: MktAuthUser; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
-    if (r.success && r.token) {
-      setMktToken(r.token);
-      localStorage.setItem("mkt_user", JSON.stringify(r.user));
+    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+    if (r.success && r.data?.token) {
+      const { token, user } = r.data;
+      setMktToken(token);
+      localStorage.setItem("mkt_user", JSON.stringify(user));
       // A plain login (unlike registration) doesn't come with the
       // seller/supplier record already in hand — look it up by role so
       // the app knows which store/supplier this account owns.
-      if (r.user.role === "seller") {
-        const sellerRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/sellers/by-user/${r.user.id}`);
+      if (user.role === "seller") {
+        const sellerRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/sellers/by-user/${user.id}`);
         if (sellerRes.success) localStorage.setItem("mkt_seller", JSON.stringify(sellerRes.data));
-      } else if (r.user.role === "supplier") {
-        const supplierRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/suppliers/by-user/${r.user.id}`);
+      } else if (user.role === "supplier") {
+        const supplierRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/suppliers/by-user/${user.id}`);
         if (supplierRes.success) localStorage.setItem("mkt_supplier", JSON.stringify(supplierRes.data));
       }
+      // Flatten to the shape callers expect (token/user at the top level)
+      // — the backend nests them under data, but every caller here (and
+      // MarketplaceAuthModal) was written against a flat response.
+      return { success: true, token, user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
     }
-    return r;
+    return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Invalid username or password" };
   },
   registerCustomer: async (body: { username: string; password: string; name: string; email: string }) => {
-    const r = await api<{ success: boolean; token: string; user: MktAuthUser; error?: string }>("/api/auth/register", { method: "POST", body: JSON.stringify({ ...body, role: "customer" }) });
-    if (r.success && r.token) { setMktToken(r.token); localStorage.setItem("mkt_user", JSON.stringify(r.user)); }
-    return r;
+    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/register", { method: "POST", body: JSON.stringify({ ...body, role: "customer" }) });
+    if (r.success && r.data?.token) {
+      setMktToken(r.data.token);
+      localStorage.setItem("mkt_user", JSON.stringify(r.data.user));
+      return { success: true, token: r.data.token, user: r.data.user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
+    }
+    return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Registration failed" };
   },
   registerSeller: async (body: { username: string; password: string; name: string; email: string; storeName: string; description?: string; phone?: string; taxId?: string; applicationData?: unknown }) => {
     const r = await mktSellers.register(body) as { success: boolean; token: string; user: MktAuthUser; seller: unknown; error?: string };
