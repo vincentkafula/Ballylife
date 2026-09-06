@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
 import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES } from "./seedData";
 
@@ -30,6 +31,7 @@ export async function migrate(): Promise<void> {
     // after the upgrade — never short-circuit past it.
     await seedSupplyChain();
     await seedTaxRates();
+    await seedDefaultLogins();
     return;
   }
 
@@ -101,6 +103,7 @@ export async function migrate(): Promise<void> {
 
   await seedSupplyChain();
   await seedTaxRates();
+  await seedDefaultLogins();
 }
 
 /**
@@ -198,6 +201,61 @@ async function seedTaxRates(): Promise<void> {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[db] Tax/duty rate seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Creates one default manager login and one default seller login so the
+ * dashboards have something to sign in with immediately after a fresh
+ * deploy — gated on no marketplace_admin user existing yet, so this only
+ * ever runs once and is safe to leave in place across redeploys.
+ *
+ * SECURITY: these are throwaway starter credentials, not meant to stay in
+ * use. Sign in and change both passwords (Settings -> change password)
+ * before putting real data or real customers on this deployment.
+ */
+async function seedDefaultLogins(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM users WHERE role = 'marketplace_admin'");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Default logins already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding default dashboard logins...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+
+    const adminHash = await bcrypt.hash("Ballylife@2026", 10);
+    await client.query(
+      `INSERT INTO users (username, password_hash, role, name, email)
+       VALUES ('admin', $1, 'marketplace_admin', 'Ballylife Admin', 'admin@ballylife.example')
+       ON CONFLICT (username) DO NOTHING`,
+      [adminHash]
+    );
+
+    const sellerHash = await bcrypt.hash("Ballylife@2026", 10);
+    const { rows: sellerUserRows } = await client.query(
+      `INSERT INTO users (username, password_hash, role, name, email)
+       VALUES ('seller1', $1, 'seller', 'TechZone Seller', 'store@techzone.example')
+       ON CONFLICT (username) DO NOTHING RETURNING id`,
+      [sellerHash]
+    );
+    // Link the new login to the first seeded store (sel-01 / TechZone) so
+    // the Seller Dashboard has real products/orders to show immediately,
+    // rather than an empty freshly-registered store.
+    if (sellerUserRows.length) {
+      await client.query(`UPDATE mkt_sellers SET user_id = $1 WHERE id = 'sel-01'`, [sellerUserRows[0].id]);
+    }
+
+    await client.query("COMMIT");
+    console.log("[db] Seeded default logins: admin/marketplace_admin and seller1/seller (linked to TechZone).");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Default login seed failed, rolled back:", err);
     throw err;
   } finally {
     client.release();
