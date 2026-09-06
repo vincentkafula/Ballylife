@@ -16,6 +16,7 @@ export const CATEGORIES: Category[] = [
   { id:"cat-05", name:"Sports",            slug:"sports",          icon:"⚽", parentId:null, productCount:0, featured:true  },
   { id:"cat-06", name:"Books & Media",     slug:"books-media",     icon:"📚", parentId:null, productCount:0, featured:false },
   { id:"cat-07", name:"Vehicles",          slug:"vehicles",        icon:"🚗", parentId:null, productCount:0, featured:true  },
+  { id:"cat-08", name:"Vehicle Parts & Equipment", slug:"vehicle-parts", icon:"🔧", parentId:"cat-07", productCount:0, featured:true  },
 ];
 
 // ─── Sellers ────────────────────────────────────────────────────────────────
@@ -228,4 +229,17 @@ export const VEHICLE_DUTY_ZM: VehicleDutyZm[] = [
 export const VEHICLE_SUPPLIER_PRODUCTS: SupplierProduct[] = [
   { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-07", name: "Toyota Corolla 1.8 (New)", description: "Brand-new Toyota Corolla sedan, imported from Japan.", costPrice: 14500, currency: "USD", retailPrice: 385000, compareAtPrice: null, moq: 1, images: ["#1a1a2e"], emoji: "🚗", originCountry: "JP", status: "active", importCount: 0, vehicleDetails: { make: "Toyota", model: "Corolla", year: 2026, mileageKm: 0, engineCc: 1800, bodyType: "sedan", transmission: "automatic", fuelType: "petrol" }, condition: "new", nrcsApproved: true, nrcsReference: "NRCS-LOA-DEMO-0001", createdAt: ago(200), updatedAt: ago(10) },
   { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-07", name: "Honda Fit 1.3 (Used, 2019)", description: "Used Honda Fit hatchback, well maintained, imported from Japan. Zambia delivery only.", costPrice: 4200, currency: "USD", retailPrice: 95000, compareAtPrice: null, moq: 1, images: ["#2d3748"], emoji: "🚙", originCountry: "JP", status: "active", importCount: 0, vehicleDetails: { make: "Honda", model: "Fit", year: 2019, mileageKm: 62000, engineCc: 1300, bodyType: "hatchback", transmission: "automatic", fuelType: "petrol" }, condition: "used", nrcsApproved: false, nrcsReference: null, createdAt: ago(150), updatedAt: ago(5) },
+];
+
+// Parts and equipment needed to service/repair vehicles — a normal
+// product category (no ITAC/NRCS restriction applies to parts, only to
+// the vehicles themselves), nested under Vehicles via categoryId cat-08 /
+// parentId cat-07.
+export const VEHICLE_PARTS_SUPPLIER_PRODUCTS: SupplierProduct[] = [
+  { id: randomUUID(), supplierId: "sup-cn-01", categoryId: "cat-08", name: "Ceramic Brake Pads Set (Front)", description: "Universal-fit ceramic brake pad set for most sedans/hatchbacks — low dust, quiet braking.", costPrice: 18, currency: "USD", retailPrice: 649, compareAtPrice: 799, moq: 20, images: ["#374151"], emoji: "🛑", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(120), updatedAt: ago(8) },
+  { id: randomUUID(), supplierId: "sup-cn-02", categoryId: "cat-08", name: "12V Car Battery 60Ah", description: "Maintenance-free lead-acid car battery, 60Ah/12V, fits most sedans and hatchbacks.", costPrice: 32, currency: "USD", retailPrice: 1199, compareAtPrice: null, moq: 10, images: ["#1f2937"], emoji: "🔋", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(100), updatedAt: ago(6) },
+  { id: randomUUID(), supplierId: "sup-cn-02", categoryId: "cat-08", name: "OBD2 Diagnostic Scanner", description: "Bluetooth OBD2 scanner — reads and clears engine fault codes from a phone app.", costPrice: 9.5, currency: "USD", retailPrice: 349, compareAtPrice: 449, moq: 30, images: ["#111827"], emoji: "🔌", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(90), updatedAt: ago(4) },
+  { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-08", name: "Engine Oil Filter (Universal)", description: "Spin-on engine oil filter, fits most 1.3L-2.0L Japanese-brand engines.", costPrice: 2.8, currency: "USD", retailPrice: 129, compareAtPrice: null, moq: 50, images: ["#4b5563"], emoji: "🛢️", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(80), updatedAt: ago(3) },
+  { id: randomUUID(), supplierId: "sup-cn-01", categoryId: "cat-08", name: "Hydraulic Floor Jack (2 Ton)", description: "Low-profile hydraulic trolley jack, 2 ton capacity, for home or workshop use.", costPrice: 28, currency: "USD", retailPrice: 999, compareAtPrice: 1199, moq: 10, images: ["#6b7280"], emoji: "🔧", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(70), updatedAt: ago(2) },
+  { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-08", name: "Wiper Blade Set (Pair)", description: "All-weather silicone wiper blade set, universal fitting kit included.", costPrice: 3.6, currency: "USD", retailPrice: 179, compareAtPrice: null, moq: 40, images: ["#9ca3af"], emoji: "🌧️", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(60), updatedAt: ago(1) },
 ];

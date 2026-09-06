@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -38,6 +38,7 @@ export async function migrate(): Promise<void> {
     await seedDefaultAuthorityLogin();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
+    await seedVehiclePartsCategoryAndListings();
     return;
   }
 
@@ -116,6 +117,7 @@ export async function migrate(): Promise<void> {
   await seedDefaultAuthorityLogin();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
+  await seedVehiclePartsCategoryAndListings();
 }
 
 /**
@@ -506,6 +508,63 @@ async function seedVehicleListings(): Promise<void> {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[db] Vehicle listings seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Adds the Vehicle Parts & Equipment subcategory (nested under Vehicles)
+ * with sample parts/tools, listed live immediately — same pattern as
+ * seedVehicleListings, but no vehicle_details/condition/NRCS fields since
+ * ordinary parts aren't subject to the ITAC/NRCS restrictions that apply
+ * to the vehicles themselves. Gated on the category not existing yet.
+ */
+async function seedVehiclePartsCategoryAndListings(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_categories WHERE id = 'cat-08'");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Vehicle Parts & Equipment already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding Vehicle Parts & Equipment...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+
+    const partsCat = CATEGORIES.find(c => c.id === "cat-08")!;
+    await client.query(
+      `INSERT INTO mkt_categories (id, name, slug, icon, parent_id, featured) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+      [partsCat.id, partsCat.name, partsCat.slug, partsCat.icon, partsCat.parentId, partsCat.featured]
+    );
+
+    for (const sp of VEHICLE_PARTS_SUPPLIER_PRODUCTS) {
+      const { rows: spRows } = await client.query(
+        `INSERT INTO mkt_supplier_products (id, supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price,
+           moq, images, emoji, origin_country, status, import_count, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (id) DO NOTHING RETURNING *`,
+        [sp.id, sp.supplierId, sp.categoryId, sp.name, sp.description, sp.costPrice, sp.currency, sp.retailPrice, sp.compareAtPrice,
+         sp.moq, JSON.stringify(sp.images), sp.emoji, sp.originCountry, sp.status, sp.importCount, sp.createdAt, sp.updatedAt]
+      );
+      const saved = spRows[0] ?? sp; // ON CONFLICT DO NOTHING with RETURNING gives no row if it already existed — fall back to the seed object (only reached first run anyway, gated above)
+      const slug = `${String(saved.name ?? sp.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${sp.id.slice(0, 8)}`;
+      await client.query(
+        `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
+           currency, images, emoji, status, stock, brand, tags, fulfillment_type, supplier_product_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'active',$11,$12,$13,'imported',$14)`,
+        [
+          "sel-01", sp.categoryId, sp.name, slug, sp.description, sp.description, sp.retailPrice, sp.compareAtPrice,
+          JSON.stringify(sp.images), sp.emoji, 40, "Vehicle Parts", JSON.stringify(["parts", "vehicles"]), sp.id,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+    console.log(`[db] Seeded Vehicle Parts & Equipment category and ${VEHICLE_PARTS_SUPPLIER_PRODUCTS.length} live listings.`);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Vehicle Parts & Equipment seed failed, rolled back:", err);
     throw err;
   } finally {
     client.release();
