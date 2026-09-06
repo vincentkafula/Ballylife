@@ -35,6 +35,7 @@ export async function migrate(): Promise<void> {
     await seedDefaultSupplierLogin();
     await seedDefaultCustomerLogin();
     await seedRevenueAuthorities();
+    await seedDefaultAuthorityLogin();
     return;
   }
 
@@ -110,6 +111,7 @@ export async function migrate(): Promise<void> {
   await seedDefaultSupplierLogin();
   await seedDefaultCustomerLogin();
   await seedRevenueAuthorities();
+  await seedDefaultAuthorityLogin();
 }
 
 /**
@@ -356,4 +358,32 @@ async function seedRevenueAuthorities(): Promise<void> {
     );
   }
   console.log(`[db] Seeded ${REVENUE_AUTHORITIES.length} revenue authority placeholders.`);
+}
+
+/**
+ * Creates one default revenue-authority dashboard login, linked to the
+ * SARS (ZA) placeholder record — so you can see how the read-only portal
+ * looks and behaves. This does NOT mark the authority's agreement status
+ * as active; that stays 'not_agreed' regardless, since a demo login isn't
+ * a real institutional relationship.
+ */
+async function seedDefaultAuthorityLogin(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_revenue_authorities WHERE user_id IS NOT NULL");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Default revenue authority login already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding default revenue authority login...");
+  const passwordHash = await bcrypt.hash("Ballylife@2026", 10);
+  const { rows: userRows } = await pool!.query(
+    `INSERT INTO users (username, password_hash, role, name, email)
+     VALUES ('sars1', $1, 'revenue_authority', 'SARS Demo Viewer', 'sars-demo@ballylife.example')
+     ON CONFLICT (username) DO NOTHING RETURNING id`,
+    [passwordHash]
+  );
+  if (userRows.length) {
+    await pool!.query(`UPDATE mkt_revenue_authorities SET user_id = $1 WHERE id = 'auth-za-sars'`, [userRows[0].id]);
+  }
+  console.log("[db] Seeded default revenue authority login: sars1 (linked to SARS/ZA, agreement status unchanged).");
 }
