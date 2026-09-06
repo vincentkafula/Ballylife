@@ -1221,6 +1221,62 @@ router.get("/admin/reports/products.csv", requireAuth, requireRole(...MANAGER_RO
   res.send(csv);
 });
 
+// ── TAX & DUTY REVENUE SUMMARY ───────────────────────────────────────────────
+// Aggregates what's actually been calculated and collected — VAT charged to
+// customers (mkt_orders.tax_amount, grouped by month + destination country)
+// and import duty liability (mkt_orders.duty_amount, the estimate; and
+// mkt_customs_records, the per-shipment figure once a shipment is batched
+// and priced). This is reporting only: it tells you what's owed and what's
+// been cleared, exactly like the customs-tracking module — filing the
+// actual return with SARS/ZRA still happens outside this system.
+router.get("/admin/tax-summary", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows: byPeriod } = await pool!.query(
+    `SELECT to_char(placed_at, 'YYYY-MM') AS period, shipping_address->>'country' AS country,
+       COUNT(*)::int AS order_count, SUM(subtotal) AS subtotal, SUM(tax_amount) AS vat_collected,
+       SUM(duty_amount) AS duty_liability, SUM(total_amount) AS total_amount
+     FROM mkt_orders
+     WHERE status != 'refunded'
+     GROUP BY period, country ORDER BY period DESC, country`
+  );
+  const { rows: customsByStatus } = await pool!.query(
+    `SELECT status, destination_country, COUNT(*)::int AS record_count, SUM(declared_value) AS declared_value,
+       SUM(duty_amount) AS duty_amount, SUM(vat_amount) AS vat_amount, SUM(total_payable) AS total_payable
+     FROM mkt_customs_records GROUP BY status, destination_country ORDER BY destination_country, status`
+  );
+  const { rows: totalsRows } = await pool!.query(
+    `SELECT
+       COALESCE((SELECT SUM(tax_amount) FROM mkt_orders WHERE status != 'refunded'), 0) AS total_vat_collected,
+       COALESCE((SELECT SUM(duty_amount) FROM mkt_orders WHERE status != 'refunded'), 0) AS total_duty_estimated,
+       COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE status = 'cleared'), 0) AS total_duty_cleared,
+       COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE status != 'cleared'), 0) AS total_duty_outstanding`
+  );
+  const t = totalsRows[0];
+  res.json({
+    success: true,
+    data: {
+      byPeriod: byPeriod.map(r => ({ period: r.period, country: r.country, orderCount: r.order_count, subtotal: Number(r.subtotal), vatCollected: Number(r.vat_collected), dutyLiability: Number(r.duty_liability), totalAmount: Number(r.total_amount) })),
+      customsByStatus: customsByStatus.map(r => ({ status: r.status, country: r.destination_country, recordCount: r.record_count, declaredValue: Number(r.declared_value), dutyAmount: Number(r.duty_amount), vatAmount: Number(r.vat_amount), totalPayable: Number(r.total_payable) })),
+      totals: {
+        totalVatCollected: Number(t.total_vat_collected), totalDutyEstimated: Number(t.total_duty_estimated),
+        totalDutyCleared: Number(t.total_duty_cleared), totalDutyOutstanding: Number(t.total_duty_outstanding),
+      },
+    },
+  });
+});
+
+router.get("/admin/reports/tax.csv", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT to_char(placed_at, 'YYYY-MM') AS period, shipping_address->>'country' AS country,
+       COUNT(*)::int AS order_count, SUM(subtotal) AS subtotal, SUM(tax_amount) AS vat_collected,
+       SUM(duty_amount) AS duty_liability, SUM(total_amount) AS total_amount
+     FROM mkt_orders WHERE status != 'refunded' GROUP BY period, country ORDER BY period DESC, country`
+  );
+  const csv = toCsv(rows.map(r => ({ period: r.period, country: r.country, orderCount: r.order_count, subtotal: r.subtotal, vatCollected: r.vat_collected, dutyLiability: r.duty_liability, totalAmount: r.total_amount })));
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="tax-summary-${new Date().toISOString().slice(0,10)}.csv"`);
+  res.send(csv);
+});
+
 // ── SUPPLIER SELF-SERVICE (only for suppliers an admin has onboarded with
 // a login via POST /admin/suppliers/:id/create-login — most suppliers have
 // none and are managed entirely by Ballylife staff through the admin

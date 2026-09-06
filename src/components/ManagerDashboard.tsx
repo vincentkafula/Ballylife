@@ -99,7 +99,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
   // does). Fetch properly here and trigger the download via a temporary
   // blob-backed link instead.
   const [downloading, setDownloading] = useState<string | null>(null);
-  const downloadReport = async (report: "orders" | "products") => {
+  const downloadReport = async (report: "orders" | "products" | "tax") => {
     setDownloading(report);
     try {
       const res = await fetch(mktAdmin.reportUrl(report), { headers: { Authorization: `Bearer ${getMktToken() ?? ""}` } });
@@ -297,7 +297,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                   <StatCard label="Average commission" value={`${sellers.length ? (sellers.reduce((s, x) => s + Number(x.commissionPct ?? 0), 0) / sellers.length).toFixed(1) : 0}%`} icon={<Percent className="w-4 h-4" />} accent="#34A853" />
                   <StatCard label="Total orders" value={String(orders.length)} icon={<ShoppingBag className="w-4 h-4" />} accent="#B8862E" />
                 </div>
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
                   <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Commission by Seller</span></div>
                   {sellers.map((s, i) => (
                     <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
@@ -306,7 +306,8 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                     </div>
                   ))}
                 </div>
-                <p className="text-[11px] text-gray-400 mt-3">Payout scheduling, chargebacks and tax computation aren't wired up in this demo — commission rates shown are the seller-level percentages used elsewhere in the platform.</p>
+                <TaxRevenueSummary />
+                <p className="text-[11px] text-gray-400 mt-3">Payout scheduling and chargebacks aren't wired up in this demo. Tax/duty figures below are calculated and tracked — see the note there on what still requires your own SARS/ZRA filing.</p>
               </div>
             )}
 
@@ -322,6 +323,10 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                   <button onClick={() => downloadReport("products")} disabled={downloading === "products"}
                     className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                     <Download className="w-4 h-4" /> {downloading === "products" ? "Downloading…" : "Products report (CSV)"}
+                  </button>
+                  <button onClick={() => downloadReport("tax")} disabled={downloading === "tax"}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                    <Download className="w-4 h-4" /> {downloading === "tax" ? "Downloading…" : "Tax summary report (CSV)"}
                   </button>
                 </div>
               </div>
@@ -1179,6 +1184,97 @@ function CustomsRecords({ customsRecords, shipments, onChanged }: { customsRecor
         })}
         {!customsRecords.length && <p className="text-sm text-gray-400 p-6 text-center">No customs records yet.</p>}
       </div>
+    </div>
+  );
+}
+
+// What's actually been calculated and collected so far — VAT charged to
+// customers, and import duty liability both as an order-level estimate and
+// as the priced figure once a shipment gets a real customs record. This is
+// reporting, not remittance — see the note at the bottom for what still
+// happens outside this system.
+function TaxRevenueSummary() {
+  const [data, setData] = useState<R | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    mktAdmin.taxSummary().then(res => { if (res.success) setData(res.data as R); setLoading(false); });
+  }, []);
+
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+  if (!data) return null;
+
+  const totals = data.totals as R;
+  const byPeriod = (data.byPeriod as R[]) ?? [];
+  const customsByStatus = (data.customsByStatus as R[]) ?? [];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Tax & Duty Revenue</span>
+      </div>
+      <div className="grid sm:grid-cols-4 gap-3 mb-5">
+        <StatCard label="VAT collected (all-time)" value={fmtZAR(Number(totals.totalVatCollected))} icon={<Percent className="w-4 h-4" />} accent="#059669" />
+        <StatCard label="Import duty estimated" value={fmtZAR(Number(totals.totalDutyEstimated))} icon={<Globe2 className="w-4 h-4" />} accent="#B8862E" />
+        <StatCard label="Duty cleared at customs" value={fmtZAR(Number(totals.totalDutyCleared))} icon={<CheckCircle className="w-4 h-4" />} accent="#10B981" />
+        <StatCard label="Duty outstanding" value={fmtZAR(Number(totals.totalDutyOutstanding))} icon={<Clock className="w-4 h-4" />} accent="#DC2626" />
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
+        <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">VAT & duty by month and country</span></div>
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Period</th><th className="px-4 py-2 font-medium">Country</th>
+            <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Subtotal</th>
+            <th className="px-4 py-2 font-medium">VAT collected</th><th className="px-4 py-2 font-medium">Duty liability</th>
+          </tr></thead>
+          <tbody>
+            {byPeriod.map((r, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(r.period)}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(r.country)}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(r.orderCount)}</td>
+                <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.subtotal))}</td>
+                <td className="px-4 py-2.5 font-medium text-green-700">{fmtZAR(Number(r.vatCollected))}</td>
+                <td className="px-4 py-2.5 font-medium text-amber-700">{fmtZAR(Number(r.dutyLiability))}</td>
+              </tr>
+            ))}
+            {!byPeriod.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No orders yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {customsByStatus.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-3">
+          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customs records by status</span></div>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Country</th>
+              <th className="px-4 py-2 font-medium">Shipments</th><th className="px-4 py-2 font-medium">Declared value</th>
+              <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Import VAT</th><th className="px-4 py-2 font-medium">Total payable</th>
+            </tr></thead>
+            <tbody>
+              {customsByStatus.map((r, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900 capitalize">{String(r.status).replace(/_/g, " ")}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(r.country)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(r.recordCount)}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.declaredValue))}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.dutyAmount))}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.vatAmount))}</td>
+                  <td className="px-4 py-2.5 font-medium text-gray-800">{fmtZAR(Number(r.totalPayable))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-[11px] text-gray-400">
+        These figures are calculated and tracked here, not submitted or paid to SARS/ZRA automatically — actual filing and remittance still happens through
+        your own eFiling/ASYCUDA login, an accountant, or (once accredited) your own customs broker access. Download the CSV under Reports for handing to
+        whoever files the return.
+      </p>
     </div>
   );
 }

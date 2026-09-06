@@ -817,6 +817,12 @@ export const mktMock = {
     topProducts:MKT_PRODUCTS.filter(p=>p.sellerId==="sel-01").slice(0,3).map(p=>({ id:p.id, name:p.name, emoji:p.emoji, sold:p.totalSold, revenue:p.totalSold*p.price })),
   }}),
   adminStats: () => ({ success:true, data:{ totalProducts:12, totalSellers:5, totalOrders:8, totalRevenue:MKT_ORDERS.reduce((s,o)=>s+o.totalAmount,0), activeCustomers:4820, pendingReviews:14, pendingSellerApprovals:3, topCategories:MKT_CATS.slice(0,5).map(c=>({name:c.name,count:c.productCount})) } }),
+  adminTaxSummary: () => ({ success:true, data:{
+    byPeriod: [{ period:"2026-09", country:"ZA", orderCount:5, subtotal:12000, vatCollected:1800, dutyLiability:640, totalAmount:13800 },
+               { period:"2026-08", country:"ZM", orderCount:3, subtotal:4200, vatCollected:672, dutyLiability:210, totalAmount:4872 }],
+    customsByStatus: [{ status:"duty_calculated", country:"ZA", recordCount:1, declaredValue:640, dutyAmount:0, vatAmount:96, totalPayable:96 }],
+    totals: { totalVatCollected:2472, totalDutyEstimated:850, totalDutyCleared:0, totalDutyOutstanding:96 },
+  } }),
   addresses: () => ({ success:true, data:[{ id:"addr-1", userId:"demo-customer-001", label:"Home", firstName:"Margaret", lastName:"Botha", line1:"42 Kloof Street", line2:"Apt 3B", city:"Cape Town", state:"Western Cape", postalCode:"8001", country:"ZA", phone:"+27821000001", isDefault:true }] }),
 
   // ─── Supply chain (supplier catalog, warehouses, shipments, supplier orders) ─

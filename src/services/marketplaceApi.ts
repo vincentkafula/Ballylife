@@ -105,6 +105,7 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/customs-records"))   return mktMock.adminCustomsRecords();
   if (path.includes("/sellers") && path.includes("/supplier-orders")) return mktMock.sellerSupplierOrders(path.split("/sellers/")[1].split("/supplier-orders")[0]);
   if (path.includes("/sellers"))                 return mktMock.sellers();
+  if (path.includes("/admin/tax-summary"))       return mktMock.adminTaxSummary();
   if (path.includes("/admin/stats"))             return mktMock.adminStats();
   if (path.includes("/admin/orders"))            return mktMock.orders();
   if (path.includes("/addresses"))               return mktMock.addresses();
@@ -167,8 +168,9 @@ export const mktAdmin = {
   pendingSellers: () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/sellers/pending"),
   approveSeller: (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/approve`, { method: "PATCH" }),
   rejectSeller:  (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/reject`, { method: "PATCH" }),
+  taxSummary: () => api<{ success: boolean; data: unknown }>("/api/marketplace/admin/tax-summary"),
   customers: () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/customers"),
-  reportUrl: (report: "orders" | "products") => `${BASE}/api/marketplace/admin/reports/${report}.csv`,
+  reportUrl: (report: "orders" | "products" | "tax") => `${BASE}/api/marketplace/admin/reports/${report}.csv`,
   allProducts: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: Record<string, unknown> }>(`/api/marketplace/admin/products?${new URLSearchParams(params)}`),
   updateProductPrice: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/products/${id}/price`, { method: "PATCH", body: JSON.stringify(body) }),
   suppliers: {
