@@ -469,3 +469,64 @@ CREATE TABLE IF NOT EXISTS mkt_revenue_authorities (
   user_id       UUID REFERENCES users(id), -- set once an admin onboards a login for them
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Vehicles department — real cars supplied from Japan/China suppliers,
+-- sold through the same catalog/import/order pipeline as everything else,
+-- with vehicle-specific compliance rules layered on top:
+--
+--   South Africa: ITAC restricts used/second-hand vehicle imports to
+--   narrow personal exemptions (returning residents, inheritance, vintage
+--   40+ years, disability) — commercial resale of used vehicles is not
+--   permitted. NEW vehicles are allowed but require an NRCS Letter of
+--   Authority (type-approval) per model before they can be sold to a
+--   South African address. Both rules are enforced at order time, not
+--   just documented — see the check in POST /orders.
+--
+--   Zambia: no such restriction — ZRA taxes used vehicles on a flat
+--   specific-duty schedule by body type, engine size, and age band
+--   (2-5 years / 5+ years), switching to ad valorem (% of CIF) only for
+--   vehicles under 2 years old or hybrids/EVs. mkt_vehicle_duty_zm below
+--   holds that schedule; it is NOT the same mechanism as mkt_duty_rates
+--   (which is percentage-based and used for South Africa's new-vehicle
+--   duty and every other category/country).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Vehicle-specific fields, added to both the supplier catalog and the
+-- resulting seller listing. condition is the field the SA compliance
+-- check keys off; nrcs_approved/nrcs_reference track the (real, external)
+-- NRCS Letter of Authority for a given model — false until a manager has
+-- actually obtained one, never inferred or defaulted true.
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS vehicle_details JSONB;
+-- { "make": "Toyota", "model": "Corolla", "year": 2025, "mileageKm": 12,
+--   "engineCc": 1800, "bodyType": "sedan", "transmission": "automatic",
+--   "fuelType": "petrol", "vin": "..." }
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS condition TEXT; -- 'new' | 'used' — NULL for non-vehicle items
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS nrcs_approved BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS nrcs_reference TEXT;
+
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS vehicle_details JSONB;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS condition TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS nrcs_approved BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS nrcs_reference TEXT;
+
+-- Zambia's ZRA specific-duty schedule for used vehicles 2+ years old —
+-- flat kwacha amounts, not a percentage. Rates below are illustrative,
+-- transcribed from ZRA's published schedule at the time this was built;
+-- ZRA updates this schedule annually (each July) — verify current rates
+-- before relying on this for an actual declaration. Vehicles under 2
+-- years old, and all hybrids/EVs regardless of age, use the ordinary
+-- percentage-based mkt_duty_rates system instead (25% duty + 30% excise
+-- + 16% VAT on CIF, per ZRA's ad valorem method for those categories) —
+-- not modelled as a separate flat row here.
+CREATE TABLE IF NOT EXISTS mkt_vehicle_duty_zm (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  body_type         TEXT NOT NULL, -- sedan | hatchback | station_wagon | suv | pickup_single_cab | pickup_double_cab | panel_van
+  engine_cc_min     INTEGER NOT NULL DEFAULT 0,
+  engine_cc_max     INTEGER, -- NULL = no upper bound ("over Xcc")
+  age_band          TEXT NOT NULL, -- '2_to_5' | '5_plus'
+  duty_kwacha       NUMERIC(12,2) NOT NULL,
+  carbon_surtax_kwacha NUMERIC(12,2) NOT NULL DEFAULT 0,
+  notes             TEXT,
+  UNIQUE (body_type, engine_cc_min, engine_cc_max, age_band)
+);

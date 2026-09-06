@@ -369,7 +369,7 @@ const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
 };
 
 function SupplyChainPanel() {
-  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments" | "catalog" | "taxRates" | "customs">("orders");
+  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments" | "catalog" | "taxRates" | "customs" | "vehicleDuty">("orders");
   const [suppliers, setSuppliers] = useState<R[]>([]);
   const [warehouses, setWarehouses] = useState<R[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<R[]>([]);
@@ -379,14 +379,15 @@ function SupplyChainPanel() {
   const [taxRates, setTaxRates] = useState<R[]>([]);
   const [dutyRates, setDutyRates] = useState<R[]>([]);
   const [customsRecords, setCustomsRecords] = useState<R[]>([]);
+  const [vehicleDutyZm, setVehicleDutyZm] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [supRes, whRes, soRes, shRes, catRes, catgRes, taxRes, dutyRes, custRes] = await Promise.allSettled([
+    const [supRes, whRes, soRes, shRes, catRes, catgRes, taxRes, dutyRes, custRes, vdzRes] = await Promise.allSettled([
       mktAdmin.suppliers.list(), mktAdmin.warehouses.list(), mktAdmin.supplierOrders.list(), mktAdmin.shipments.list(),
-      mktAdmin.supplierProducts.list(), mktCategories(), mktAdmin.taxRates.list(), mktAdmin.dutyRates.list(), mktAdmin.customsRecords.list(),
+      mktAdmin.supplierProducts.list(), mktCategories(), mktAdmin.taxRates.list(), mktAdmin.dutyRates.list(), mktAdmin.customsRecords.list(), mktAdmin.vehicleDutyZm.list(),
     ]);
     if (supRes.status === "fulfilled") setSuppliers(supRes.value.data as R[]);
     if (whRes.status === "fulfilled") setWarehouses(whRes.value.data as R[]);
@@ -397,6 +398,7 @@ function SupplyChainPanel() {
     if (taxRes.status === "fulfilled") setTaxRates(taxRes.value.data as R[]);
     if (dutyRes.status === "fulfilled") setDutyRates(dutyRes.value.data as R[]);
     if (custRes.status === "fulfilled") setCustomsRecords(custRes.value.data as R[]);
+    if (vdzRes.status === "fulfilled") setVehicleDutyZm(vdzRes.value.data as R[]);
     setLoading(false);
   }, []);
 
@@ -433,6 +435,7 @@ function SupplyChainPanel() {
     { id: "shipments", label: "Shipments", icon: <Truck className="w-3.5 h-3.5" /> },
     { id: "customs", label: "Customs", icon: <FileText className="w-3.5 h-3.5" /> },
     { id: "taxRates", label: "Tax Rates", icon: <Percent className="w-3.5 h-3.5" /> },
+    { id: "vehicleDuty", label: "Vehicle Duty (ZM)", icon: <Percent className="w-3.5 h-3.5" /> },
     { id: "warehouses", label: "Warehouses", icon: <Warehouse className="w-3.5 h-3.5" /> },
     { id: "suppliers", label: "Suppliers", icon: <Globe2 className="w-3.5 h-3.5" /> },
     { id: "catalog", label: "Supplier Catalog", icon: <Store className="w-3.5 h-3.5" /> },
@@ -535,6 +538,8 @@ function SupplyChainPanel() {
       )}
 
       {subTab === "taxRates" && <TaxRatesManagement taxRates={taxRates} dutyRates={dutyRates} categories={categories} onChanged={load} />}
+
+      {subTab === "vehicleDuty" && <VehicleDutyZmManagement rates={vehicleDutyZm} onChanged={load} />}
 
       {subTab === "customs" && <CustomsRecords customsRecords={customsRecords} shipments={shipments} onChanged={load} />}
 
@@ -724,10 +729,16 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
 function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }: { catalog: R[]; suppliers: R[]; categories: R[]; onChanged: () => void }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", retailPrice: "", compareAtPrice: "", moq: "10", originCountry: "CN", emoji: "📦" });
+  const [vehicleForm, setVehicleForm] = useState({ make: "", model: "", year: "", mileageKm: "0", engineCc: "", bodyType: "sedan", transmission: "automatic", fuelType: "petrol", condition: "new" });
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [priceEdit, setPriceEdit] = useState({ retailPrice: "", compareAtPrice: "" });
   const [savingPrice, setSavingPrice] = useState(false);
+  const [nrcsEditId, setNrcsEditId] = useState<string | null>(null);
+  const [nrcsEdit, setNrcsEdit] = useState({ nrcsApproved: false, nrcsReference: "" });
+  const [savingNrcs, setSavingNrcs] = useState(false);
+
+  const isVehicleCategory = categories.find(c => c.id === form.categoryId)?.name === "Vehicles";
 
   const submit = async () => {
     if (!form.supplierId || !form.name || !form.costPrice) return;
@@ -735,11 +746,18 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
     const res = await mktAdmin.supplierProducts.create({
       ...form, costPrice: Number(form.costPrice), moq: Number(form.moq) || 1,
       retailPrice: Number(form.retailPrice) || 0, compareAtPrice: form.compareAtPrice ? Number(form.compareAtPrice) : undefined,
+      ...(isVehicleCategory ? {
+        condition: vehicleForm.condition,
+        vehicleDetails: { make: vehicleForm.make, model: vehicleForm.model, year: Number(vehicleForm.year) || undefined,
+          mileageKm: Number(vehicleForm.mileageKm) || 0, engineCc: Number(vehicleForm.engineCc) || undefined,
+          bodyType: vehicleForm.bodyType, transmission: vehicleForm.transmission, fuelType: vehicleForm.fuelType },
+      } : {}),
     });
     setSaving(false);
     if (!res.success) { toast.error(res.error ?? "Could not add catalog item."); return; }
     setAdding(false);
     setForm({ supplierId: "", categoryId: "", name: "", description: "", costPrice: "", currency: "USD", retailPrice: "", compareAtPrice: "", moq: "10", originCountry: "CN", emoji: "📦" });
+    setVehicleForm({ make: "", model: "", year: "", mileageKm: "0", engineCc: "", bodyType: "sedan", transmission: "automatic", fuelType: "petrol", condition: "new" });
     onChanged();
   };
 
@@ -758,6 +776,20 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
     setSavingPrice(false);
     if (!res.success) { toast.error(res.error ?? "Could not update price."); return; }
     setEditingId(null);
+    onChanged();
+  };
+
+  const startEditNrcs = (item: R) => {
+    setNrcsEditId(String(item.id));
+    setNrcsEdit({ nrcsApproved: Boolean(item.nrcsApproved), nrcsReference: String(item.nrcsReference ?? "") });
+  };
+
+  const saveNrcs = async (id: string) => {
+    setSavingNrcs(true);
+    const res = await mktAdmin.supplierProducts.update(id, { nrcsApproved: nrcsEdit.nrcsApproved, nrcsReference: nrcsEdit.nrcsReference || null });
+    setSavingNrcs(false);
+    if (!res.success) { toast.error(res.error ?? "Could not update NRCS status."); return; }
+    setNrcsEditId(null);
     onChanged();
   };
 
@@ -794,12 +826,48 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           <input placeholder="Retail price (ZAR)" type="number" step="0.01" value={form.retailPrice} onChange={e => setForm({ ...form, retailPrice: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
           <input placeholder="Discount / was-price (ZAR, optional)" type="number" step="0.01" value={form.compareAtPrice} onChange={e => setForm({ ...form, compareAtPrice: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
           <input placeholder="Description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-3" />
+
+          {isVehicleCategory && (
+            <div className="sm:col-span-3 border-t border-gray-100 pt-2 mt-1">
+              <p className="text-xs font-semibold text-gray-700 mb-2">Vehicle details</p>
+              <div className="grid sm:grid-cols-4 gap-2">
+                <input placeholder="Make (e.g. Toyota)" value={vehicleForm.make} onChange={e => setVehicleForm({ ...vehicleForm, make: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <input placeholder="Model (e.g. Corolla)" value={vehicleForm.model} onChange={e => setVehicleForm({ ...vehicleForm, model: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <input placeholder="Year" type="number" value={vehicleForm.year} onChange={e => setVehicleForm({ ...vehicleForm, year: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <input placeholder="Engine cc" type="number" value={vehicleForm.engineCc} onChange={e => setVehicleForm({ ...vehicleForm, engineCc: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <select value={vehicleForm.condition} onChange={e => setVehicleForm({ ...vehicleForm, condition: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+                  <option value="new">New</option>
+                  <option value="used">Used</option>
+                </select>
+                <input placeholder="Mileage (km)" type="number" value={vehicleForm.mileageKm} onChange={e => setVehicleForm({ ...vehicleForm, mileageKm: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <select value={vehicleForm.bodyType} onChange={e => setVehicleForm({ ...vehicleForm, bodyType: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+                  {["sedan","hatchback","station_wagon","suv","pickup_single_cab","pickup_double_cab","panel_van"].map(b => <option key={b} value={b}>{b.replace(/_/g, " ")}</option>)}
+                </select>
+                <select value={vehicleForm.transmission} onChange={e => setVehicleForm({ ...vehicleForm, transmission: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+                  <option value="automatic">Automatic</option>
+                  <option value="manual">Manual</option>
+                </select>
+                <select value={vehicleForm.fuelType} onChange={e => setVehicleForm({ ...vehicleForm, fuelType: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+                  <option value="petrol">Petrol</option>
+                  <option value="diesel">Diesel</option>
+                  <option value="hybrid">Hybrid</option>
+                  <option value="electric">Electric</option>
+                </select>
+              </div>
+              {vehicleForm.condition === "used" && (
+                <p className="text-[11px] text-amber-600 mt-2">Used vehicles will be blocked at checkout for South African delivery addresses (ITAC restriction) — still orderable for Zambia.</p>
+              )}
+            </div>
+          )}
+
           <button onClick={submit} disabled={saving || !form.supplierId || !form.name || !form.costPrice} className="sm:col-span-3 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add to catalog"}</button>
         </div>
       )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {catalog.map((item, i) => (
+        {catalog.map((item, i) => {
+          const vd = item.vehicleDetails as R | null;
+          return (
           <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-2xl">{String(item.emoji ?? "📦")}</span>
@@ -808,6 +876,28 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
             <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
             <p className="text-[11px] text-gray-400 mb-1">{String(item.supplierName)} · MOQ {String(item.moq)}</p>
             <p className="text-xs font-semibold text-gray-600 mb-2">Cost: {String(item.currency)} {Number(item.costPrice).toFixed(2)} · Imported {String(item.importCount ?? 0)}x</p>
+
+            {vd && (
+              <div className="mb-2 pb-2 border-b border-gray-50">
+                <p className="text-[11px] text-gray-500">{String(vd.year)} {String(vd.make)} {String(vd.model)} · {Number(vd.mileageKm).toLocaleString()}km · {String(vd.engineCc)}cc {String(vd.bodyType).replace(/_/g, " ")}</p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: item.condition === "new" ? "#ECFDF5" : "#FFFBEB", color: item.condition === "new" ? "#059669" : "#B45309" }}>{String(item.condition)}</span>
+                  {nrcsEditId === item.id ? (
+                    <div className="flex items-center gap-1">
+                      <input placeholder="NRCS ref" value={nrcsEdit.nrcsReference} onChange={e => setNrcsEdit({ ...nrcsEdit, nrcsReference: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-24" />
+                      <label className="flex items-center gap-1 text-[10px] text-gray-600">
+                        <input type="checkbox" checked={nrcsEdit.nrcsApproved} onChange={e => setNrcsEdit({ ...nrcsEdit, nrcsApproved: e.target.checked })} /> Approved
+                      </label>
+                      <button onClick={() => saveNrcs(String(item.id))} disabled={savingNrcs} className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ background: "#B8862E" }}>Save</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => startEditNrcs(item)} className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: item.nrcsApproved ? "#ECFDF5" : "#FEF2F2", color: item.nrcsApproved ? "#059669" : "#DC2626" }}>
+                      NRCS {item.nrcsApproved ? "approved" : "not approved"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {editingId === item.id ? (
               <div className="space-y-1.5">
@@ -841,7 +931,8 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
         {!catalog.length && <p className="text-sm text-gray-400 p-6 text-center col-span-full">No catalog items yet.</p>}
       </div>
     </div>
@@ -1421,6 +1512,106 @@ function RevenueAuthorityManagement() {
               );
             })}
             {!authorities.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No revenue authorities added yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Zambia's ZRA flat specific-duty schedule for used vehicles 2+ years old
+// — a fundamentally different mechanism from the percentage-based duty
+// rates used everywhere else (South Africa's new-vehicle duty included).
+// Seeded rates are transcribed from ZRA's published schedule where noted,
+// estimated elsewhere — ZRA updates this every July, so this needs real
+// verification before being relied on for an actual declaration.
+function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ bodyType: "sedan", engineCcMin: "0", engineCcMax: "1000", ageBand: "2_to_5", dutyKwacha: "", carbonSurtaxKwacha: "123.20", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ dutyKwacha: "", carbonSurtaxKwacha: "" });
+
+  const submit = async () => {
+    if (!form.dutyKwacha) return;
+    setSaving(true);
+    const res = await mktAdmin.vehicleDutyZm.create({ ...form, engineCcMin: Number(form.engineCcMin) || 0, engineCcMax: form.engineCcMax ? Number(form.engineCcMax) : null, dutyKwacha: Number(form.dutyKwacha), carbonSurtaxKwacha: Number(form.carbonSurtaxKwacha) || 0 });
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not add rate."); return; }
+    setAdding(false);
+    setForm({ bodyType: "sedan", engineCcMin: "0", engineCcMax: "1000", ageBand: "2_to_5", dutyKwacha: "", carbonSurtaxKwacha: "123.20", notes: "" });
+    onChanged();
+  };
+
+  const startEdit = (r: R) => {
+    setEditingId(String(r.id));
+    setEditForm({ dutyKwacha: String(r.dutyKwacha), carbonSurtaxKwacha: String(r.carbonSurtaxKwacha) });
+  };
+
+  const saveEdit = async (id: string) => {
+    const res = await mktAdmin.vehicleDutyZm.update(id, { dutyKwacha: Number(editForm.dutyKwacha), carbonSurtaxKwacha: Number(editForm.carbonSurtaxKwacha) });
+    if (!res.success) toast.error(res.error ?? "Could not save.");
+    setEditingId(null);
+    onChanged();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Zambia Vehicle Duty Schedule (ZRA)</span>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+          <Plus className="w-3.5 h-3.5" /> Add rate
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mb-3">Flat kwacha amounts by body type, engine size, and age band — this is how Zambia actually taxes used vehicles 2+ years old, not a percentage. ZRA updates this schedule every July; verify current figures at zra.org.zm.</p>
+
+      {adding && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-4 gap-2 mb-4">
+          <select value={form.bodyType} onChange={e => setForm({ ...form, bodyType: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            {["sedan","hatchback","station_wagon","suv","pickup_single_cab","pickup_double_cab","panel_van"].map(b => <option key={b} value={b}>{b.replace(/_/g, " ")}</option>)}
+          </select>
+          <input placeholder="Engine cc min" type="number" value={form.engineCcMin} onChange={e => setForm({ ...form, engineCcMin: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Engine cc max (blank = no max)" type="number" value={form.engineCcMax} onChange={e => setForm({ ...form, engineCcMax: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <select value={form.ageBand} onChange={e => setForm({ ...form, ageBand: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            <option value="2_to_5">2-5 years</option>
+            <option value="5_plus">5+ years</option>
+          </select>
+          <input placeholder="Duty (kwacha)" type="number" step="0.01" value={form.dutyKwacha} onChange={e => setForm({ ...form, dutyKwacha: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Carbon surtax (kwacha)" type="number" step="0.01" value={form.carbonSurtaxKwacha} onChange={e => setForm({ ...form, carbonSurtaxKwacha: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <input placeholder="Notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
+          <button onClick={submit} disabled={saving || !form.dutyKwacha} className="sm:col-span-4 py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add rate"}</button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Body type</th><th className="px-4 py-2 font-medium">Engine cc</th>
+            <th className="px-4 py-2 font-medium">Age</th><th className="px-4 py-2 font-medium">Duty + surtax</th>
+            <th className="px-4 py-2 font-medium">Notes</th><th className="px-4 py-2 font-medium">Action</th>
+          </tr></thead>
+          <tbody>
+            {rates.map((r, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2.5 font-semibold text-gray-900 capitalize">{String(r.bodyType).replace(/_/g, " ")}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(r.engineCcMin)}–{r.engineCcMax ? String(r.engineCcMax) : "+"}</td>
+                <td className="px-4 py-2.5 text-gray-500">{r.ageBand === "2_to_5" ? "2-5 yrs" : "5+ yrs"}</td>
+                <td className="px-4 py-2.5">
+                  {editingId === r.id ? (
+                    <div className="flex items-center gap-1">
+                      <input type="number" step="0.01" value={editForm.dutyKwacha} onChange={e => setEditForm({ ...editForm, dutyKwacha: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-xs w-20" />
+                      <input type="number" step="0.01" value={editForm.carbonSurtaxKwacha} onChange={e => setEditForm({ ...editForm, carbonSurtaxKwacha: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-xs w-16" />
+                      <button onClick={() => saveEdit(String(r.id))} className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ background: "#B8862E" }}>Save</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => startEdit(r)} className="text-gray-700 font-medium hover:underline">K{Number(r.dutyKwacha).toLocaleString()} + K{Number(r.carbonSurtaxKwacha).toLocaleString()}</button>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-gray-400 text-xs max-w-xs">{String(r.notes ?? "")}</td>
+                <td className="px-4 py-2.5">{editingId !== r.id && <button onClick={() => startEdit(r)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit</button>}</td>
+              </tr>
+            ))}
+            {!rates.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No rates yet.</td></tr>}
           </tbody>
         </table>
       </div>

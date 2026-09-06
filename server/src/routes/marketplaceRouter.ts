@@ -87,6 +87,7 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   avgRating: Number(r.avg_rating), reviewCount: r.review_count, totalSold: r.total_sold,
   isFeatured: r.is_featured, isFlashDeal: r.is_flash_deal, flashDealEndsAt: r.flash_deal_ends_at,
   fulfillmentType: r.fulfillment_type ?? "local", supplierProductId: r.supplier_product_id ?? null,
+  vehicleDetails: r.vehicle_details ?? null, condition: r.condition ?? null, nrcsApproved: r.nrcs_approved ?? false, nrcsReference: r.nrcs_reference ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
@@ -101,7 +102,9 @@ const mapSupplierProduct = (r: any) => ({
   categoryId: r.category_id, name: r.name, description: r.description, costPrice: Number(r.cost_price),
   currency: r.currency, retailPrice: Number(r.retail_price), compareAtPrice: r.compare_at_price !== null && r.compare_at_price !== undefined ? Number(r.compare_at_price) : null,
   moq: r.moq, images: r.images, emoji: r.emoji, originCountry: r.origin_country,
-  status: r.status, importCount: r.import_count, createdAt: r.created_at, updatedAt: r.updated_at,
+  status: r.status, importCount: r.import_count,
+  vehicleDetails: r.vehicle_details ?? null, condition: r.condition ?? null, nrcsApproved: r.nrcs_approved ?? false, nrcsReference: r.nrcs_reference ?? null,
+  createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 const mapWarehouse = (r: any) => ({
@@ -180,6 +183,11 @@ const mapCustomsRecord = (r: any) => ({
 const mapRevenueAuthority = (r: any) => ({
   id: r.id, name: r.name, country: r.country, contactName: r.contact_name, contactEmail: r.contact_email,
   status: r.status, notes: r.notes, userId: r.user_id ?? null, createdAt: r.created_at,
+});
+
+const mapVehicleDutyZm = (r: any) => ({
+  id: r.id, bodyType: r.body_type, engineCcMin: r.engine_cc_min, engineCcMax: r.engine_cc_max,
+  ageBand: r.age_band, dutyKwacha: Number(r.duty_kwacha), carbonSurtaxKwacha: Number(r.carbon_surtax_kwacha), notes: r.notes,
 });
 
 // Valid forward transitions for a customs record — mirrors the real
@@ -563,11 +571,11 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // an order with any supplier-sourced line needs the supplier's lead
     // time plus international shipping/customs, not the same 5-day promise)
     // and, further down, to open the two-leg supplier-order records.
-    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null }>();
+    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null; vehicleDetails: any; condition: string | null; nrcsApproved: boolean }>();
     let maxLeadTimeDays = 0;
     for (const item of items) {
       const { rows: prodRows } = await client.query(
-        `SELECT p.fulfillment_type, p.supplier_product_id, p.category_id, sp.supplier_id, sp.cost_price, sp.origin_country, sup.lead_time_days
+        `SELECT p.fulfillment_type, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.origin_country, sup.lead_time_days
          FROM mkt_products p
          LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
          LEFT JOIN mkt_suppliers sup ON sup.id = sp.supplier_id
@@ -578,8 +586,25 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
         fulfillmentType: p?.fulfillment_type ?? "local", supplierProductId: p?.supplier_product_id ?? null,
         supplierId: p?.supplier_id ?? null, costPrice: p?.cost_price ?? null, originCountry: p?.origin_country ?? null,
         leadTimeDays: p?.lead_time_days ?? null, categoryId: p?.category_id ?? null,
+        vehicleDetails: p?.vehicle_details ?? null, condition: p?.condition ?? null, nrcsApproved: p?.nrcs_approved ?? false,
       });
       if (p?.fulfillment_type === "imported" && p?.lead_time_days) maxLeadTimeDays = Math.max(maxLeadTimeDays, Number(p.lead_time_days));
+
+      // Vehicle compliance — checked against THIS order's actual delivery
+      // country, since the same listing can be legal for one country and
+      // not another (Zambia allows used-vehicle imports; South Africa's
+      // ITAC does not, for commercial resale). Applies regardless of new/
+      // used: South Africa also requires an NRCS Letter of Authority
+      // (type-approval) on every vehicle, new or used, before it can be
+      // delivered there.
+      if (p?.category_id === "cat-07" && shippingAddress.country === "ZA") {
+        if (p.condition === "used") {
+          throw { code: "VEHICLE_COMPLIANCE", message: `"${item.productName}" can't be delivered to a South African address — South Africa (ITAC) restricts commercial resale of used vehicles to narrow personal exemptions only. This vehicle can still be ordered for delivery to Zambia.` };
+        }
+        if (!p.nrcs_approved) {
+          throw { code: "VEHICLE_COMPLIANCE", message: `"${item.productName}" doesn't yet have NRCS type-approval on file, which South Africa requires for every imported vehicle before it can be delivered. Contact support once approval is obtained.` };
+        }
+      }
     }
     // 12-day buffer covers origin-hub QC + consolidated freight + customs +
     // last-mile once it lands — matches the 10-30 day range international
@@ -598,6 +623,13 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     const defaultDutyRatePct = taxRateRows.length ? Number(taxRateRows[0].default_duty_rate_pct) : 20;
     const { rows: dutyRateRows } = await client.query(`SELECT category_id, duty_rate_pct FROM mkt_duty_rates WHERE country = $1`, [shippingAddress.country]);
     const dutyRateByCategory = new Map(dutyRateRows.map((r: any) => [r.category_id, Number(r.duty_rate_pct)]));
+    // Zambia taxes used vehicles 2+ years old on ZRA's flat specific-duty
+    // schedule (kwacha, by body type/engine size/age band) instead of a
+    // percentage of value — a fundamentally different mechanism from
+    // mkt_duty_rates, looked up separately only when relevant.
+    const { rows: vehicleDutyZmRows } = shippingAddress.country === "ZM"
+      ? await client.query(`SELECT * FROM mkt_vehicle_duty_zm`)
+      : { rows: [] as any[] };
 
     const taxAmount = +(cart.subtotal * vatRatePct / 100).toFixed(2);
     // Import duty is never charged to the customer directly — it's a cost
@@ -609,10 +641,30 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     let dutyAmount = 0;
     for (const item of items) {
       const f = itemFulfillment.get(item.productId);
-      if (f?.fulfillmentType === "imported" && f.costPrice) {
-        const rate = f.categoryId ? (dutyRateByCategory.get(f.categoryId) ?? defaultDutyRatePct) : defaultDutyRatePct;
-        dutyAmount += Number(f.costPrice) * item.quantity * (rate / 100);
+      if (!f?.fulfillmentType || f.fulfillmentType !== "imported" || !f.costPrice) continue;
+
+      if (f.categoryId === "cat-07" && shippingAddress.country === "ZM" && f.vehicleDetails) {
+        // ZRA specific duty only applies to vehicles 2+ years old; under 2
+        // and all hybrids/EVs fall through to the ordinary percentage
+        // method below (ZRA's own ad valorem rule for those categories).
+        const vd = f.vehicleDetails;
+        const ageYears = new Date().getFullYear() - Number(vd.year ?? new Date().getFullYear());
+        const ageBand = ageYears >= 5 ? "5_plus" : ageYears >= 2 ? "2_to_5" : null;
+        const match = ageBand && vd.fuelType !== "hybrid" && vd.fuelType !== "electric"
+          ? vehicleDutyZmRows.find((r: any) => r.body_type === vd.bodyType && r.age_band === ageBand && Number(vd.engineCc) >= r.engine_cc_min && (r.engine_cc_max === null || Number(vd.engineCc) <= r.engine_cc_max))
+          : null;
+        if (match) {
+          // NOTE: this flat amount is in Zambian Kwacha (ZRA's schedule),
+          // added directly into an order total that's otherwise tracked
+          // in ZAR throughout this system — a real FX conversion belongs
+          // here before this is relied on for an actual ZM filing.
+          dutyAmount += (Number(match.duty_kwacha) + Number(match.carbon_surtax_kwacha)) * item.quantity;
+          continue;
+        }
       }
+
+      const rate = f.categoryId ? (dutyRateByCategory.get(f.categoryId) ?? defaultDutyRatePct) : defaultDutyRatePct;
+      dutyAmount += Number(f.costPrice) * item.quantity * (rate / 100);
     }
     dutyAmount = +dutyAmount.toFixed(2);
     const totalAmount = +(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount).toFixed(2);
@@ -715,6 +767,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
   } catch (err: any) {
     await client.query("ROLLBACK");
     if (err?.code === "OUT_OF_STOCK") { res.status(409).json({ success: false, error: err.message }); return; }
+    if (err?.code === "VEHICLE_COMPLIANCE") { res.status(409).json({ success: false, error: err.message }); return; }
     console.error("[marketplace] Order placement failed:", err);
     res.status(500).json({ success: false, error: "Could not place order, please try again." });
     return;
@@ -1110,6 +1163,11 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
 
   if (!sp.category_id) { res.status(400).json({ success: false, error: "This catalog item has no category set — ask the marketplace team to assign one before importing." }); return; }
   if (Number(sp.retail_price) <= 0) { res.status(400).json({ success: false, error: "This catalog item has no retail price set yet — ask a manager to set one before importing." }); return; }
+  // Note: a used vehicle can still be listed here even though it can never
+  // be delivered to a South African address — Zambia allows used-vehicle
+  // imports freely, so the same listing legitimately serves Zambian
+  // buyers. The compliance check (condition + NRCS) happens at order
+  // time instead, based on where THIS customer is actually shipping to.
 
   const slug = `${String(sp.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
   const client = await pool!.connect();
@@ -1117,10 +1175,11 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
     await client.query("BEGIN");
     const { rows } = await client.query(
       `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
-         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13) RETURNING *`,
+         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17) RETURNING *`,
       [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", sp.retail_price, sp.compare_at_price ?? null,
-       JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId]
+       JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId,
+       sp.vehicle_details ? JSON.stringify(sp.vehicle_details) : null, sp.condition ?? null, sp.nrcs_approved ?? false, sp.nrcs_reference ?? null]
     );
     await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [supplierProductId]);
     await client.query("COMMIT");
@@ -1348,29 +1407,32 @@ router.get("/suppliers/:id/products", requireAuth, requireSupplierOwner, async (
 // product listing) before it's importable. originCountry is fixed to the
 // supplier's own country, not something they choose per item.
 router.post("/suppliers/:id/products", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
-  const { name, description, costPrice, currency, moq, images, emoji } = req.body;
+  const { name, description, costPrice, currency, moq, images, emoji, vehicleDetails, condition } = req.body;
   if (!name || costPrice === undefined) { res.status(400).json({ success: false, error: "name and costPrice are required" }); return; }
   const { rows: supRows } = await pool!.query(`SELECT country FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
   const { rows } = await pool!.query(
-    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country, status)
-     VALUES ($1,NULL,$2,$3,$4,$5,0,NULL,$6,$7,$8,$9,'pending_review') RETURNING *`,
-    [req.params.id, name, description ?? "", costPrice, currency ?? "USD", moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", supRows[0]?.country ?? "CN"]
+    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country, status, vehicle_details, condition)
+     VALUES ($1,NULL,$2,$3,$4,$5,0,NULL,$6,$7,$8,$9,'pending_review',$10,$11) RETURNING *`,
+    [req.params.id, name, description ?? "", costPrice, currency ?? "USD", moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", supRows[0]?.country ?? "CN",
+     vehicleDetails ? JSON.stringify(vehicleDetails) : null, condition ?? null]
   );
   res.status(201).json({ success: true, data: mapSupplierProduct(rows[0]), message: "Submitted — a manager will categorize, price, and approve it before it's importable." });
 });
 
-// A supplier can edit their own item's operational details, but never its
-// category, retail/compare price, or status — those stay admin-only
-// (PATCH /admin/supplier-products/:id) since they drive what customers
-// pay and what's actually approved to sell.
+// A supplier can edit their own item's operational details (including
+// vehicle specs and condition, which they're best placed to know), but
+// never its category, retail/compare price, status, or NRCS approval —
+// that last one is a compliance sign-off Ballylife's team makes after
+// actually obtaining the Letter of Authority, not something a supplier
+// can self-certify.
 router.patch("/suppliers/:id/products/:productId", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
   const { rows: existing } = await pool!.query(`SELECT id FROM mkt_supplier_products WHERE id::text = $1 AND supplier_id = $2`, [req.params.productId, req.params.id]);
   if (!existing.length) { res.status(404).json({ success: false, error: "Catalog item not found" }); return; }
-  const fields = ["name", "description", "costPrice", "currency", "moq", "emoji", "images"] as const;
-  const colMap: Record<string, string> = { name: "name", description: "description", costPrice: "cost_price", currency: "currency", moq: "moq", emoji: "emoji", images: "images" };
+  const fields = ["name", "description", "costPrice", "currency", "moq", "emoji", "images", "vehicleDetails", "condition"] as const;
+  const colMap: Record<string, string> = { name: "name", description: "description", costPrice: "cost_price", currency: "currency", moq: "moq", emoji: "emoji", images: "images", vehicleDetails: "vehicle_details", condition: "condition" };
   const sets: string[] = []; const vals: unknown[] = [];
   for (const f of fields) {
-    if (req.body[f] !== undefined) { vals.push(f === "images" ? JSON.stringify(req.body[f]) : req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); }
+    if (req.body[f] !== undefined) { vals.push(f === "images" || f === "vehicleDetails" ? JSON.stringify(req.body[f]) : req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); }
   }
   if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
   vals.push(req.params.productId);
@@ -1543,23 +1605,26 @@ router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES
 });
 
 router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
-  const { supplierId, categoryId, name, description, costPrice, currency, retailPrice, compareAtPrice, moq, images, emoji, originCountry } = req.body;
+  const { supplierId, categoryId, name, description, costPrice, currency, retailPrice, compareAtPrice, moq, images, emoji, originCountry, vehicleDetails, condition, nrcsApproved, nrcsReference } = req.body;
   if (!supplierId || !name || costPrice === undefined || !originCountry) {
     res.status(400).json({ success: false, error: "supplierId, name, costPrice and originCountry are required" }); return;
   }
   const { rows } = await pool!.query(
-    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-    [supplierId, categoryId ?? null, name, description ?? "", costPrice, currency ?? "USD", retailPrice ?? 0, compareAtPrice ?? null, moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", originCountry]
+    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country, vehicle_details, condition, nrcs_approved, nrcs_reference)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+    [supplierId, categoryId ?? null, name, description ?? "", costPrice, currency ?? "USD", retailPrice ?? 0, compareAtPrice ?? null, moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", originCountry,
+     vehicleDetails ? JSON.stringify(vehicleDetails) : null, condition ?? null, nrcsApproved ?? false, nrcsReference ?? null]
   );
   res.status(201).json({ success: true, data: mapSupplierProduct(rows[0]) });
 });
 
 router.patch("/admin/supplier-products/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
-  const fields = ["categoryId","name","description","costPrice","currency","retailPrice","compareAtPrice","moq","emoji","status"] as const;
-  const colMap: Record<string,string> = { categoryId:"category_id", name:"name", description:"description", costPrice:"cost_price", currency:"currency", retailPrice:"retail_price", compareAtPrice:"compare_at_price", moq:"moq", emoji:"emoji", status:"status" };
+  const fields = ["categoryId","name","description","costPrice","currency","retailPrice","compareAtPrice","moq","emoji","status","vehicleDetails","condition","nrcsApproved","nrcsReference"] as const;
+  const colMap: Record<string,string> = { categoryId:"category_id", name:"name", description:"description", costPrice:"cost_price", currency:"currency", retailPrice:"retail_price", compareAtPrice:"compare_at_price", moq:"moq", emoji:"emoji", status:"status", vehicleDetails:"vehicle_details", condition:"condition", nrcsApproved:"nrcs_approved", nrcsReference:"nrcs_reference" };
   const sets: string[] = []; const vals: unknown[] = [];
-  for (const f of fields) { if (req.body[f] !== undefined) { vals.push(req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); } }
+  for (const f of fields) {
+    if (req.body[f] !== undefined) { vals.push(f === "vehicleDetails" ? JSON.stringify(req.body[f]) : req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); }
+  }
   if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
   vals.push(req.params.id);
   const { rows } = await pool!.query(`UPDATE mkt_supplier_products SET ${sets.join(", ")}, updated_at = now() WHERE id::text = $${vals.length} RETURNING *`, vals);
@@ -1836,6 +1901,38 @@ router.patch("/admin/duty-rates/:id", requireAuth, requireRole(...MANAGER_ROLES)
   const { rows } = await pool!.query(`UPDATE mkt_duty_rates SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
   if (!rows.length) { res.status(404).json({ success: false, error: "Duty rate not found" }); return; }
   res.json({ success: true, data: mapDutyRate(rows[0]) });
+});
+
+// ── ADMIN: VEHICLE DEPARTMENT (ZRA specific-duty schedule for Zambia) ──────
+router.get("/admin/vehicle-duty-zm", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_vehicle_duty_zm ORDER BY body_type, engine_cc_min, age_band`);
+  res.json({ success: true, data: rows.map(mapVehicleDutyZm) });
+});
+
+router.post("/admin/vehicle-duty-zm", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { bodyType, engineCcMin, engineCcMax, ageBand, dutyKwacha, carbonSurtaxKwacha, notes } = req.body;
+  if (!bodyType || !ageBand || dutyKwacha === undefined) { res.status(400).json({ success: false, error: "bodyType, ageBand and dutyKwacha are required" }); return; }
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_vehicle_duty_zm (body_type, engine_cc_min, engine_cc_max, age_band, duty_kwacha, carbon_surtax_kwacha, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (body_type, engine_cc_min, engine_cc_max, age_band) DO UPDATE SET duty_kwacha = $5, carbon_surtax_kwacha = $6, notes = $7
+     RETURNING *`,
+    [bodyType, engineCcMin ?? 0, engineCcMax ?? null, ageBand, dutyKwacha, carbonSurtaxKwacha ?? 0, notes ?? null]
+  );
+  res.status(201).json({ success: true, data: mapVehicleDutyZm(rows[0]) });
+});
+
+router.patch("/admin/vehicle-duty-zm/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { dutyKwacha, carbonSurtaxKwacha, notes } = req.body;
+  const sets: string[] = []; const vals: unknown[] = [];
+  if (dutyKwacha !== undefined) { vals.push(dutyKwacha); sets.push(`duty_kwacha = $${vals.length}`); }
+  if (carbonSurtaxKwacha !== undefined) { vals.push(carbonSurtaxKwacha); sets.push(`carbon_surtax_kwacha = $${vals.length}`); }
+  if (notes !== undefined) { vals.push(notes); sets.push(`notes = $${vals.length}`); }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_vehicle_duty_zm SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Rate not found" }); return; }
+  res.json({ success: true, data: mapVehicleDutyZm(rows[0]) });
 });
 
 // ── ADMIN: REVENUE AUTHORITIES ───────────────────────────────────────────────

@@ -695,6 +695,8 @@ const MKT_SUPPLIER_PRODUCTS = [
   { id: "spr-07", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", supplierCountry: "KR", categoryId: "cat-04", name: "K-Beauty Snail Mucin Serum", description: "Hydrating repair serum, 100ml, dermatologist-tested.", costPrice: 3.9, currency: "USD", retailPrice: 179, compareAtPrice: 219, moq: 40, images: ["#fecaca"], emoji: "💧", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(800*60), updatedAt: ago(25*60) },
   { id: "spr-08", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", supplierCountry: "KR", categoryId: "cat-04", name: "K-Beauty Sheet Mask Variety Pack (10)", description: "Assorted hydrating and brightening sheet masks.", costPrice: 6.2, currency: "USD", retailPrice: 249, compareAtPrice: 299, moq: 30, images: ["#fda4af"], emoji: "🧖", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(400*60), updatedAt: ago(8*60) },
   { id: "spr-09", supplierId: "sup-kr-02", supplierName: "Incheon Home Living Co.", supplierCountry: "KR", categoryId: "cat-03", name: "Minimalist LED Desk Lamp", description: "Touch-dimmable LED lamp with USB charging port.", costPrice: 9.4, currency: "USD", retailPrice: 399, compareAtPrice: null, moq: 15, images: ["#e2e8f0"], emoji: "💡", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(150*60), updatedAt: ago(3*60) },
+  { id: "spr-10", supplierId: "sup-jp-01", supplierName: "Osaka Craft & Home Co.", supplierCountry: "JP", categoryId: "cat-07", name: "Toyota Corolla 1.8 (New)", description: "Brand-new Toyota Corolla sedan, imported from Japan.", costPrice: 14500, currency: "USD", retailPrice: 385000, compareAtPrice: null, moq: 1, images: ["#1a1a2e"], emoji: "🚗", originCountry: "JP", status: "active", importCount: 0, vehicleDetails: { make: "Toyota", model: "Corolla", year: 2026, mileageKm: 0, engineCc: 1800, bodyType: "sedan", transmission: "automatic", fuelType: "petrol" }, condition: "new", nrcsApproved: true, nrcsReference: "NRCS-LOA-DEMO-0001", createdAt: ago(200*60), updatedAt: ago(10*60) },
+  { id: "spr-11", supplierId: "sup-jp-01", supplierName: "Osaka Craft & Home Co.", supplierCountry: "JP", categoryId: "cat-07", name: "Honda Fit 1.3 (Used, 2019)", description: "Used Honda Fit hatchback, well maintained, imported from Japan. Zambia delivery only.", costPrice: 4200, currency: "USD", retailPrice: 95000, compareAtPrice: null, moq: 1, images: ["#2d3748"], emoji: "🚙", originCountry: "JP", status: "active", importCount: 0, vehicleDetails: { make: "Honda", model: "Fit", year: 2019, mileageKm: 62000, engineCc: 1300, bodyType: "hatchback", transmission: "automatic", fuelType: "petrol" }, condition: "used", nrcsApproved: false, nrcsReference: null, createdAt: ago(150*60), updatedAt: ago(5*60) },
 ];
 
 const ORIGIN_WH_BY_COUNTRY: Record<string,string> = { CN: "wh-origin-cn", JP: "wh-origin-jp", KR: "wh-origin-kr" };
@@ -722,6 +724,14 @@ const MKT_DUTY_RATES: Record<string, unknown>[] = [
   { id: "dr-02", country: "ZA", categoryId: "cat-02", categoryName: "Fashion", dutyRatePct: 45, notes: "SARS Schedule 1, Chapters 61-62 (clothing)." },
   { id: "dr-03", country: "ZA", categoryId: "cat-06", categoryName: "Books & Media", dutyRatePct: 0, notes: "Books typically duty-free." },
   { id: "dr-04", country: "ZM", categoryId: "cat-06", categoryName: "Books & Media", dutyRatePct: 0, notes: "Educational materials commonly exempt — verify per ASYCUDA classification." },
+  { id: "dr-05", country: "ZA", categoryId: "cat-07", categoryName: "Vehicles", dutyRatePct: 25, notes: "New vehicles only — SARS HS 8703.90 general rate. Ad valorem excise not included; verify per model. Used vehicles are blocked entirely (ITAC restriction)." },
+];
+
+const MKT_VEHICLE_DUTY_ZM: Record<string, unknown>[] = [
+  { id: "vdz-01", bodyType: "sedan", engineCcMin: 0, engineCcMax: 1000, ageBand: "2_to_5", dutyKwacha: 39461.45, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: "vdz-02", bodyType: "hatchback", engineCcMin: 1001, engineCcMax: 1500, ageBand: "2_to_5", dutyKwacha: 44902.40, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: "vdz-03", bodyType: "suv", engineCcMin: 1501, engineCcMax: 2500, ageBand: "2_to_5", dutyKwacha: 77548.10, carbonSurtaxKwacha: 246.40, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: "vdz-04", bodyType: "hatchback", engineCcMin: 1001, engineCcMax: 1500, ageBand: "5_plus", dutyKwacha: 31431.68, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
 ];
 
 const MKT_CUSTOMS_RECORDS: Record<string, unknown>[] = [];
@@ -1153,5 +1163,21 @@ export const mktMock = {
     const vatCollected = byPeriod.reduce((s, r) => s + Number(r.vatCollected), 0);
     const dutyLiability = byPeriod.reduce((s, r) => s + Number(r.dutyLiability), 0);
     return { success:true, data:{ country, byPeriod, customsByStatus, totals:{ totalVatCollected:vatCollected, totalDutyEstimated:dutyLiability, totalDutyCleared:0, totalDutyOutstanding:0 } } };
+  },
+  adminVehicleDutyZm: () => ({ success:true, data:MKT_VEHICLE_DUTY_ZM }),
+  adminCreateVehicleDutyZm: (body: R) => {
+    if (!body.bodyType || !body.ageBand || body.dutyKwacha === undefined) return { success:false, error:"bodyType, ageBand and dutyKwacha are required" };
+    const row: R = { id:`vdz-${uuid()}`, bodyType:body.bodyType, engineCcMin:body.engineCcMin ?? 0, engineCcMax:body.engineCcMax ?? null,
+      ageBand:body.ageBand, dutyKwacha:Number(body.dutyKwacha), carbonSurtaxKwacha:Number(body.carbonSurtaxKwacha) || 0, notes:body.notes ?? null };
+    MKT_VEHICLE_DUTY_ZM.push(row);
+    return { success:true, data:row };
+  },
+  adminUpdateVehicleDutyZm: (id: string, body: R) => {
+    const row = MKT_VEHICLE_DUTY_ZM.find(x => x.id === id);
+    if (!row) return { success:false, error:"Rate not found" };
+    if (body.dutyKwacha !== undefined) row.dutyKwacha = Number(body.dutyKwacha);
+    if (body.carbonSurtaxKwacha !== undefined) row.carbonSurtaxKwacha = Number(body.carbonSurtaxKwacha);
+    if (body.notes !== undefined) row.notes = body.notes;
+    return { success:true, data:row };
   },
 };

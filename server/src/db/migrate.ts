@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -36,6 +36,7 @@ export async function migrate(): Promise<void> {
     await seedDefaultCustomerLogin();
     await seedRevenueAuthorities();
     await seedDefaultAuthorityLogin();
+    await seedVehiclesCategoryAndDuty();
     return;
   }
 
@@ -112,6 +113,7 @@ export async function migrate(): Promise<void> {
   await seedDefaultCustomerLogin();
   await seedRevenueAuthorities();
   await seedDefaultAuthorityLogin();
+  await seedVehiclesCategoryAndDuty();
 }
 
 /**
@@ -386,4 +388,66 @@ async function seedDefaultAuthorityLogin(): Promise<void> {
     await pool!.query(`UPDATE mkt_revenue_authorities SET user_id = $1 WHERE id = 'auth-za-sars'`, [userRows[0].id]);
   }
   console.log("[db] Seeded default revenue authority login: sars1 (linked to SARS/ZA, agreement status unchanged).");
+}
+
+/**
+ * Adds the Vehicles department: the category itself, a 25% ZA duty rate
+ * for it (new vehicles only — see the compliance check in POST /orders),
+ * Zambia's flat ZRA specific-duty schedule, and two sample listings.
+ * Gated on the category not existing yet.
+ */
+async function seedVehiclesCategoryAndDuty(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_categories WHERE id = 'cat-07'");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Vehicles department already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding Vehicles department...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+
+    const vehiclesCat = CATEGORIES.find(c => c.id === "cat-07")!;
+    await client.query(
+      `INSERT INTO mkt_categories (id, name, slug, icon, parent_id, featured) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+      [vehiclesCat.id, vehiclesCat.name, vehiclesCat.slug, vehiclesCat.icon, vehiclesCat.parentId, vehiclesCat.featured]
+    );
+
+    // New vehicles into South Africa: 25% duty (per researched HS 8703.90
+    // rate) — ad valorem excise (which varies by engine size) is NOT
+    // modelled here and needs verifying per model before real use.
+    await client.query(
+      `INSERT INTO mkt_duty_rates (country, category_id, duty_rate_pct, notes) VALUES ('ZA','cat-07',25,$1)
+       ON CONFLICT (country, category_id) DO NOTHING`,
+      ["New vehicles only — SARS HS 8703.90 general rate. Ad valorem excise (engine-size-based) not included; verify per model. Used vehicles are blocked entirely at order time regardless of this rate (ITAC restriction)."]
+    );
+
+    for (const d of VEHICLE_DUTY_ZM) {
+      await client.query(
+        `INSERT INTO mkt_vehicle_duty_zm (id, body_type, engine_cc_min, engine_cc_max, age_band, duty_kwacha, carbon_surtax_kwacha, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+        [d.id, d.bodyType, d.engineCcMin, d.engineCcMax, d.ageBand, d.dutyKwacha, d.carbonSurtaxKwacha, d.notes]
+      );
+    }
+
+    for (const v of VEHICLE_SUPPLIER_PRODUCTS) {
+      await client.query(
+        `INSERT INTO mkt_supplier_products (id, supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price,
+           moq, images, emoji, origin_country, status, import_count, vehicle_details, condition, nrcs_approved, nrcs_reference, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) ON CONFLICT (id) DO NOTHING`,
+        [v.id, v.supplierId, v.categoryId, v.name, v.description, v.costPrice, v.currency, v.retailPrice, v.compareAtPrice,
+         v.moq, JSON.stringify(v.images), v.emoji, v.originCountry, v.status, v.importCount, JSON.stringify(v.vehicleDetails), v.condition, v.nrcsApproved, v.nrcsReference, v.createdAt, v.updatedAt]
+      );
+    }
+
+    await client.query("COMMIT");
+    console.log(`[db] Seeded Vehicles category, ZA vehicle duty rate, ${VEHICLE_DUTY_ZM.length} ZRA vehicle duty rows, ${VEHICLE_SUPPLIER_PRODUCTS.length} sample listings.`);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Vehicles department seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
 }

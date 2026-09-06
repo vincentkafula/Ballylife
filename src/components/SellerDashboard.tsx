@@ -424,7 +424,18 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                 </div>
                 <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
                 <p className="text-xs text-gray-400 mb-2 line-clamp-2">{String(item.description ?? "")}</p>
-                <p className="text-[11px] text-gray-400 mb-2">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
+                {item.vehicleDetails ? (
+                  <div className="mb-2">
+                    <p className="text-[11px] text-gray-500">
+                      {String((item.vehicleDetails as R).year)} {String((item.vehicleDetails as R).make)} {String((item.vehicleDetails as R).model)} · {Number((item.vehicleDetails as R).mileageKm).toLocaleString()}km · {String((item.vehicleDetails as R).engineCc)}cc
+                    </p>
+                    <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: item.condition === "new" ? "#ECFDF5" : "#FFFBEB", color: item.condition === "new" ? "#059669" : "#B45309" }}>
+                      {String(item.condition)}{item.condition === "used" ? " — Zambia delivery only" : item.nrcsApproved ? " — NRCS approved" : " — NRCS pending"}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-gray-400 mb-2">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
+                )}
                 <div className="flex items-baseline gap-2 mb-3">
                   {priceNotSet ? (
                     <span className="text-xs font-semibold text-amber-600">Price not set yet</span>

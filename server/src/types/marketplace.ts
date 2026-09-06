@@ -88,6 +88,10 @@ export interface Product {
   // only imports (see mkt_supplier_orders) set these.
   fulfillmentType?: "local" | "imported";
   supplierProductId?: string | null;
+  vehicleDetails?: VehicleDetails | null;
+  condition?: "new" | "used" | null;
+  nrcsApproved?: boolean;
+  nrcsReference?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -279,8 +283,35 @@ export interface SupplierProduct {
   originCountry: SupplierCountry;
   status: "active" | "inactive";
   importCount: number;
+  vehicleDetails?: VehicleDetails | null;
+  condition?: "new" | "used" | null;
+  nrcsApproved?: boolean;
+  nrcsReference?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VehicleDetails {
+  make: string;
+  model: string;
+  year: number;
+  mileageKm: number;
+  engineCc: number;
+  bodyType: "sedan" | "hatchback" | "station_wagon" | "suv" | "pickup_single_cab" | "pickup_double_cab" | "panel_van";
+  transmission: "automatic" | "manual";
+  fuelType: "petrol" | "diesel" | "hybrid" | "electric";
+  vin?: string;
+}
+
+export interface VehicleDutyZm {
+  id: string;
+  bodyType: string;
+  engineCcMin: number;
+  engineCcMax: number | null;
+  ageBand: "2_to_5" | "5_plus";
+  dutyKwacha: number;
+  carbonSurtaxKwacha: number;
+  notes: string | null;
 }
 
 export interface Warehouse {

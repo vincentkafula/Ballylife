@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority } from "../types/marketplace";
+import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority, VehicleDutyZm } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const future = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
@@ -15,6 +15,7 @@ export const CATEGORIES: Category[] = [
   { id:"cat-04", name:"Health & Beauty",   slug:"health-beauty",   icon:"💄", parentId:null, productCount:0, featured:true  },
   { id:"cat-05", name:"Sports",            slug:"sports",          icon:"⚽", parentId:null, productCount:0, featured:true  },
   { id:"cat-06", name:"Books & Media",     slug:"books-media",     icon:"📚", parentId:null, productCount:0, featured:false },
+  { id:"cat-07", name:"Vehicles",          slug:"vehicles",        icon:"🚗", parentId:null, productCount:0, featured:true  },
 ];
 
 // ─── Sellers ────────────────────────────────────────────────────────────────
@@ -191,4 +192,40 @@ export const DUTY_RATES: DutyRate[] = [
 export const REVENUE_AUTHORITIES: RevenueAuthority[] = [
   { id: "auth-za-sars", name: "South African Revenue Service (SARS)", country: "ZA", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", createdAt: new Date().toISOString() },
   { id: "auth-zm-zra", name: "Zambia Revenue Authority (ZRA)", country: "ZM", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", createdAt: new Date().toISOString() },
+];
+
+// ─── Vehicle department ───────────────────────────────────────────────────────
+// ZRA's specific-duty schedule for used vehicles 2+ years old, transcribed
+// from ZRA's published rates at the time this was built. ZRA updates this
+// schedule every July — verify current figures at zra.org.zm before relying
+// on this for an actual declaration. The 5+ year band here is an estimate
+// (roughly 70% of the 2-5 year rate, a common pattern in ZRA's published
+// schedules) and should be corrected with the real published figures.
+export const VEHICLE_DUTY_ZM: VehicleDutyZm[] = [
+  { id: randomUUID(), bodyType: "sedan",     engineCcMin: 0,    engineCcMax: 1000, ageBand: "2_to_5", dutyKwacha: 39461.45, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "sedan",     engineCcMin: 1001, engineCcMax: 1500, ageBand: "2_to_5", dutyKwacha: 50343.35, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "sedan",     engineCcMin: 1501, engineCcMax: 2500, ageBand: "2_to_5", dutyKwacha: 61225.25, carbonSurtaxKwacha: 246.40, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "hatchback", engineCcMin: 0,    engineCcMax: 1000, ageBand: "2_to_5", dutyKwacha: 34020.50, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "hatchback", engineCcMin: 1001, engineCcMax: 1500, ageBand: "2_to_5", dutyKwacha: 44902.40, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "suv",       engineCcMin: 0,    engineCcMax: 1000, ageBand: "2_to_5", dutyKwacha: 48866.53, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "suv",       engineCcMin: 1001, engineCcMax: 1500, ageBand: "2_to_5", dutyKwacha: 56597.74, carbonSurtaxKwacha: 123.20, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  { id: randomUUID(), bodyType: "suv",       engineCcMin: 1501, engineCcMax: 2500, ageBand: "2_to_5", dutyKwacha: 77548.10, carbonSurtaxKwacha: 246.40, notes: "2-5yr, transcribed from ZRA schedule — verify at zra.org.zm" },
+  // 5+ year band — ESTIMATE ONLY (~70% of 2-5yr rate), not transcribed from a
+  // published source. Replace with real ZRA Part II figures before relying on this.
+  { id: randomUUID(), bodyType: "sedan",     engineCcMin: 0,    engineCcMax: 1000, ageBand: "5_plus", dutyKwacha: 27623.02, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "sedan",     engineCcMin: 1001, engineCcMax: 1500, ageBand: "5_plus", dutyKwacha: 35240.35, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "sedan",     engineCcMin: 1501, engineCcMax: 2500, ageBand: "5_plus", dutyKwacha: 42857.68, carbonSurtaxKwacha: 246.40, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "hatchback", engineCcMin: 0,    engineCcMax: 1000, ageBand: "5_plus", dutyKwacha: 23814.35, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "hatchback", engineCcMin: 1001, engineCcMax: 1500, ageBand: "5_plus", dutyKwacha: 31431.68, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "suv",       engineCcMin: 0,    engineCcMax: 1000, ageBand: "5_plus", dutyKwacha: 34206.57, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "suv",       engineCcMin: 1001, engineCcMax: 1500, ageBand: "5_plus", dutyKwacha: 39618.42, carbonSurtaxKwacha: 123.20, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+  { id: randomUUID(), bodyType: "suv",       engineCcMin: 1501, engineCcMax: 2500, ageBand: "5_plus", dutyKwacha: 54283.67, carbonSurtaxKwacha: 246.40, notes: "ESTIMATE ONLY — replace with real ZRA 5+yr figure" },
+];
+
+// A couple of sample vehicle listings so the department isn't empty —
+// one new Toyota for South Africa (NRCS-approved so it's immediately
+// orderable in a demo), one used Honda for Zambia only.
+export const VEHICLE_SUPPLIER_PRODUCTS: SupplierProduct[] = [
+  { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-07", name: "Toyota Corolla 1.8 (New)", description: "Brand-new Toyota Corolla sedan, imported from Japan.", costPrice: 14500, currency: "USD", retailPrice: 385000, compareAtPrice: null, moq: 1, images: ["#1a1a2e"], emoji: "🚗", originCountry: "JP", status: "active", importCount: 0, vehicleDetails: { make: "Toyota", model: "Corolla", year: 2026, mileageKm: 0, engineCc: 1800, bodyType: "sedan", transmission: "automatic", fuelType: "petrol" }, condition: "new", nrcsApproved: true, nrcsReference: "NRCS-LOA-DEMO-0001", createdAt: ago(200), updatedAt: ago(10) },
+  { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-07", name: "Honda Fit 1.3 (Used, 2019)", description: "Used Honda Fit hatchback, well maintained, imported from Japan. Zambia delivery only.", costPrice: 4200, currency: "USD", retailPrice: 95000, compareAtPrice: null, moq: 1, images: ["#2d3748"], emoji: "🚙", originCountry: "JP", status: "active", importCount: 0, vehicleDetails: { make: "Honda", model: "Fit", year: 2019, mileageKm: 62000, engineCc: 1300, bodyType: "hatchback", transmission: "automatic", fuelType: "petrol" }, condition: "used", nrcsApproved: false, nrcsReference: null, createdAt: ago(150), updatedAt: ago(5) },
 ];

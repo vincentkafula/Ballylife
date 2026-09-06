@@ -100,6 +100,9 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/duty-rates") && method === "POST")  return mktMock.adminCreateDutyRate(body);
   if (path.includes("/admin/duty-rates") && method === "PATCH") return mktMock.adminUpdateDutyRate(path.split("/admin/duty-rates/")[1], body);
   if (path.includes("/admin/duty-rates"))        return mktMock.adminDutyRates(qs);
+  if (path.includes("/admin/vehicle-duty-zm") && method === "POST")  return mktMock.adminCreateVehicleDutyZm(body);
+  if (path.includes("/admin/vehicle-duty-zm") && method === "PATCH") return mktMock.adminUpdateVehicleDutyZm(path.split("/admin/vehicle-duty-zm/")[1], body);
+  if (path.includes("/admin/vehicle-duty-zm"))   return mktMock.adminVehicleDutyZm();
   if (path.includes("/admin/customs-records/generate")) return mktMock.adminGenerateCustomsRecord(body);
   if (path.includes("/admin/customs-records") && method === "PATCH") return mktMock.adminUpdateCustomsRecord(path.split("/admin/customs-records/")[1], body);
   if (path.includes("/admin/customs-records"))   return mktMock.adminCustomsRecords();
@@ -220,6 +223,11 @@ export const mktAdmin = {
     list:   (country?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/duty-rates${country ? `?country=${country}` : ""}`),
     create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/duty-rates", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/duty-rates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  },
+  vehicleDutyZm: {
+    list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/vehicle-duty-zm"),
+    create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/vehicle-duty-zm", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/vehicle-duty-zm/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   },
   customsRecords: {
     list:     (status?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/customs-records${status ? `?status=${status}` : ""}`),
