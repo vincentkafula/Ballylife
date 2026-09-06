@@ -19,10 +19,20 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   try {
     const res = await fetch(`${BASE}${path}`, { ...opts, headers, signal: controller.signal });
     const j = await res.json();
-    if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`);
+    // A well-formed error body (e.g. 401 "Invalid username or password",
+    // 403, 409) is a normal, expected outcome — return it as-is so callers
+    // handle it via their own r.success check, exactly like a 200. Only
+    // throw when the server responded but didn't give us a shape we can
+    // reason about (no JSON body, or a body missing `success` entirely).
+    if (!res.ok && typeof j?.success !== "boolean") throw new Error(j?.error ?? `HTTP ${res.status}`);
     return j;
   } catch (err) {
-    if (err instanceof TypeError || (err instanceof Error && err.message.includes("fetch"))) {
+    // Auth requests never silently fall back to demo/mock data on a
+    // network failure — a login or registration is either real or it
+    // isn't; pretending it worked (or didn't) against fake data is worse
+    // than surfacing the real connection error and letting the person retry.
+    const isAuthPath = path.startsWith("/api/auth/") || path.includes("/sellers/register");
+    if (!isAuthPath && (err instanceof TypeError || (err instanceof Error && err.message.includes("fetch")))) {
       setDemoMode(true);
       return mktDemoResponse(path, opts) as T;
     }
