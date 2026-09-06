@@ -33,6 +33,7 @@ export async function migrate(): Promise<void> {
     await seedTaxRates();
     await seedDefaultLogins();
     await seedDefaultSupplierLogin();
+    await seedDefaultCustomerLogin();
     return;
   }
 
@@ -106,6 +107,7 @@ export async function migrate(): Promise<void> {
   await seedTaxRates();
   await seedDefaultLogins();
   await seedDefaultSupplierLogin();
+  await seedDefaultCustomerLogin();
 }
 
 /**
@@ -304,4 +306,28 @@ async function seedDefaultSupplierLogin(): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Creates one default customer/buyer login — a plain shopper account with
+ * no store or supplier attached, just for browsing/buying on the storefront.
+ * Gated on the specific username 'customer1' existing, since role='customer'
+ * alone isn't a safe gate (real shopper signups will use that role too).
+ */
+async function seedDefaultCustomerLogin(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM users WHERE username = 'customer1'");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Default customer login already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding default customer login...");
+  const passwordHash = await bcrypt.hash("Ballylife@2026", 10);
+  await pool!.query(
+    `INSERT INTO users (username, password_hash, role, name, email)
+     VALUES ('customer1', $1, 'customer', 'Demo Customer', 'customer1@ballylife.example')
+     ON CONFLICT (username) DO NOTHING`,
+    [passwordHash]
+  );
+  console.log("[db] Seeded default customer login: customer1.");
 }
