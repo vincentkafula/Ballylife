@@ -18,6 +18,7 @@ import {
   ConferenceChairIllustration, DraftingStoolIllustration, VisitorChairIllustration,
   GamingChairIllustration,
 } from "./ChairIllustrations";
+import { VEHICLE_ILLUSTRATIONS } from "./VehicleIllustrations";
 
 // Maps a product id to an original illustration component, used in place of
 // the plain emoji for listings that have one (currently the 7 generic
@@ -31,6 +32,18 @@ const PRODUCT_ILLUSTRATIONS: Record<string, () => ReactNode> = {
   "p-18": VisitorChairIllustration,
   "p-19": GamingChairIllustration,
 };
+
+// Vehicles don't have fixed ids the way the 7 seeded chairs do (real
+// inventory gets added/removed over time), so their illustration is
+// looked up by body type instead of product id — any product whose
+// vehicleDetails.bodyType matches gets the right silhouette, present or
+// future. Falls back to PRODUCT_ILLUSTRATIONS[p.id], then the emoji.
+function getProductIllustration(p: Record<string, unknown>): (() => ReactNode) | undefined {
+  if (PRODUCT_ILLUSTRATIONS[p.id as string]) return PRODUCT_ILLUSTRATIONS[p.id as string];
+  const vd = p.vehicleDetails as Record<string, unknown> | null | undefined;
+  if (vd?.bodyType && VEHICLE_ILLUSTRATIONS[vd.bodyType as string]) return VEHICLE_ILLUSTRATIONS[vd.bodyType as string];
+  return undefined;
+}
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
@@ -235,8 +248,8 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
       <div className="relative cursor-pointer bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
         <div className="absolute inset-0 flex items-center justify-center text-6xl p-6"
           style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"}22,${imgs?.[1] ?? "#E5E7EB"}33)` }}>
-          {PRODUCT_ILLUSTRATIONS[p.id as string]
-            ? <div className="w-24 h-24">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
+          {getProductIllustration(p)
+            ? <div className="w-24 h-24">{getProductIllustration(p)!()}</div>
             : (p.emoji as string)}
         </div>
         {p.isFlashDeal && (
@@ -318,8 +331,8 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
       <div className="relative bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
         <div className="absolute inset-0 flex items-center justify-center text-5xl p-5"
           style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#f5f5f5"}22,${imgs?.[1] ?? "#e8e8e8"}33)` }}>
-          {PRODUCT_ILLUSTRATIONS[p.id as string]
-            ? <div className="w-16 h-16">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
+          {getProductIllustration(p)
+            ? <div className="w-16 h-16">{getProductIllustration(p)!()}</div>
             : (p.emoji as string)}
         </div>
         {discount > 0 && (
@@ -449,8 +462,8 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
           className="shrink-0 w-28 h-28 sm:w-40 sm:h-40 rounded-full flex items-center justify-center text-5xl sm:text-7xl shadow-sm overflow-hidden"
           style={{ background: `linear-gradient(135deg,${imgs?.[0] ?? "#fff"},${imgs?.[1] ?? "#e8e8e8"})` }}
         >
-          {PRODUCT_ILLUSTRATIONS[p.id as string]
-            ? <div className="w-20 h-20 sm:w-28 sm:h-28">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
+          {getProductIllustration(p)
+            ? <div className="w-20 h-20 sm:w-28 sm:h-28">{getProductIllustration(p)!()}</div>
             : (p.emoji as string)}
         </div>
       </div>
@@ -743,8 +756,8 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
                 <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4 hover:shadow-md cursor-pointer transition-all" onClick={() => onProduct(p)}>
                   <div className="w-20 h-20 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden"
                     style={{ background: `linear-gradient(135deg,${imgs?.[0]},${imgs?.[1]})` }}>
-                    {PRODUCT_ILLUSTRATIONS[p.id as string]
-                      ? <div className="w-14 h-14">{PRODUCT_ILLUSTRATIONS[p.id as string]()}</div>
+                    {getProductIllustration(p)
+                      ? <div className="w-14 h-14">{getProductIllustration(p)!()}</div>
                       : (p.emoji as string)}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -840,7 +853,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
             brand={(p.brand as string) ?? ""}
             name={p.name as string}
             discount={discount}
-            illustration={PRODUCT_ILLUSTRATIONS[p.id as string]}
+            illustration={getProductIllustration(p)}
           />
           {p.isFlashDeal && (
             <div className="mx-4 my-3 flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
