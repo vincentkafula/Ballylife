@@ -65,9 +65,17 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/import-listing"))          return mktMock.importListing(body);
   if (path.includes("/supplier-catalog") && !path.match(/\/supplier-catalog\/[^/?]+$/)) return mktMock.supplierCatalog(qs);
   if (path.match(/\/supplier-catalog\/[^/?]+$/)) return mktMock.supplierCatalogItem(path.split("/supplier-catalog/")[1].split("?")[0]);
+  if (path.includes("/admin/suppliers") && path.includes("/create-login")) return mktMock.adminCreateSupplierLogin(path.split("/admin/suppliers/")[1].split("/create-login")[0], body);
   if (path.includes("/admin/suppliers") && method === "GET")   return mktMock.adminSuppliers();
   if (path.includes("/admin/suppliers") && method === "POST")  return mktMock.adminCreateSupplier(body);
   if (path.includes("/admin/suppliers") && method === "PATCH") return mktMock.adminUpdateSupplier(path.split("/admin/suppliers/")[1], body);
+  if (path.includes("/suppliers/by-user/")) return mktMock.supplierByUser(path.split("/suppliers/by-user/")[1]);
+  if (path.match(/\/suppliers\/[^/]+\/products\/[^/?]+$/) && method === "PATCH") return mktMock.supplierUpdateProduct(path.split("/suppliers/")[1].split("/products/")[0], path.split("/products/")[1], body);
+  if (path.match(/\/suppliers\/[^/]+\/products$/) && method === "GET") return mktMock.supplierProducts(path.split("/suppliers/")[1].split("/products")[0]);
+  if (path.match(/\/suppliers\/[^/]+\/products$/) && method === "POST") return mktMock.supplierAddProduct(path.split("/suppliers/")[1].split("/products")[0], body);
+  if (path.match(/\/suppliers\/[^/]+\/orders$/)) return mktMock.supplierOrdersFor(path.split("/suppliers/")[1].split("/orders")[0]);
+  if (path.match(/\/suppliers\/[^/?]+$/) && method === "PATCH") return mktMock.supplierUpdateProfile(path.split("/suppliers/")[1], body);
+  if (path.match(/\/suppliers\/[^/?]+$/) && method === "GET") return mktMock.supplierGet(path.split("/suppliers/")[1].split("?")[0]);
   if (path.includes("/admin/supplier-products") && method === "GET")   return mktMock.adminSupplierProducts();
   if (path.includes("/admin/supplier-products") && method === "POST")  return mktMock.adminCreateSupplierProduct(body);
   if (path.includes("/admin/supplier-products") && method === "PATCH") return mktMock.adminUpdateSupplierProduct(path.split("/admin/supplier-products/")[1], body);
@@ -157,6 +165,7 @@ export const mktAdmin = {
     list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/suppliers"),
     create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/suppliers", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/suppliers/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    createLogin: (id: string, body: unknown) => api<{ success: boolean; message?: string; error?: string }>(`/api/marketplace/admin/suppliers/${id}/create-login`, { method: "POST", body: JSON.stringify(body) }),
   },
   supplierProducts: {
     list:   (supplierId?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/supplier-products${supplierId ? `?supplierId=${supplierId}` : ""}`),
@@ -201,6 +210,18 @@ export const mktAddAddress = (userId: string, body: unknown) =>
 export const mktDeleteAddress = (userId: string, addressId: string) =>
   api(`/api/marketplace/addresses/${userId}/${addressId}`, { method: "DELETE" });
 
+// ── Supplier self-service (only for suppliers an admin has onboarded with
+// a login — see mktAdmin.createSupplierLogin below) ──────────────────────────
+export const mktSuppliersSelf = {
+  byUser:        (userId: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/suppliers/by-user/${userId}`),
+  get:           (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/suppliers/${id}`),
+  updateProfile: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/suppliers/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  products:      (id: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/suppliers/${id}/products`),
+  addProduct:    (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string; message?: string }>(`/api/marketplace/suppliers/${id}/products`, { method: "POST", body: JSON.stringify(body) }),
+  updateProduct: (id: string, productId: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/suppliers/${id}/products/${productId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  orders:        (id: string) => api<{ success: boolean; data: unknown[]; meta: unknown }>(`/api/marketplace/suppliers/${id}/orders`),
+};
+
 // ── Supplier catalog (sellers browse; admins manage) ─────────────────────────
 export const mktSupplierCatalog = {
   list: (p?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: Record<string, unknown> }>(`/api/marketplace/supplier-catalog?${new URLSearchParams(p)}`),
@@ -217,7 +238,20 @@ export interface MktAuthUser { id: string; username: string; name: string; email
 export const mktAuth = {
   login: async (username: string, password: string) => {
     const r = await api<{ success: boolean; token: string; user: MktAuthUser; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
-    if (r.success && r.token) { setMktToken(r.token); localStorage.setItem("mkt_user", JSON.stringify(r.user)); }
+    if (r.success && r.token) {
+      setMktToken(r.token);
+      localStorage.setItem("mkt_user", JSON.stringify(r.user));
+      // A plain login (unlike registration) doesn't come with the
+      // seller/supplier record already in hand — look it up by role so
+      // the app knows which store/supplier this account owns.
+      if (r.user.role === "seller") {
+        const sellerRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/sellers/by-user/${r.user.id}`);
+        if (sellerRes.success) localStorage.setItem("mkt_seller", JSON.stringify(sellerRes.data));
+      } else if (r.user.role === "supplier") {
+        const supplierRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/suppliers/by-user/${r.user.id}`);
+        if (supplierRes.success) localStorage.setItem("mkt_supplier", JSON.stringify(supplierRes.data));
+      }
+    }
     return r;
   },
   registerCustomer: async (body: { username: string; password: string; name: string; email: string }) => {
@@ -230,17 +264,18 @@ export const mktAuth = {
     if (r.success && r.token) { setMktToken(r.token); localStorage.setItem("mkt_user", JSON.stringify(r.user)); localStorage.setItem("mkt_seller", JSON.stringify(r.seller)); }
     return r;
   },
-  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); },
+  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); },
   changePassword: (currentPassword: string, newPassword: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
-  restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null } | null => {
+  restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null } | null => {
     if (!getMktToken()) return null;
     const raw = localStorage.getItem("mkt_user");
     if (!raw) return null;
     try {
       const user = JSON.parse(raw) as MktAuthUser;
       const sellerRaw = localStorage.getItem("mkt_seller");
-      return { user, seller: sellerRaw ? JSON.parse(sellerRaw) : null };
+      const supplierRaw = localStorage.getItem("mkt_supplier");
+      return { user, seller: sellerRaw ? JSON.parse(sellerRaw) : null, supplier: supplierRaw ? JSON.parse(supplierRaw) : null };
     } catch { return null; }
   },
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import {
   BarChart3, Users, Store, Package, ShoppingBag, DollarSign, CheckCircle, XCircle,
   Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus,
@@ -600,6 +600,9 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", country: "CN", contactName: "", contactEmail: "", contactPhone: "", platform: "", paymentTerms: "", leadTimeDays: "14", verified: false });
   const [saving, setSaving] = useState(false);
+  const [loginFor, setLoginFor] = useState<string | null>(null);
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  const [creatingLogin, setCreatingLogin] = useState(false);
 
   const submit = async () => {
     if (!form.name) return;
@@ -614,6 +617,18 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
 
   const toggleVerified = async (s: R) => {
     await mktAdmin.suppliers.update(String(s.id), { verified: !s.verified });
+    onChanged();
+  };
+
+  const createLogin = async (supplierId: string) => {
+    if (!loginForm.username || loginForm.password.length < 8) { toast.error("Username and an 8+ character password are required."); return; }
+    setCreatingLogin(true);
+    const res = await mktAdmin.suppliers.createLogin(supplierId, loginForm);
+    setCreatingLogin(false);
+    if (!res.success) { toast.error(res.error ?? "Could not create a login for this supplier."); return; }
+    toast.success("Login created — share these credentials with the supplier directly.");
+    setLoginFor(null);
+    setLoginForm({ username: "", password: "" });
     onChanged();
   };
 
@@ -651,21 +666,47 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
             <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
             <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
             <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
+            <th className="px-4 py-2 font-medium">Dashboard login</th>
           </tr></thead>
           <tbody>
             {suppliers.map((s, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
-                <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
-                <td className="px-4 py-2.5">
-                  <button onClick={() => toggleVerified(s)} className="flex items-center gap-1">
-                    {s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}
-                  </button>
-                </td>
-              </tr>
+              <Fragment key={i}>
+                <tr className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
+                  <td className="px-4 py-2.5">
+                    <button onClick={() => toggleVerified(s)} className="flex items-center gap-1">
+                      {s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {s.userId ? (
+                      <span className="text-[11px] font-semibold text-green-600">Has login</span>
+                    ) : (
+                      <button onClick={() => setLoginFor(loginFor === s.id ? null : String(s.id))} className="text-[11px] font-semibold text-amber-700 hover:underline">
+                        {loginFor === s.id ? "Cancel" : "Create login"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {loginFor === s.id && (
+                  <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
+                    <td colSpan={7} className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <input placeholder="Username" value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                        <input placeholder="Password (min 8 chars)" type="text" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                        <button onClick={() => createLogin(String(s.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                          {creatingLogin ? "Creating..." : "Create"}
+                        </button>
+                        <span className="text-[11px] text-gray-400">Share these with the supplier yourself — not stored or emailed anywhere by this system.</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -261,6 +261,12 @@ CREATE TABLE IF NOT EXISTS mkt_suppliers (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_mkt_suppliers_country ON mkt_suppliers(country);
+-- Links a supplier record to a login (users.role = 'supplier') so the
+-- supplier can sign in and manage their own catalog/profile/orders.
+-- Nullable: most suppliers are entered and managed by Ballylife staff
+-- with no login of their own; only ones an admin explicitly onboards
+-- (POST /admin/suppliers/:id/create-login) get one.
+ALTER TABLE mkt_suppliers ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 
 -- The vetted, cost-priced catalog local sellers import listings from.
 -- cost_price is what Ballylife pays the supplier (landed at the origin
@@ -284,7 +290,7 @@ CREATE TABLE IF NOT EXISTS mkt_supplier_products (
   images            JSONB NOT NULL DEFAULT '[]',
   emoji             TEXT,
   origin_country    TEXT NOT NULL, -- CN | JP | KR
-  status            TEXT NOT NULL DEFAULT 'active', -- active | inactive
+  status            TEXT NOT NULL DEFAULT 'active', -- active | inactive | pending_review (a supplier-submitted new item awaiting manager approval)
   import_count      INTEGER NOT NULL DEFAULT 0, -- how many SellerListings currently reference this
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()

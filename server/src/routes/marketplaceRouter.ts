@@ -34,6 +34,19 @@ async function requireSellerOwner(req: Request, res: Response, next: NextFunctio
   next();
 }
 
+// Only the supplier account linked to this record (or a marketplace
+// manager) may view/manage its own catalog, orders, or profile — a
+// supplier never gets access to another supplier's data.
+async function requireSupplierOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (MANAGER_ROLES.includes(req.user!.role as any)) { next(); return; }
+  const { rows } = await pool!.query(`SELECT user_id FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
+  if (!rows.length || rows[0].user_id !== req.user!.userId) {
+    res.status(403).json({ success: false, error: "You can only manage your own supplier account" });
+    return;
+  }
+  next();
+}
+
 const router: ReturnType<typeof Router> = Router();
 
 // ─── Row → API shape mappers (snake_case columns → camelCase JSON) ──────────
@@ -67,7 +80,7 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
 const mapSupplier = (r: any) => ({
   id: r.id, name: r.name, country: r.country, contactName: r.contact_name, contactEmail: r.contact_email,
   contactPhone: r.contact_phone, platform: r.platform, paymentTerms: r.payment_terms, leadTimeDays: r.lead_time_days,
-  dropshipSupported: r.dropship_supported, verified: r.verified, status: r.status, notes: r.notes, createdAt: r.created_at,
+  dropshipSupported: r.dropship_supported, verified: r.verified, status: r.status, notes: r.notes, userId: r.user_id ?? null, createdAt: r.created_at,
 });
 
 const mapSupplierProduct = (r: any) => ({
@@ -753,6 +766,20 @@ router.get("/sellers", requireAuth, async (req: Request, res: Response): Promise
   res.json({ success: true, data: rows.map(mapSeller), meta: { total: rows.length } });
 });
 
+// Looks up the seller record owned by a given user — needed on a plain
+// login (as opposed to right after registration, where the frontend
+// already has the fresh seller object in hand) so the app knows which
+// store this account owns. Self-lookup only, or a manager checking on
+// someone's behalf.
+router.get("/sellers/by-user/:userId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  if (req.user!.userId !== req.params.userId && !MANAGER_ROLES.includes(req.user!.role as any)) {
+    res.status(403).json({ success: false, error: "Forbidden" }); return;
+  }
+  const { rows } = await pool!.query(`SELECT * FROM mkt_sellers WHERE user_id = $1`, [req.params.userId]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "No seller store linked to this account" }); return; }
+  res.json({ success: true, data: mapSeller(rows[0]) });
+});
+
 router.get("/sellers/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { rows } = await pool!.query(`SELECT * FROM mkt_sellers WHERE id = $1`, [req.params.id]);
   if (!rows.length) { res.status(404).json({ success: false, error: "Seller not found" }); return; }
@@ -1194,6 +1221,106 @@ router.get("/admin/reports/products.csv", requireAuth, requireRole(...MANAGER_RO
   res.send(csv);
 });
 
+// ── SUPPLIER SELF-SERVICE (only for suppliers an admin has onboarded with
+// a login via POST /admin/suppliers/:id/create-login — most suppliers have
+// none and are managed entirely by Ballylife staff through the admin
+// routes below). A supplier can see and edit their own profile and
+// catalog, and see (read-only) their own fulfilment pipeline — never
+// pricing shown to customers, another supplier's data, or anyone's cost/
+// margin figures beyond their own.
+router.get("/suppliers/by-user/:userId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  if (req.user!.userId !== req.params.userId && !MANAGER_ROLES.includes(req.user!.role as any)) {
+    res.status(403).json({ success: false, error: "Forbidden" }); return;
+  }
+  const { rows } = await pool!.query(`SELECT * FROM mkt_suppliers WHERE user_id = $1`, [req.params.userId]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "No supplier account linked to this login" }); return; }
+  res.json({ success: true, data: mapSupplier(rows[0]) });
+});
+
+router.get("/suppliers/:id", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Supplier not found" }); return; }
+  res.json({ success: true, data: mapSupplier(rows[0]) });
+});
+
+// A supplier may update their own operational contact/terms info, but
+// never their own verified flag, status, or country — those stay
+// admin-controlled (verification in particular has to mean something).
+router.patch("/suppliers/:id", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  const fields = ["contactName", "contactEmail", "contactPhone", "platform", "paymentTerms", "leadTimeDays", "dropshipSupported"] as const;
+  const colMap: Record<string, string> = { contactName: "contact_name", contactEmail: "contact_email", contactPhone: "contact_phone", platform: "platform", paymentTerms: "payment_terms", leadTimeDays: "lead_time_days", dropshipSupported: "dropship_supported" };
+  const sets: string[] = []; const vals: unknown[] = [];
+  for (const f of fields) { if (req.body[f] !== undefined) { vals.push(req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); } }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_suppliers SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Supplier not found" }); return; }
+  res.json({ success: true, data: mapSupplier(rows[0]) });
+});
+
+router.get("/suppliers/:id/products", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT sp.*, s.name AS supplier_name, s.country AS supplier_country, c.name AS category_name
+     FROM mkt_supplier_products sp JOIN mkt_suppliers s ON s.id = sp.supplier_id LEFT JOIN mkt_categories c ON c.id = sp.category_id
+     WHERE sp.supplier_id = $1 ORDER BY sp.created_at DESC`,
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows.map(r => ({ ...mapSupplierProduct(r), categoryName: r.category_name })) });
+});
+
+// A supplier can propose a new catalog item, but it lands as
+// pending_review with no category and no retail price — a manager has to
+// classify it, price it, and approve it (same shape as a seller's new
+// product listing) before it's importable. originCountry is fixed to the
+// supplier's own country, not something they choose per item.
+router.post("/suppliers/:id/products", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  const { name, description, costPrice, currency, moq, images, emoji } = req.body;
+  if (!name || costPrice === undefined) { res.status(400).json({ success: false, error: "name and costPrice are required" }); return; }
+  const { rows: supRows } = await pool!.query(`SELECT country FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country, status)
+     VALUES ($1,NULL,$2,$3,$4,$5,0,NULL,$6,$7,$8,$9,'pending_review') RETURNING *`,
+    [req.params.id, name, description ?? "", costPrice, currency ?? "USD", moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", supRows[0]?.country ?? "CN"]
+  );
+  res.status(201).json({ success: true, data: mapSupplierProduct(rows[0]), message: "Submitted — a manager will categorize, price, and approve it before it's importable." });
+});
+
+// A supplier can edit their own item's operational details, but never its
+// category, retail/compare price, or status — those stay admin-only
+// (PATCH /admin/supplier-products/:id) since they drive what customers
+// pay and what's actually approved to sell.
+router.patch("/suppliers/:id/products/:productId", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows: existing } = await pool!.query(`SELECT id FROM mkt_supplier_products WHERE id::text = $1 AND supplier_id = $2`, [req.params.productId, req.params.id]);
+  if (!existing.length) { res.status(404).json({ success: false, error: "Catalog item not found" }); return; }
+  const fields = ["name", "description", "costPrice", "currency", "moq", "emoji", "images"] as const;
+  const colMap: Record<string, string> = { name: "name", description: "description", costPrice: "cost_price", currency: "currency", moq: "moq", emoji: "emoji", images: "images" };
+  const sets: string[] = []; const vals: unknown[] = [];
+  for (const f of fields) {
+    if (req.body[f] !== undefined) { vals.push(f === "images" ? JSON.stringify(req.body[f]) : req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); }
+  }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.productId);
+  const { rows } = await pool!.query(`UPDATE mkt_supplier_products SET ${sets.join(", ")}, updated_at = now() WHERE id::text = $${vals.length} RETURNING *`, vals);
+  res.json({ success: true, data: mapSupplierProduct(rows[0]) });
+});
+
+// Read-only view of this supplier's own order lines moving through the
+// fulfilment pipeline — visibility only, they never advance or resolve it
+// themselves (that stays with admins/ops, who are physically doing the
+// QC and freight).
+router.get("/suppliers/:id/orders", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT so.*, o.order_number, p.name AS product_name, sel.store_name AS seller_name,
+       ow.name AS origin_warehouse_name, dw.name AS destination_warehouse_name
+     FROM mkt_supplier_orders so
+     JOIN mkt_orders o ON o.id = so.order_id JOIN mkt_products p ON p.id = so.product_id JOIN mkt_sellers sel ON sel.id = so.seller_id
+     JOIN mkt_warehouses ow ON ow.id = so.origin_warehouse_id JOIN mkt_warehouses dw ON dw.id = so.destination_warehouse_id
+     WHERE so.supplier_id = $1 ORDER BY so.created_at DESC LIMIT 100`,
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows.map(mapSupplierOrder), meta: { total: rows.length } });
+});
+
 // ── ADMIN: SUPPLY CHAIN (suppliers, catalog, warehouses, shipments) ─────────
 // All gated to marketplace_admin — this is Ballylife's own sourcing/ops
 // team managing supplier relationships and the fulfilment pipeline, never
@@ -1230,6 +1357,41 @@ router.patch("/admin/suppliers/:id", requireAuth, requireRole(...MANAGER_ROLES),
   const { rows } = await pool!.query(`UPDATE mkt_suppliers SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals);
   if (!rows.length) { res.status(404).json({ success: false, error: "Supplier not found" }); return; }
   res.json({ success: true, data: mapSupplier(rows[0]) });
+});
+
+// Onboards a supplier with their own dashboard login — most suppliers
+// never get this (managed entirely by staff instead); use only for a
+// supplier you actually want self-servicing their own catalog/profile.
+router.post("/admin/suppliers/:id/create-login", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { username, password } = req.body;
+  if (!username || !password) { res.status(400).json({ success: false, error: "username and password are required" }); return; }
+  if (typeof password !== "string" || password.length < 8) { res.status(400).json({ success: false, error: "Password must be at least 8 characters" }); return; }
+
+  const { rows: supRows } = await pool!.query(`SELECT * FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
+  if (!supRows.length) { res.status(404).json({ success: false, error: "Supplier not found" }); return; }
+  if (supRows[0].user_id) { res.status(409).json({ success: false, error: "This supplier already has a login" }); return; }
+
+  const { rows: existingUser } = await pool!.query(`SELECT id FROM users WHERE username = $1`, [username]);
+  if (existingUser.length) { res.status(409).json({ success: false, error: "That username is already taken" }); return; }
+
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const passwordHash = await bcrypt.hash(password, 10);
+    const { rows: userRows } = await client.query(
+      `INSERT INTO users (username, password_hash, role, name, email) VALUES ($1,$2,'supplier',$3,$4) RETURNING id`,
+      [username, passwordHash, supRows[0].name, supRows[0].contact_email ?? `${username}@ballylife.example`]
+    );
+    await client.query(`UPDATE mkt_suppliers SET user_id = $1 WHERE id = $2`, [userRows[0].id, req.params.id]);
+    await client.query("COMMIT");
+    res.status(201).json({ success: true, message: "Login created — share the username and password with the supplier directly; they aren't stored anywhere else." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Supplier login creation failed:", err);
+    res.status(500).json({ success: false, error: "Could not create a login for this supplier, please try again." });
+  } finally {
+    client.release();
+  }
 });
 
 router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {

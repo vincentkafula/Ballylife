@@ -257,6 +257,7 @@ export interface Supplier {
   verified: boolean;
   status: "active" | "suspended";
   notes: string | null;
+  userId?: string | null;
   createdAt: string;
 }
 

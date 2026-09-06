@@ -677,7 +677,7 @@ const MKT_WAREHOUSES = [
   { id: "wh-dest-zm", name: "Lusaka Fulfilment Centre", country: "ZM", type: "destination", address: "Heavy Industrial Area, Lusaka, Zambia", status: "active", createdAt: ago(4380*60) },
 ];
 
-const MKT_SUPPLIERS = [
+const MKT_SUPPLIERS: R[] = [
   { id: "sup-cn-01", name: "Guangzhou Fortune Trading Co.", country: "CN", contactName: "Li Wei", contactEmail: "liwei@fortunetrading.example", contactPhone: "+86 20 5555 0101", platform: "Alibaba Trade Assurance", paymentTerms: "30% deposit / 70% before shipment", leadTimeDays: 12, dropshipSupported: true, verified: true, status: "active", notes: "Electronics accessories and home goods.", createdAt: ago(3000*60) },
   { id: "sup-cn-02", name: "Shenzhen Bright Electronics Ltd.", country: "CN", contactName: "Chen Jing", contactEmail: "chenjing@brightelec.example", contactPhone: "+86 755 5555 0202", platform: "1688.com (via sourcing agent)", paymentTerms: "T/T, 50/50", leadTimeDays: 15, dropshipSupported: true, verified: true, status: "active", notes: "Consumer electronics.", createdAt: ago(2500*60) },
   { id: "sup-jp-01", name: "Osaka Craft & Home Co.", country: "JP", contactName: "Tanaka Yuki", contactEmail: "tanaka@osakacraft.example", contactPhone: "+81 6 5555 0303", platform: "JETRO-matched", paymentTerms: "T/T on confirmation", leadTimeDays: 18, dropshipSupported: true, verified: true, status: "active", notes: "Home goods and stationery.", createdAt: ago(2000*60) },
@@ -1056,5 +1056,50 @@ export const mktMock = {
     if (body.notes !== undefined) r.notes = body.notes;
     r.updatedAt = new Date().toISOString();
     return { success:true, data:r };
+  },
+  // ─── Supplier self-service (demo persona: always sup-cn-01) ─────────────
+  supplierByUser: (_userId: string) => {
+    const s = MKT_SUPPLIERS.find(x => x.id === "sup-cn-01");
+    return s ? { success:true, data:s } : { success:false, error:"No supplier account linked to this login" };
+  },
+  supplierGet: (id: string) => {
+    const s = MKT_SUPPLIERS.find(x => x.id === id);
+    return s ? { success:true, data:s } : { success:false, error:"Supplier not found" };
+  },
+  supplierUpdateProfile: (id: string, body: R) => {
+    const s = MKT_SUPPLIERS.find(x => x.id === id);
+    if (!s) return { success:false, error:"Supplier not found" };
+    Object.assign(s, body);
+    return { success:true, data:s };
+  },
+  supplierProducts: (id: string) => ({ success:true, data:MKT_SUPPLIER_PRODUCTS.filter(sp => sp.supplierId === id) }),
+  supplierAddProduct: (id: string, body: R) => {
+    if (!body.name || body.costPrice === undefined) return { success:false, error:"name and costPrice are required" };
+    const supplier = MKT_SUPPLIERS.find(s => s.id === id);
+    const sp = { id:`spr-${uuid()}`, supplierId:id, supplierName:supplier?.name ?? "", supplierCountry:supplier?.country ?? "CN",
+      categoryId:null, categoryName:null, name:body.name, description:body.description ?? "", costPrice:Number(body.costPrice),
+      currency:body.currency ?? "USD", retailPrice:0, compareAtPrice:null, moq:body.moq ?? 1, images:body.images ?? [],
+      emoji:body.emoji ?? "📦", originCountry:supplier?.country ?? "CN", status:"pending_review", importCount:0,
+      createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
+    MKT_SUPPLIER_PRODUCTS.push(sp as never);
+    return { success:true, data:sp, message:"Submitted — a manager will categorize, price, and approve it before it's importable." };
+  },
+  supplierUpdateProduct: (supplierId: string, productId: string, body: R) => {
+    const sp = MKT_SUPPLIER_PRODUCTS.find(x => x.id === productId && x.supplierId === supplierId);
+    if (!sp) return { success:false, error:"Catalog item not found" };
+    const allowed: (keyof typeof sp)[] = ["name","description","costPrice","currency","moq","emoji","images"] as never;
+    for (const f of allowed) { if (body[f as string] !== undefined) (sp as R)[f as string] = body[f as string]; }
+    sp.updatedAt = new Date().toISOString();
+    return { success:true, data:sp };
+  },
+  supplierOrdersFor: (id: string) => { const list = MKT_SUPPLIER_ORDERS.filter(so => so.supplierId === id); return { success:true, data:list, meta:{ total:list.length } }; },
+  adminCreateSupplierLogin: (id: string, body: R) => {
+    if (!body.username || !body.password) return { success:false, error:"username and password are required" };
+    if (typeof body.password !== "string" || body.password.length < 8) return { success:false, error:"Password must be at least 8 characters" };
+    const s = MKT_SUPPLIERS.find(x => x.id === id);
+    if (!s) return { success:false, error:"Supplier not found" };
+    if (s.userId) return { success:false, error:"This supplier already has a login" };
+    s.userId = `demo-supplier-user-${id}`;
+    return { success:true, message:"Login created — share the username and password with the supplier directly; they aren't stored anywhere else." };
   },
 };

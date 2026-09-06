@@ -34,13 +34,14 @@ const PRODUCT_ILLUSTRATIONS: Record<string, () => ReactNode> = {
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
+import { SupplierDashboard } from "./SupplierDashboard";
 import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
 import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "admin" | "account";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "admin" | "account";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1458,6 +1459,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const [cartCount, setCartCount] = useState(0);
   const [authUser, setAuthUser]   = useState<MktAuthUser | null>(null);
   const [authSeller, setAuthSeller] = useState<{ id: string; storeName: string; status: string } | null>(null);
+  const [authSupplier, setAuthSupplier] = useState<Record<string, unknown> | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [navSearch, setNavSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
@@ -1466,14 +1468,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const navSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const MANAGER_ROLES = ["superadmin", "noc_engineer", "billing_admin", "marketplace_admin"];
-  const role: "customer" | "seller" | "manager" | null =
-    !authUser ? null : MANAGER_ROLES.includes(authUser.role) ? "manager" : authUser.role === "seller" ? "seller" : "customer";
+  const role: "customer" | "seller" | "supplier" | "manager" | null =
+    !authUser ? null : MANAGER_ROLES.includes(authUser.role) ? "manager" : authUser.role === "seller" ? "seller" : authUser.role === "supplier" ? "supplier" : "customer";
 
   useEffect(() => {
     // Marketplace is a fully independent account system now — its own
     // users table, its own JWT, no bridging with Vink's main app login.
     const restored = mktAuth.restoreSession();
-    if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); }
+    if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); setAuthSupplier(restored.supplier); }
   }, []);
 
   useEffect(() => {
@@ -1540,11 +1542,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     }
   };
 
-  const handleAuthenticated = (user: MktAuthUser, seller: { id: string; storeName: string; status: string } | null) => {
+  const handleAuthenticated = (user: MktAuthUser, seller: { id: string; storeName: string; status: string } | null, supplier?: Record<string, unknown> | null) => {
     setAuthUser(user);
     setAuthSeller(seller);
+    setAuthSupplier(supplier ?? null);
     setShowAuthModal(false);
-    const dest = MANAGER_ROLES.includes(user.role) ? "admin" : user.role === "seller" ? "seller" : "account";
+    const dest = MANAGER_ROLES.includes(user.role) ? "admin" : user.role === "seller" ? "seller" : user.role === "supplier" ? "supplier" : "account";
     setView(dest as View);
   };
 
@@ -1552,6 +1555,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     mktAuth.logout();
     setAuthUser(null);
     setAuthSeller(null);
+    setAuthSupplier(null);
     setCart(null);
     setWishlistIds(new Set());
     setAddresses([]);
@@ -1830,6 +1834,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
           {view === "seller" && authUser && authSeller && role === "seller" && (
             <SellerDashboard user={authUser} seller={authSeller} onSignOut={handleSignOut} />
+          )}
+          {view === "supplier" && authUser && authSupplier && role === "supplier" && (
+            <SupplierDashboard user={authUser} supplier={authSupplier} onSignOut={handleSignOut} />
           )}
           {view === "admin" && authUser && role === "manager" && (
             <ManagerDashboard user={authUser} onSignOut={handleSignOut} />
