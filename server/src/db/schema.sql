@@ -360,3 +360,85 @@ CREATE INDEX IF NOT EXISTS idx_mkt_supplier_orders_seller    ON mkt_supplier_ord
 ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS fulfillment_type TEXT NOT NULL DEFAULT 'local'; -- local | imported
 ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS supplier_product_id UUID REFERENCES mkt_supplier_products(id);
 CREATE INDEX IF NOT EXISTS idx_mkt_products_supplier_product ON mkt_products(supplier_product_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Tax & customs — per-country VAT/duty rates, and per-shipment customs
+-- clearance tracking.
+--
+-- IMPORTANT: this system calculates what's owed and tracks what's been
+-- paid — it does NOT submit declarations to SARS or ZRA, and it does NOT
+-- move money to either authority. Both countries require declarations to
+-- go through an accredited/licensed clearing agent (SARS EDI-accredited
+-- entity, or a ZRA-licensed agent via ASYCUDA World); there is no
+-- self-service API for an unaccredited business to pay customs directly.
+-- clearing_agent/reference_number on mkt_customs_records exist to record
+-- whichever broker or courier (or, once accredited, Ballylife itself)
+-- actually handles that step.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- One row per destination country: the VAT rate charged to customers on
+-- every sale (domestic tax law, applies regardless of fulfillment_type),
+-- and a fallback duty rate for imported items whose category has no
+-- specific override in mkt_duty_rates below.
+CREATE TABLE IF NOT EXISTS mkt_tax_rates (
+  country                 TEXT PRIMARY KEY, -- ZA | ZM | ... (ISO-3166 alpha-2)
+  vat_rate_pct            NUMERIC(5,2) NOT NULL,
+  default_duty_rate_pct   NUMERIC(5,2) NOT NULL DEFAULT 0,
+  notes                   TEXT,
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Category-specific import duty override for a country — duty rates
+-- genuinely vary by HS code (e.g. SA clothing 45% vs phones/laptops 0%
+-- under WTO ITA), and mkt_categories is the closest classification this
+-- app already has. These starting values are illustrative, sourced from
+-- each country's published tariff bands, NOT a confirmed per-product HS
+-- classification — a manager should verify/adjust the exact rate for
+-- each real product before relying on it for an actual filing.
+CREATE TABLE IF NOT EXISTS mkt_duty_rates (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  country        TEXT NOT NULL REFERENCES mkt_tax_rates(country),
+  category_id    TEXT NOT NULL REFERENCES mkt_categories(id),
+  duty_rate_pct  NUMERIC(5,2) NOT NULL,
+  notes          TEXT,
+  UNIQUE (country, category_id)
+);
+
+-- Customs clearance happens per SHIPMENT (the consolidated freight that
+-- actually crosses the border), not per order line — duty/VAT here is
+-- import tax owed to the destination country's customs authority on the
+-- shipment's declared (CIF-ish) value, separate from the VAT collected
+-- from end customers on mkt_orders.tax_amount. status tracks the real
+-- workflow: computed in-system -> funds handed to whichever accredited
+-- courier/broker declares it -> that broker's declaration accepted ->
+-- goods released. Nothing here is submitted automatically to SARS/ZRA;
+-- an admin (or the broker's own system) updates status as it actually
+-- happens.
+CREATE TABLE IF NOT EXISTS mkt_customs_records (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shipment_id           UUID NOT NULL UNIQUE REFERENCES mkt_shipments(id),
+  destination_country   TEXT NOT NULL REFERENCES mkt_tax_rates(country),
+  declared_value        NUMERIC(14,2) NOT NULL DEFAULT 0, -- sum of supplier cost_amount for orders in this shipment
+  duty_amount           NUMERIC(14,2) NOT NULL DEFAULT 0,
+  vat_amount            NUMERIC(14,2) NOT NULL DEFAULT 0,
+  total_payable         NUMERIC(14,2) NOT NULL DEFAULT 0,
+  currency              TEXT NOT NULL DEFAULT 'ZAR',
+  clearing_agent        TEXT, -- broker/courier name, or "Ballylife (accredited)" once that's real
+  reference_number      TEXT, -- customs declaration / broker reference
+  status                TEXT NOT NULL DEFAULT 'duty_calculated',
+  -- duty_calculated | prepaid_to_agent | declared_to_customs | cleared | held
+  prepaid_at            TIMESTAMPTZ,
+  declared_at           TIMESTAMPTZ,
+  cleared_at            TIMESTAMPTZ,
+  notes                 TEXT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_mkt_customs_records_status ON mkt_customs_records(status);
+
+-- mkt_orders: the VAT charged to the customer used to be a hardcoded 15%
+-- regardless of destination — duty_amount is new (import duty is never
+-- charged to the customer directly, but tracked here so an order's full
+-- landed-cost picture is visible to admins reconciling against
+-- mkt_customs_records).
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS duty_amount NUMERIC(12,2) NOT NULL DEFAULT 0;

@@ -123,13 +123,46 @@ const SUPPLIER_ORDER_TRANSITIONS: Record<string, string[]> = {
 const mapOrder = (r: any) => ({
   id: r.id, orderNumber: r.order_number, userId: r.user_id, customerName: r.customer_name,
   customerEmail: r.customer_email, items: r.items, subtotal: Number(r.subtotal),
-  shippingCost: Number(r.shipping_cost), taxAmount: Number(r.tax_amount), discountAmount: Number(r.discount_amount),
+  shippingCost: Number(r.shipping_cost), taxAmount: Number(r.tax_amount), dutyAmount: Number(r.duty_amount ?? 0), discountAmount: Number(r.discount_amount),
   totalAmount: Number(r.total_amount), currency: r.currency, status: r.status, paymentStatus: r.payment_status,
   paymentMethod: r.payment_method, shippingAddress: r.shipping_address, shippingStatus: r.shipping_status,
   trackingNumber: r.tracking_number, carrier: r.carrier, estimatedDelivery: r.estimated_delivery,
   couponCode: r.coupon_code, notes: r.notes, placedAt: r.placed_at, confirmedAt: r.confirmed_at,
   shippedAt: r.shipped_at, deliveredAt: r.delivered_at, cancelledAt: r.cancelled_at,
 });
+
+const mapTaxRate = (r: any) => ({
+  country: r.country, vatRatePct: Number(r.vat_rate_pct), defaultDutyRatePct: Number(r.default_duty_rate_pct),
+  notes: r.notes, updatedAt: r.updated_at,
+});
+
+const mapDutyRate = (r: any) => ({
+  id: r.id, country: r.country, categoryId: r.category_id, categoryName: r.category_name,
+  dutyRatePct: Number(r.duty_rate_pct), notes: r.notes,
+});
+
+const mapCustomsRecord = (r: any) => ({
+  id: r.id, shipmentId: r.shipment_id, destinationCountry: r.destination_country, declaredValue: Number(r.declared_value),
+  dutyAmount: Number(r.duty_amount), vatAmount: Number(r.vat_amount), totalPayable: Number(r.total_payable), currency: r.currency,
+  clearingAgent: r.clearing_agent, referenceNumber: r.reference_number, status: r.status,
+  prepaidAt: r.prepaid_at, declaredAt: r.declared_at, clearedAt: r.cleared_at, notes: r.notes,
+  originWarehouseName: r.origin_warehouse_name, destinationWarehouseName: r.destination_warehouse_name,
+  orderCount: r.order_count !== undefined ? Number(r.order_count) : undefined,
+  createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+// Valid forward transitions for a customs record — mirrors the real
+// workflow: computed in-system, funds handed to whichever accredited
+// courier/broker declares it, that declaration accepted, goods released.
+// "held" can be reached from prepaid/declared (customs queries/inspects)
+// and can resolve back to declared or forward to cleared.
+const CUSTOMS_RECORD_TRANSITIONS: Record<string, string[]> = {
+  duty_calculated: ["prepaid_to_agent"],
+  prepaid_to_agent: ["declared_to_customs", "held"],
+  declared_to_customs: ["cleared", "held"],
+  held: ["declared_to_customs", "cleared"],
+  cleared: [],
+};
 
 const mapReview = (r: any) => ({
   id: r.id, productId: r.product_id, userId: r.user_id, orderId: r.order_id, rating: r.rating,
@@ -499,11 +532,11 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // an order with any supplier-sourced line needs the supplier's lead
     // time plus international shipping/customs, not the same 5-day promise)
     // and, further down, to open the two-leg supplier-order records.
-    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null }>();
+    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null }>();
     let maxLeadTimeDays = 0;
     for (const item of items) {
       const { rows: prodRows } = await client.query(
-        `SELECT p.fulfillment_type, p.supplier_product_id, sp.supplier_id, sp.cost_price, sp.origin_country, sup.lead_time_days
+        `SELECT p.fulfillment_type, p.supplier_product_id, p.category_id, sp.supplier_id, sp.cost_price, sp.origin_country, sup.lead_time_days
          FROM mkt_products p
          LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
          LEFT JOIN mkt_suppliers sup ON sup.id = sp.supplier_id
@@ -513,7 +546,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       itemFulfillment.set(item.productId, {
         fulfillmentType: p?.fulfillment_type ?? "local", supplierProductId: p?.supplier_product_id ?? null,
         supplierId: p?.supplier_id ?? null, costPrice: p?.cost_price ?? null, originCountry: p?.origin_country ?? null,
-        leadTimeDays: p?.lead_time_days ?? null,
+        leadTimeDays: p?.lead_time_days ?? null, categoryId: p?.category_id ?? null,
       });
       if (p?.fulfillment_type === "imported" && p?.lead_time_days) maxLeadTimeDays = Math.max(maxLeadTimeDays, Number(p.lead_time_days));
     }
@@ -523,14 +556,44 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // 5-day promise.
     const estimatedDeliveryDays = maxLeadTimeDays > 0 ? maxLeadTimeDays + 12 : 5;
 
+    // VAT is domestic sales tax charged to the customer on every order
+    // regardless of fulfilment type — the cart's running total only ever
+    // assumed a flat 15% (SA) since it's built before an address is
+    // necessarily chosen. Now that we have the real shipping country,
+    // recompute it properly (SA 15%, ZM 16%, ...) rather than trust the
+    // cart's estimate for money that actually gets charged and remitted.
+    const { rows: taxRateRows } = await client.query(`SELECT * FROM mkt_tax_rates WHERE country = $1`, [shippingAddress.country]);
+    const vatRatePct = taxRateRows.length ? Number(taxRateRows[0].vat_rate_pct) : 15;
+    const defaultDutyRatePct = taxRateRows.length ? Number(taxRateRows[0].default_duty_rate_pct) : 20;
+    const { rows: dutyRateRows } = await client.query(`SELECT category_id, duty_rate_pct FROM mkt_duty_rates WHERE country = $1`, [shippingAddress.country]);
+    const dutyRateByCategory = new Map(dutyRateRows.map((r: any) => [r.category_id, Number(r.duty_rate_pct)]));
+
+    const taxAmount = +(cart.subtotal * vatRatePct / 100).toFixed(2);
+    // Import duty is never charged to the customer directly — it's a cost
+    // Ballylife carries and settles at the border (see mkt_customs_records
+    // once the shipment is batched). Computed here on the supplier cost
+    // value (the actual CIF-ish base customs assesses against) purely so
+    // an order's full landed-cost picture is visible to admins reconciling
+    // against what's later declared.
+    let dutyAmount = 0;
+    for (const item of items) {
+      const f = itemFulfillment.get(item.productId);
+      if (f?.fulfillmentType === "imported" && f.costPrice) {
+        const rate = f.categoryId ? (dutyRateByCategory.get(f.categoryId) ?? defaultDutyRatePct) : defaultDutyRatePct;
+        dutyAmount += Number(f.costPrice) * item.quantity * (rate / 100);
+      }
+    }
+    dutyAmount = +dutyAmount.toFixed(2);
+    const totalAmount = +(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount).toFixed(2);
+
     const { rows } = await client.query(
       `INSERT INTO mkt_orders (order_number, user_id, customer_name, customer_email, items, subtotal, shipping_cost,
-         tax_amount, discount_amount, total_amount, currency, status, payment_status, payment_method, shipping_address,
+         tax_amount, duty_amount, discount_amount, total_amount, currency, status, payment_status, payment_method, shipping_address,
          shipping_status, estimated_delivery, coupon_code, confirmed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ZAR','pending','pending_payment',$11,$12,'not_shipped', now() + ($14 || ' days')::interval, $13, NULL)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ZAR','pending','pending_payment',$12,$13,'not_shipped', now() + ($15 || ' days')::interval, $14, NULL)
        RETURNING *`,
       [orderNumber, userId, `${shippingAddress.firstName} ${shippingAddress.lastName}`, customerEmail,
-       JSON.stringify(items), cart.subtotal, cart.shipping, cart.tax, cart.coupon_discount, cart.total,
+       JSON.stringify(items), cart.subtotal, cart.shipping, taxAmount, dutyAmount, cart.coupon_discount, totalAmount,
        paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code, estimatedDeliveryDays]
     );
     const order = rows[0];
@@ -1408,6 +1471,167 @@ router.patch("/admin/shipments/:id/status", requireAuth, requireRole(...MANAGER_
   } finally {
     client.release();
   }
+});
+
+// ── ADMIN: tax rates & customs (VAT/duty maintenance, customs clearance
+// tracking). Everything here computes and records — it never submits a
+// declaration or moves money to SARS/ZRA. See schema.sql for the fuller
+// explanation of why that boundary exists.
+router.get("/admin/tax-rates", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_tax_rates ORDER BY country`);
+  res.json({ success: true, data: rows.map(mapTaxRate) });
+});
+
+router.patch("/admin/tax-rates/:country", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { vatRatePct, defaultDutyRatePct, notes } = req.body;
+  const sets: string[] = []; const vals: unknown[] = [];
+  if (vatRatePct !== undefined) { vals.push(vatRatePct); sets.push(`vat_rate_pct = $${vals.length}`); }
+  if (defaultDutyRatePct !== undefined) { vals.push(defaultDutyRatePct); sets.push(`default_duty_rate_pct = $${vals.length}`); }
+  if (notes !== undefined) { vals.push(notes); sets.push(`notes = $${vals.length}`); }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.country);
+  const { rows } = await pool!.query(`UPDATE mkt_tax_rates SET ${sets.join(", ")}, updated_at = now() WHERE country = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Country not found — create it first via POST /admin/tax-rates" }); return; }
+  res.json({ success: true, data: mapTaxRate(rows[0]) });
+});
+
+router.post("/admin/tax-rates", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { country, vatRatePct, defaultDutyRatePct, notes } = req.body;
+  if (!country || vatRatePct === undefined) { res.status(400).json({ success: false, error: "country and vatRatePct are required" }); return; }
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_tax_rates (country, vat_rate_pct, default_duty_rate_pct, notes) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (country) DO UPDATE SET vat_rate_pct = $2, default_duty_rate_pct = $3, notes = $4, updated_at = now() RETURNING *`,
+    [country, vatRatePct, defaultDutyRatePct ?? 0, notes ?? null]
+  );
+  res.status(201).json({ success: true, data: mapTaxRate(rows[0]) });
+});
+
+router.get("/admin/duty-rates", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { country } = req.query as Record<string, string>;
+  const where = country ? `WHERE d.country = $1` : "";
+  const { rows } = await pool!.query(
+    `SELECT d.*, c.name AS category_name FROM mkt_duty_rates d JOIN mkt_categories c ON c.id = d.category_id ${where} ORDER BY d.country, c.name`,
+    country ? [country] : []
+  );
+  res.json({ success: true, data: rows.map(mapDutyRate) });
+});
+
+router.post("/admin/duty-rates", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { country, categoryId, dutyRatePct, notes } = req.body;
+  if (!country || !categoryId || dutyRatePct === undefined) { res.status(400).json({ success: false, error: "country, categoryId and dutyRatePct are required" }); return; }
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_duty_rates (country, category_id, duty_rate_pct, notes) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (country, category_id) DO UPDATE SET duty_rate_pct = $3, notes = $4 RETURNING *`,
+    [country, categoryId, dutyRatePct, notes ?? null]
+  );
+  res.status(201).json({ success: true, data: mapDutyRate(rows[0]) });
+});
+
+router.patch("/admin/duty-rates/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { dutyRatePct, notes } = req.body;
+  const sets: string[] = []; const vals: unknown[] = [];
+  if (dutyRatePct !== undefined) { vals.push(dutyRatePct); sets.push(`duty_rate_pct = $${vals.length}`); }
+  if (notes !== undefined) { vals.push(notes); sets.push(`notes = $${vals.length}`); }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_duty_rates SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Duty rate not found" }); return; }
+  res.json({ success: true, data: mapDutyRate(rows[0]) });
+});
+
+router.get("/admin/customs-records", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { status } = req.query as Record<string, string>;
+  const where = status ? `WHERE cr.status = $1` : "";
+  const { rows } = await pool!.query(
+    `SELECT cr.*, ow.name AS origin_warehouse_name, dw.name AS destination_warehouse_name,
+       (SELECT COUNT(*)::int FROM mkt_supplier_orders WHERE shipment_id = cr.shipment_id) AS order_count
+     FROM mkt_customs_records cr
+     JOIN mkt_shipments sh ON sh.id = cr.shipment_id
+     JOIN mkt_warehouses ow ON ow.id = sh.origin_warehouse_id
+     JOIN mkt_warehouses dw ON dw.id = sh.destination_warehouse_id
+     ${where} ORDER BY cr.created_at DESC`,
+    status ? [status] : []
+  );
+  res.json({ success: true, data: rows.map(mapCustomsRecord) });
+});
+
+// Computes duty + VAT for a shipment from its linked (QC-passed or later)
+// supplier orders — declared_value is the sum of supplier cost_amount
+// (the real CIF-ish base), duty uses each item's category rate for the
+// destination country, VAT uses that country's rate on the same base
+// (import VAT, distinct from the retail VAT already charged to customers
+// on mkt_orders.tax_amount). One record per shipment — calling this twice
+// on the same shipment updates the existing record rather than duplicating.
+router.post("/admin/customs-records/generate", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { shipmentId } = req.body;
+  if (!shipmentId) { res.status(400).json({ success: false, error: "shipmentId is required" }); return; }
+
+  const { rows: shipRows } = await pool!.query(
+    `SELECT sh.*, dw.country AS destination_country FROM mkt_shipments sh JOIN mkt_warehouses dw ON dw.id = sh.destination_warehouse_id WHERE sh.id::text = $1`,
+    [shipmentId]
+  );
+  if (!shipRows.length) { res.status(404).json({ success: false, error: "Shipment not found" }); return; }
+  const shipment = shipRows[0];
+
+  const { rows: lineRows } = await pool!.query(
+    `SELECT so.cost_amount, p.category_id FROM mkt_supplier_orders so JOIN mkt_products p ON p.id = so.product_id WHERE so.shipment_id::text = $1`,
+    [shipmentId]
+  );
+  if (!lineRows.length) { res.status(400).json({ success: false, error: "This shipment has no supplier orders to base a customs record on." }); return; }
+
+  const { rows: taxRateRows } = await pool!.query(`SELECT * FROM mkt_tax_rates WHERE country = $1`, [shipment.destination_country]);
+  const vatRatePct = taxRateRows.length ? Number(taxRateRows[0].vat_rate_pct) : 15;
+  const defaultDutyRatePct = taxRateRows.length ? Number(taxRateRows[0].default_duty_rate_pct) : 20;
+  const { rows: dutyRateRows } = await pool!.query(`SELECT category_id, duty_rate_pct FROM mkt_duty_rates WHERE country = $1`, [shipment.destination_country]);
+  const dutyRateByCategory = new Map(dutyRateRows.map((r: any) => [r.category_id, Number(r.duty_rate_pct)]));
+
+  let declaredValue = 0, dutyAmount = 0;
+  for (const line of lineRows) {
+    const cost = Number(line.cost_amount);
+    declaredValue += cost;
+    const rate = line.category_id ? (dutyRateByCategory.get(line.category_id) ?? defaultDutyRatePct) : defaultDutyRatePct;
+    dutyAmount += cost * (rate / 100);
+  }
+  // Import VAT is assessed on the customs value plus duty already applied
+  // (SARS' "Added Tax Value" method) — a reasonable general approximation
+  // across jurisdictions even though the exact uplift formula varies.
+  const vatAmount = (declaredValue + dutyAmount) * (vatRatePct / 100);
+  const totalPayable = dutyAmount + vatAmount;
+
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_customs_records (shipment_id, destination_country, declared_value, duty_amount, vat_amount, total_payable, currency)
+     VALUES ($1,$2,$3,$4,$5,$6,'ZAR')
+     ON CONFLICT (shipment_id) DO UPDATE SET declared_value = $3, duty_amount = $4, vat_amount = $5, total_payable = $6, updated_at = now()
+     RETURNING *`,
+    [shipmentId, shipment.destination_country, declaredValue.toFixed(2), dutyAmount.toFixed(2), vatAmount.toFixed(2), totalPayable.toFixed(2)]
+  );
+  res.status(201).json({ success: true, data: mapCustomsRecord(rows[0]) });
+});
+
+router.patch("/admin/customs-records/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { status, clearingAgent, referenceNumber, notes } = req.body;
+  const { rows: existing } = await pool!.query(`SELECT status FROM mkt_customs_records WHERE id::text = $1`, [req.params.id]);
+  if (!existing.length) { res.status(404).json({ success: false, error: "Customs record not found" }); return; }
+
+  const sets: string[] = ["updated_at = now()"]; const vals: unknown[] = [];
+  if (clearingAgent !== undefined) { vals.push(clearingAgent); sets.push(`clearing_agent = $${vals.length}`); }
+  if (referenceNumber !== undefined) { vals.push(referenceNumber); sets.push(`reference_number = $${vals.length}`); }
+  if (notes !== undefined) { vals.push(notes); sets.push(`notes = $${vals.length}`); }
+  if (status !== undefined) {
+    const current = existing[0].status;
+    const allowed = CUSTOMS_RECORD_TRANSITIONS[current] ?? [];
+    if (!allowed.includes(status)) {
+      res.status(409).json({ success: false, error: `Cannot move from "${current}" to "${status}" — valid next step(s): ${allowed.join(", ") || "none (terminal state)"}` });
+      return;
+    }
+    vals.push(status); sets.push(`status = $${vals.length}`);
+    const timestampCol: Record<string, string> = { prepaid_to_agent: "prepaid_at", declared_to_customs: "declared_at", cleared: "cleared_at" };
+    if (timestampCol[status]) sets.push(`${timestampCol[status]} = now()`);
+  }
+  if (sets.length === 1) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_customs_records SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
+  res.json({ success: true, data: mapCustomsRecord(rows[0]) });
 });
 
 export default router;

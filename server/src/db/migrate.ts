@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -29,6 +29,7 @@ export async function migrate(): Promise<void> {
     // needs its own, independently-gated chance to seed on first boot
     // after the upgrade — never short-circuit past it.
     await seedSupplyChain();
+    await seedTaxRates();
     return;
   }
 
@@ -99,6 +100,7 @@ export async function migrate(): Promise<void> {
   }
 
   await seedSupplyChain();
+  await seedTaxRates();
 }
 
 /**
@@ -154,6 +156,48 @@ async function seedSupplyChain(): Promise<void> {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[db] Supply chain seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Seeds starting VAT/duty rates (mkt_tax_rates, mkt_duty_rates) — gated on
+ * mkt_tax_rates independently of every other seed step above, same reasoning
+ * as seedSupplyChain: this feature landed after those gates existed, so an
+ * already-deployed database needs its own first-boot chance to pick it up.
+ */
+async function seedTaxRates(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_tax_rates");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Tax/duty rates already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding tax/duty rates...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    for (const t of TAX_RATES) {
+      await client.query(
+        `INSERT INTO mkt_tax_rates (country, vat_rate_pct, default_duty_rate_pct, notes, updated_at)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (country) DO NOTHING`,
+        [t.country, t.vatRatePct, t.defaultDutyRatePct, t.notes, t.updatedAt]
+      );
+    }
+    for (const d of DUTY_RATES) {
+      await client.query(
+        `INSERT INTO mkt_duty_rates (id, country, category_id, duty_rate_pct, notes)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+        [d.id, d.country, d.categoryId, d.dutyRatePct, d.notes]
+      );
+    }
+    await client.query("COMMIT");
+    console.log(`[db] Seeded ${TAX_RATES.length} country tax rates, ${DUTY_RATES.length} category duty overrides.`);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Tax/duty rate seed failed, rolled back:", err);
     throw err;
   } finally {
     client.release();

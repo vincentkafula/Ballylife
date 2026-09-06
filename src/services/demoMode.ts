@@ -711,6 +711,21 @@ const MKT_SHIPMENTS: Record<string, unknown>[] = [
   { id: "sh-01", originWarehouseId: "wh-origin-cn", originWarehouseName: "Guangzhou Consolidation Hub", destinationWarehouseId: "wh-dest-za", destinationWarehouseName: "Cape Town Fulfilment Centre", status: "in_transit", carrier: "DHL Global Forwarding", trackingNumber: "DHL-GZ-CT-88213", dispatchedAt: ago(2880), receivedAt: null, customsClearedAt: null, closedAt: null, orderCount: 1, createdAt: ago(2880) },
 ];
 
+// ─── Tax & customs mock data ──────────────────────────────────────────────────
+const MKT_TAX_RATES: Record<string, unknown>[] = [
+  { country: "ZA", vatRatePct: 15, defaultDutyRatePct: 20, notes: "SARS: 15% VAT on all imports (no de minimis since Nov 2024). Duty 0-45% by HS code; 20% used here as an unclassified-goods placeholder.", updatedAt: ago(4380*60) },
+  { country: "ZM", vatRatePct: 16, defaultDutyRatePct: 25, notes: "ZRA: 16% VAT. Duty bands 0/5/15/25/40% by HS code; 25% (\"most finished consumer goods\") used as the unclassified-goods placeholder.", updatedAt: ago(4380*60) },
+];
+
+const MKT_DUTY_RATES: Record<string, unknown>[] = [
+  { id: "dr-01", country: "ZA", categoryId: "cat-01", categoryName: "Electronics", dutyRatePct: 0, notes: "Phones/laptops/most electronics are duty-free under the WTO Information Technology Agreement." },
+  { id: "dr-02", country: "ZA", categoryId: "cat-02", categoryName: "Fashion", dutyRatePct: 45, notes: "SARS Schedule 1, Chapters 61-62 (clothing)." },
+  { id: "dr-03", country: "ZA", categoryId: "cat-06", categoryName: "Books & Media", dutyRatePct: 0, notes: "Books typically duty-free." },
+  { id: "dr-04", country: "ZM", categoryId: "cat-06", categoryName: "Books & Media", dutyRatePct: 0, notes: "Educational materials commonly exempt — verify per ASYCUDA classification." },
+];
+
+const MKT_CUSTOMS_RECORDS: Record<string, unknown>[] = [];
+
 export const mktMock = {
   categories: () => ({ success:true, data:MKT_CATS }),
   products: (qs?: Record<string,string>) => {
@@ -949,5 +964,97 @@ export const mktMock = {
     p.price = Number(body.price); p.compareAtPrice = body.compareAtPrice !== undefined ? (body.compareAtPrice === null ? null : Number(body.compareAtPrice)) : p.compareAtPrice;
     p.updatedAt = new Date().toISOString();
     return { success:true, data:p };
+  },
+  adminTaxRates: () => ({ success:true, data:MKT_TAX_RATES }),
+  adminCreateTaxRate: (body: R) => {
+    if (!body.country || body.vatRatePct === undefined) return { success:false, error:"country and vatRatePct are required" };
+    let t = MKT_TAX_RATES.find(x => x.country === body.country);
+    if (!t) { t = { country: body.country }; MKT_TAX_RATES.push(t); }
+    t.vatRatePct = Number(body.vatRatePct); t.defaultDutyRatePct = Number(body.defaultDutyRatePct) || 0; t.notes = body.notes ?? null; t.updatedAt = new Date().toISOString();
+    return { success:true, data:t };
+  },
+  adminUpdateTaxRate: (country: string, body: R) => {
+    const t = MKT_TAX_RATES.find(x => x.country === country);
+    if (!t) return { success:false, error:"Country not found — create it first via POST /admin/tax-rates" };
+    if (body.vatRatePct !== undefined) t.vatRatePct = Number(body.vatRatePct);
+    if (body.defaultDutyRatePct !== undefined) t.defaultDutyRatePct = Number(body.defaultDutyRatePct);
+    if (body.notes !== undefined) t.notes = body.notes;
+    t.updatedAt = new Date().toISOString();
+    return { success:true, data:t };
+  },
+  adminDutyRates: (qs: Record<string,string>) => {
+    let list = [...MKT_DUTY_RATES];
+    if (qs.country) list = list.filter(d => d.country === qs.country);
+    return { success:true, data:list };
+  },
+  adminCreateDutyRate: (body: R) => {
+    if (!body.country || !body.categoryId || body.dutyRatePct === undefined) return { success:false, error:"country, categoryId and dutyRatePct are required" };
+    let d = MKT_DUTY_RATES.find(x => x.country === body.country && x.categoryId === body.categoryId);
+    const cat = MKT_CATS.find(c => c.id === body.categoryId);
+    if (!d) { d = { id:`dr-${uuid()}`, country: body.country, categoryId: body.categoryId, categoryName: cat?.name ?? "" }; MKT_DUTY_RATES.push(d); }
+    d.dutyRatePct = Number(body.dutyRatePct); d.notes = body.notes ?? null;
+    return { success:true, data:d };
+  },
+  adminUpdateDutyRate: (id: string, body: R) => {
+    const d = MKT_DUTY_RATES.find(x => x.id === id);
+    if (!d) return { success:false, error:"Duty rate not found" };
+    if (body.dutyRatePct !== undefined) d.dutyRatePct = Number(body.dutyRatePct);
+    if (body.notes !== undefined) d.notes = body.notes;
+    return { success:true, data:d };
+  },
+  adminCustomsRecords: () => ({ success:true, data:MKT_CUSTOMS_RECORDS }),
+  adminGenerateCustomsRecord: (body: R) => {
+    const shipment = MKT_SHIPMENTS.find(s => s.id === body.shipmentId);
+    if (!shipment) return { success:false, error:"Shipment not found" };
+    const destWh = MKT_WAREHOUSES.find(w => w.id === shipment.destinationWarehouseId);
+    const destinationCountry = (destWh?.country as string) ?? "ZA";
+    const lines = MKT_SUPPLIER_ORDERS.filter(so => so.shipmentId === shipment.id);
+    if (!lines.length) return { success:false, error:"This shipment has no supplier orders to base a customs record on." };
+    const taxRate = MKT_TAX_RATES.find(t => t.country === destinationCountry);
+    const vatRatePct = Number(taxRate?.vatRatePct ?? 15);
+    const defaultDutyRatePct = Number(taxRate?.defaultDutyRatePct ?? 20);
+    let declaredValue = 0, dutyAmount = 0;
+    for (const line of lines) {
+      const product = MKT_PRODUCTS.find(p => p.id === line.productId);
+      const rate = product ? Number(MKT_DUTY_RATES.find(d => d.country === destinationCountry && d.categoryId === product.categoryId)?.dutyRatePct ?? defaultDutyRatePct) : defaultDutyRatePct;
+      const cost = Number(line.costAmount ?? 0);
+      declaredValue += cost;
+      dutyAmount += cost * (rate / 100);
+    }
+    const vatAmount = (declaredValue + dutyAmount) * (vatRatePct / 100);
+    const totalPayable = dutyAmount + vatAmount;
+    let record = MKT_CUSTOMS_RECORDS.find(r => r.shipmentId === shipment.id);
+    const originWh = MKT_WAREHOUSES.find(w => w.id === shipment.originWarehouseId);
+    if (!record) {
+      record = { id:`cr-${uuid()}`, shipmentId: shipment.id, originWarehouseName: originWh?.name, destinationWarehouseName: destWh?.name,
+        status: "duty_calculated", clearingAgent: null, referenceNumber: null, prepaidAt: null, declaredAt: null, clearedAt: null, notes: null,
+        currency: "ZAR", orderCount: lines.length, createdAt: new Date().toISOString() };
+      MKT_CUSTOMS_RECORDS.push(record);
+    }
+    record.destinationCountry = destinationCountry; record.declaredValue = +declaredValue.toFixed(2);
+    record.dutyAmount = +dutyAmount.toFixed(2); record.vatAmount = +vatAmount.toFixed(2); record.totalPayable = +totalPayable.toFixed(2);
+    record.updatedAt = new Date().toISOString();
+    return { success:true, data:record };
+  },
+  adminUpdateCustomsRecord: (id: string, body: R) => {
+    const TRANSITIONS: Record<string, string[]> = {
+      duty_calculated: ["prepaid_to_agent"], prepaid_to_agent: ["declared_to_customs","held"],
+      declared_to_customs: ["cleared","held"], held: ["declared_to_customs","cleared"], cleared: [],
+    };
+    const r = MKT_CUSTOMS_RECORDS.find(x => x.id === id);
+    if (!r) return { success:false, error:"Customs record not found" };
+    if (body.status !== undefined) {
+      const allowed = TRANSITIONS[r.status as string] ?? [];
+      if (!allowed.includes(body.status)) return { success:false, error:`Cannot move from "${r.status}" to "${body.status}" — valid next step(s): ${allowed.join(", ") || "none (terminal state)"}` };
+      r.status = body.status;
+      if (body.status === "prepaid_to_agent") r.prepaidAt = new Date().toISOString();
+      if (body.status === "declared_to_customs") r.declaredAt = new Date().toISOString();
+      if (body.status === "cleared") r.clearedAt = new Date().toISOString();
+    }
+    if (body.clearingAgent !== undefined) r.clearingAgent = body.clearingAgent;
+    if (body.referenceNumber !== undefined) r.referenceNumber = body.referenceNumber;
+    if (body.notes !== undefined) r.notes = body.notes;
+    r.updatedAt = new Date().toISOString();
+    return { success:true, data:r };
   },
 };

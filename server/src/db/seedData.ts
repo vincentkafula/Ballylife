@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse } from "../types/marketplace";
+import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const future = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
@@ -165,4 +165,21 @@ export const SUPPLIER_PRODUCTS: SupplierProduct[] = [
   { id: randomUUID(), supplierId: "sup-kr-01", categoryId: "cat-04", name: "K-Beauty Snail Mucin Serum", description: "Hydrating repair serum, 100ml, dermatologist-tested.", costPrice: 3.9, currency: "USD", retailPrice: 179, compareAtPrice: 219, moq: 40, images: ["#fecaca"], emoji: "💧", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(800), updatedAt: ago(25) },
   { id: randomUUID(), supplierId: "sup-kr-01", categoryId: "cat-04", name: "K-Beauty Sheet Mask Variety Pack (10)", description: "Assorted hydrating and brightening sheet masks.", costPrice: 6.2, currency: "USD", retailPrice: 249, compareAtPrice: 299, moq: 30, images: ["#fda4af"], emoji: "🧖", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(400), updatedAt: ago(8) },
   { id: randomUUID(), supplierId: "sup-kr-02", categoryId: "cat-03", name: "Minimalist LED Desk Lamp", description: "Touch-dimmable LED lamp with USB charging port.", costPrice: 9.4, currency: "USD", retailPrice: 399, compareAtPrice: null, moq: 15, images: ["#e2e8f0"], emoji: "💡", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(150), updatedAt: ago(3) },
+];
+
+// ─── Tax & customs starting rates ────────────────────────────────────────────
+// Illustrative — sourced from each country's published VAT/tariff bands as of
+// early 2026, NOT a confirmed per-product HS classification. Managers should
+// verify/adjust the exact rate for each real product via the admin UI before
+// relying on these for an actual SARS/ZRA filing.
+export const TAX_RATES: TaxRate[] = [
+  { country: "ZA", vatRatePct: 15, defaultDutyRatePct: 20, notes: "SARS: 15% VAT on all imports (no de minimis since Nov 2024). Duty 0-45% by HS code; 20% used here as an unclassified-goods placeholder.", updatedAt: new Date().toISOString() },
+  { country: "ZM", vatRatePct: 16, defaultDutyRatePct: 25, notes: "ZRA: 16% VAT. Duty bands 0/5/15/25/40% by HS code; 25% (\"most finished consumer goods\") used as the unclassified-goods placeholder.", updatedAt: new Date().toISOString() },
+];
+
+export const DUTY_RATES: DutyRate[] = [
+  { id: randomUUID(), country: "ZA", categoryId: "cat-01", dutyRatePct: 0,  notes: "Phones/laptops/most electronics are duty-free under the WTO Information Technology Agreement." },
+  { id: randomUUID(), country: "ZA", categoryId: "cat-02", dutyRatePct: 45, notes: "SARS Schedule 1, Chapters 61-62 (clothing)." },
+  { id: randomUUID(), country: "ZA", categoryId: "cat-06", dutyRatePct: 0,  notes: "Books typically duty-free." },
+  { id: randomUUID(), country: "ZM", categoryId: "cat-06", dutyRatePct: 0,  notes: "Educational materials commonly exempt — verify per ASYCUDA classification." },
 ];

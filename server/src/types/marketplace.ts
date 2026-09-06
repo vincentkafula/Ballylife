@@ -159,6 +159,7 @@ export interface Order {
   subtotal: number;
   shippingCost: number;
   taxAmount: number;
+  dutyAmount?: number;
   discountAmount: number;
   totalAmount: number;
   currency: string;
@@ -328,6 +329,49 @@ export interface SupplierOrder {
   shipmentId: string | null;
   status: SupplierOrderStatus;
   qcNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Tax & customs ────────────────────────────────────────────────────────────
+export type CustomsStatus = "duty_calculated" | "prepaid_to_agent" | "declared_to_customs" | "cleared" | "held";
+
+export interface TaxRate {
+  country: string;
+  vatRatePct: number;
+  defaultDutyRatePct: number;
+  notes: string | null;
+  updatedAt: string;
+}
+
+export interface DutyRate {
+  id: string;
+  country: string;
+  categoryId: string;
+  categoryName?: string;
+  dutyRatePct: number;
+  notes: string | null;
+}
+
+export interface CustomsRecord {
+  id: string;
+  shipmentId: string;
+  destinationCountry: string;
+  declaredValue: number;
+  dutyAmount: number;
+  vatAmount: number;
+  totalPayable: number;
+  currency: string;
+  clearingAgent: string | null;
+  referenceNumber: string | null;
+  status: CustomsStatus;
+  prepaidAt: string | null;
+  declaredAt: string | null;
+  clearedAt: string | null;
+  notes: string | null;
+  originWarehouseName?: string;
+  destinationWarehouseName?: string;
+  orderCount?: number;
   createdAt: string;
   updatedAt: string;
 }

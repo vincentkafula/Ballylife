@@ -76,6 +76,15 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/shipments") && path.includes("/status")) return mktMock.adminUpdateShipmentStatus(path.split("/admin/shipments/")[1].split("/status")[0], body);
   if (path.includes("/admin/shipments") && method === "POST") return mktMock.adminCreateShipment(body);
   if (path.includes("/admin/shipments"))        return mktMock.adminShipments();
+  if (path.includes("/admin/tax-rates") && method === "PATCH") return mktMock.adminUpdateTaxRate(path.split("/admin/tax-rates/")[1], body);
+  if (path.includes("/admin/tax-rates") && method === "POST")  return mktMock.adminCreateTaxRate(body);
+  if (path.includes("/admin/tax-rates"))         return mktMock.adminTaxRates();
+  if (path.includes("/admin/duty-rates") && method === "POST")  return mktMock.adminCreateDutyRate(body);
+  if (path.includes("/admin/duty-rates") && method === "PATCH") return mktMock.adminUpdateDutyRate(path.split("/admin/duty-rates/")[1], body);
+  if (path.includes("/admin/duty-rates"))        return mktMock.adminDutyRates(qs);
+  if (path.includes("/admin/customs-records/generate")) return mktMock.adminGenerateCustomsRecord(body);
+  if (path.includes("/admin/customs-records") && method === "PATCH") return mktMock.adminUpdateCustomsRecord(path.split("/admin/customs-records/")[1], body);
+  if (path.includes("/admin/customs-records"))   return mktMock.adminCustomsRecords();
   if (path.includes("/sellers") && path.includes("/supplier-orders")) return mktMock.sellerSupplierOrders(path.split("/sellers/")[1].split("/supplier-orders")[0]);
   if (path.includes("/sellers"))                 return mktMock.sellers();
   if (path.includes("/admin/stats"))             return mktMock.adminStats();
@@ -167,6 +176,21 @@ export const mktAdmin = {
     list:         () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/shipments"),
     create:       (body: unknown) => api<{ success: boolean; data: unknown; error?: string; message?: string }>("/api/marketplace/admin/shipments", { method: "POST", body: JSON.stringify(body) }),
     updateStatus: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/shipments/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
+  },
+  taxRates: {
+    list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/tax-rates"),
+    update: (country: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/tax-rates/${country}`, { method: "PATCH", body: JSON.stringify(body) }),
+    create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/tax-rates", { method: "POST", body: JSON.stringify(body) }),
+  },
+  dutyRates: {
+    list:   (country?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/duty-rates${country ? `?country=${country}` : ""}`),
+    create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/duty-rates", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/duty-rates/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  },
+  customsRecords: {
+    list:     (status?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/customs-records${status ? `?status=${status}` : ""}`),
+    generate: (shipmentId: string) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/customs-records/generate", { method: "POST", body: JSON.stringify({ shipmentId }) }),
+    update:   (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/customs-records/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   },
 };
 

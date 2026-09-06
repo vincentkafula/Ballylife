@@ -363,21 +363,24 @@ const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
 };
 
 function SupplyChainPanel() {
-  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments" | "catalog">("orders");
+  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments" | "catalog" | "taxRates" | "customs">("orders");
   const [suppliers, setSuppliers] = useState<R[]>([]);
   const [warehouses, setWarehouses] = useState<R[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<R[]>([]);
   const [shipments, setShipments] = useState<R[]>([]);
   const [catalog, setCatalog] = useState<R[]>([]);
   const [categories, setCategories] = useState<R[]>([]);
+  const [taxRates, setTaxRates] = useState<R[]>([]);
+  const [dutyRates, setDutyRates] = useState<R[]>([]);
+  const [customsRecords, setCustomsRecords] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [supRes, whRes, soRes, shRes, catRes, catgRes] = await Promise.allSettled([
+    const [supRes, whRes, soRes, shRes, catRes, catgRes, taxRes, dutyRes, custRes] = await Promise.allSettled([
       mktAdmin.suppliers.list(), mktAdmin.warehouses.list(), mktAdmin.supplierOrders.list(), mktAdmin.shipments.list(),
-      mktAdmin.supplierProducts.list(), mktCategories(),
+      mktAdmin.supplierProducts.list(), mktCategories(), mktAdmin.taxRates.list(), mktAdmin.dutyRates.list(), mktAdmin.customsRecords.list(),
     ]);
     if (supRes.status === "fulfilled") setSuppliers(supRes.value.data as R[]);
     if (whRes.status === "fulfilled") setWarehouses(whRes.value.data as R[]);
@@ -385,6 +388,9 @@ function SupplyChainPanel() {
     if (shRes.status === "fulfilled") setShipments(shRes.value.data as R[]);
     if (catRes.status === "fulfilled") setCatalog(catRes.value.data as R[]);
     if (catgRes.status === "fulfilled") setCategories(catgRes.value.data as R[]);
+    if (taxRes.status === "fulfilled") setTaxRates(taxRes.value.data as R[]);
+    if (dutyRes.status === "fulfilled") setDutyRates(dutyRes.value.data as R[]);
+    if (custRes.status === "fulfilled") setCustomsRecords(custRes.value.data as R[]);
     setLoading(false);
   }, []);
 
@@ -419,6 +425,8 @@ function SupplyChainPanel() {
   const SUB_TABS: { id: typeof subTab; label: string; icon: React.ReactNode }[] = [
     { id: "orders", label: "Supplier Orders", icon: <Package className="w-3.5 h-3.5" /> },
     { id: "shipments", label: "Shipments", icon: <Truck className="w-3.5 h-3.5" /> },
+    { id: "customs", label: "Customs", icon: <FileText className="w-3.5 h-3.5" /> },
+    { id: "taxRates", label: "Tax Rates", icon: <Percent className="w-3.5 h-3.5" /> },
     { id: "warehouses", label: "Warehouses", icon: <Warehouse className="w-3.5 h-3.5" /> },
     { id: "suppliers", label: "Suppliers", icon: <Globe2 className="w-3.5 h-3.5" /> },
     { id: "catalog", label: "Supplier Catalog", icon: <Store className="w-3.5 h-3.5" /> },
@@ -519,6 +527,10 @@ function SupplyChainPanel() {
           </table>
         </div>
       )}
+
+      {subTab === "taxRates" && <TaxRatesManagement taxRates={taxRates} dutyRates={dutyRates} categories={categories} onChanged={load} />}
+
+      {subTab === "customs" && <CustomsRecords customsRecords={customsRecords} shipments={shipments} onChanged={load} />}
 
       {subTab === "warehouses" && <WarehouseManagement warehouses={warehouses} onChanged={load} />}
 
@@ -892,6 +904,240 @@ function AllProductsPricing() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// Country VAT + category duty rate maintenance. These are the numbers that
+// actually determine what's charged to customers (VAT) and what a shipment
+// owes at the border (duty) — kept editable here rather than hardcoded, since
+// real HS-code classification work will refine them over time.
+function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { taxRates: R[]; dutyRates: R[]; categories: R[]; onChanged: () => void }) {
+  const [editingCountry, setEditingCountry] = useState<string | null>(null);
+  const [taxEdit, setTaxEdit] = useState({ vatRatePct: "", defaultDutyRatePct: "", notes: "" });
+  const [addingDuty, setAddingDuty] = useState(false);
+  const [dutyForm, setDutyForm] = useState({ country: "ZA", categoryId: "", dutyRatePct: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+
+  const startEditTax = (t: R) => {
+    setEditingCountry(String(t.country));
+    setTaxEdit({ vatRatePct: String(t.vatRatePct), defaultDutyRatePct: String(t.defaultDutyRatePct), notes: String(t.notes ?? "") });
+  };
+
+  const saveTax = async (country: string) => {
+    setSaving(true);
+    const res = await mktAdmin.taxRates.update(country, { vatRatePct: Number(taxEdit.vatRatePct), defaultDutyRatePct: Number(taxEdit.defaultDutyRatePct), notes: taxEdit.notes });
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not update tax rate."); return; }
+    setEditingCountry(null);
+    onChanged();
+  };
+
+  const addDutyRate = async () => {
+    if (!dutyForm.categoryId || !dutyForm.dutyRatePct) return;
+    setSaving(true);
+    const res = await mktAdmin.dutyRates.create({ ...dutyForm, dutyRatePct: Number(dutyForm.dutyRatePct) });
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not add duty rate."); return; }
+    setAddingDuty(false);
+    setDutyForm({ country: "ZA", categoryId: "", dutyRatePct: "", notes: "" });
+    onChanged();
+  };
+
+  return (
+    <div>
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
+        <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">VAT & default duty by country</span></div>
+        {taxRates.map((t, i) => (
+          <div key={i} className="px-4 py-3 border-b border-gray-50 last:border-0">
+            {editingCountry === t.country ? (
+              <div className="grid sm:grid-cols-3 gap-2">
+                <input placeholder="VAT %" type="number" step="0.1" value={taxEdit.vatRatePct} onChange={e => setTaxEdit({ ...taxEdit, vatRatePct: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <input placeholder="Default duty %" type="number" step="0.1" value={taxEdit.defaultDutyRatePct} onChange={e => setTaxEdit({ ...taxEdit, defaultDutyRatePct: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                <div className="flex gap-1.5">
+                  <button onClick={() => saveTax(String(t.country))} disabled={saving} className="flex-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "..." : "Save"}</button>
+                  <button onClick={() => setEditingCountry(null)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">Cancel</button>
+                </div>
+                <input placeholder="Notes" value={taxEdit.notes} onChange={e => setTaxEdit({ ...taxEdit, notes: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-3" />
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{String(t.country)} — VAT {String(t.vatRatePct)}% · default duty {String(t.defaultDutyRatePct)}%</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5 max-w-2xl">{String(t.notes ?? "")}</p>
+                </div>
+                <button onClick={() => startEditTax(t)} className="text-[11px] font-semibold text-amber-700 hover:underline shrink-0 ml-3">Edit</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Category duty overrides</span>
+        <button onClick={() => setAddingDuty(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+          <Plus className="w-3.5 h-3.5" /> Add override
+        </button>
+      </div>
+      <p className="text-xs text-gray-400 mb-3">Overrides the country's default duty rate for a specific product category — e.g. clothing carries a higher duty than electronics in South Africa. Rates are illustrative starting points; verify the exact HS-code rate per product before filing.</p>
+
+      {addingDuty && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-4 gap-2 mb-4">
+          <select value={dutyForm.country} onChange={e => setDutyForm({ ...dutyForm, country: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            {taxRates.map(t => <option key={String(t.country)} value={String(t.country)}>{String(t.country)}</option>)}
+          </select>
+          <select value={dutyForm.categoryId} onChange={e => setDutyForm({ ...dutyForm, categoryId: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
+            <option value="">Select category...</option>
+            {categories.map(c => <option key={String(c.id)} value={String(c.id)}>{String(c.name)}</option>)}
+          </select>
+          <input placeholder="Duty %" type="number" step="0.1" value={dutyForm.dutyRatePct} onChange={e => setDutyForm({ ...dutyForm, dutyRatePct: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+          <button onClick={addDutyRate} disabled={saving || !dutyForm.categoryId || !dutyForm.dutyRatePct} className="py-1.5 rounded text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Add"}</button>
+          <input placeholder="Notes" value={dutyForm.notes} onChange={e => setDutyForm({ ...dutyForm, notes: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-4" />
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Country</th><th className="px-4 py-2 font-medium">Category</th>
+            <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Notes</th>
+          </tr></thead>
+          <tbody>
+            {dutyRates.map((d, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0">
+                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(d.country)}</td>
+                <td className="px-4 py-2.5 text-gray-600">{String(d.categoryName)}</td>
+                <td className="px-4 py-2.5 text-gray-700 font-medium">{String(d.dutyRatePct)}%</td>
+                <td className="px-4 py-2.5 text-gray-400 text-xs">{String(d.notes ?? "")}</td>
+              </tr>
+            ))}
+            {!dutyRates.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No category overrides — every import uses the country's default duty rate above.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Per-shipment customs clearance tracking. This computes what's owed and
+// records what's actually happened — it never submits anything to SARS/ZRA
+// itself. Once a shipment has QC-passed orders batched into it, generate a
+// record here, hand the total to whichever accredited courier/broker
+// clears it, and advance the status as that actually happens.
+const CUSTOMS_STATUS_META: Record<string, { label: string; color: string; next: string[] }> = {
+  duty_calculated: { label: "Duty calculated", color: "#6B7280", next: ["prepaid_to_agent"] },
+  prepaid_to_agent: { label: "Prepaid to agent", color: "#2563EB", next: ["declared_to_customs", "held"] },
+  declared_to_customs: { label: "Declared to customs", color: "#B8862E", next: ["cleared", "held"] },
+  held: { label: "Held by customs", color: "#DC2626", next: ["declared_to_customs", "cleared"] },
+  cleared: { label: "Cleared", color: "#10B981", next: [] },
+};
+
+function CustomsRecords({ customsRecords, shipments, onChanged }: { customsRecords: R[]; shipments: R[]; onChanged: () => void }) {
+  const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ clearingAgent: "", referenceNumber: "", notes: "" });
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const shipmentsWithoutRecord = shipments.filter(sh => !customsRecords.some(cr => cr.shipmentId === sh.id));
+
+  const generate = async (shipmentId: string) => {
+    setGeneratingFor(shipmentId);
+    const res = await mktAdmin.customsRecords.generate(shipmentId);
+    setGeneratingFor(null);
+    if (!res.success) toast.error(res.error ?? "Could not generate a customs record for this shipment.");
+    onChanged();
+  };
+
+  const startEdit = (r: R) => {
+    setEditingId(String(r.id));
+    setEditForm({ clearingAgent: String(r.clearingAgent ?? ""), referenceNumber: String(r.referenceNumber ?? ""), notes: String(r.notes ?? "") });
+  };
+
+  const saveDetails = async (id: string) => {
+    setBusy(id);
+    const res = await mktAdmin.customsRecords.update(id, editForm);
+    setBusy(null);
+    if (!res.success) toast.error(res.error ?? "Could not save.");
+    setEditingId(null);
+    onChanged();
+  };
+
+  const advance = async (id: string, status: string) => {
+    setBusy(id);
+    const res = await mktAdmin.customsRecords.update(id, { status });
+    setBusy(null);
+    if (!res.success) toast.error(res.error ?? "Could not update status.");
+    onChanged();
+  };
+
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-4 max-w-2xl">
+        Tracks duty/VAT owed on each shipment crossing the border and whatever prepayment arrangement is actually in place — it does not submit
+        declarations or move money to SARS/ZRA itself. Update status as your courier/broker (or, once accredited, Ballylife directly) actually clears each one.
+      </p>
+
+      {shipmentsWithoutRecord.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
+          <p className="text-sm font-bold text-gray-900 mb-2">Shipments awaiting a customs record</p>
+          {shipmentsWithoutRecord.map((sh, i) => (
+            <div key={i} className="flex items-center justify-between py-1.5">
+              <span className="text-xs text-gray-600">{String(sh.originWarehouseName)} → {String(sh.destinationWarehouseName)} ({String(sh.orderCount ?? 0)} orders)</span>
+              <button onClick={() => generate(String(sh.id))} disabled={generatingFor === sh.id}
+                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                {generatingFor === sh.id ? "Calculating..." : "Calculate duty & generate record"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customs records ({customsRecords.length})</span></div>
+        {customsRecords.map((r, i) => {
+          const meta = CUSTOMS_STATUS_META[String(r.status)] ?? { label: String(r.status), color: "#6B7280", next: [] };
+          return (
+            <div key={i} className="px-4 py-3 border-b border-gray-50 last:border-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-semibold text-gray-900">{String(r.originWarehouseName)} → {String(r.destinationWarehouseName)}</span>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: meta.color, background: `${meta.color}15` }}>{meta.label}</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                Declared value R{Number(r.declaredValue).toFixed(2)} · Duty R{Number(r.dutyAmount).toFixed(2)} · Import VAT R{Number(r.vatAmount).toFixed(2)} ·
+                <span className="font-semibold text-gray-700"> Total payable R{Number(r.totalPayable).toFixed(2)}</span>
+              </p>
+
+              {editingId === r.id ? (
+                <div className="grid sm:grid-cols-3 gap-2 mb-2">
+                  <input placeholder="Clearing agent (broker/courier)" value={editForm.clearingAgent} onChange={e => setEditForm({ ...editForm, clearingAgent: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs" />
+                  <input placeholder="Reference number" value={editForm.referenceNumber} onChange={e => setEditForm({ ...editForm, referenceNumber: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs" />
+                  <div className="flex gap-1.5">
+                    <button onClick={() => saveDetails(String(r.id))} disabled={busy === r.id} className="flex-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Save</button>
+                    <button onClick={() => setEditingId(null)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600">Cancel</button>
+                  </div>
+                  <input placeholder="Notes" value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs sm:col-span-3" />
+                </div>
+              ) : (
+                <p className="text-[11px] text-gray-400 mb-2">
+                  {r.clearingAgent ? `Agent: ${String(r.clearingAgent)}` : "No clearing agent recorded yet"}
+                  {r.referenceNumber ? ` · Ref: ${String(r.referenceNumber)}` : ""}
+                  {" "}<button onClick={() => startEdit(r)} className="font-semibold text-amber-700 hover:underline">Edit</button>
+                </p>
+              )}
+
+              <div className="flex gap-1.5">
+                {meta.next.map(n => (
+                  <button key={n} onClick={() => advance(String(r.id), n)} disabled={busy === r.id}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: n === "held" ? "#DC2626" : "#B8862E" }}>
+                    {busy === r.id ? "..." : CUSTOMS_STATUS_META[n]?.label ?? n}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {!customsRecords.length && <p className="text-sm text-gray-400 p-6 text-center">No customs records yet.</p>}
+      </div>
     </div>
   );
 }
