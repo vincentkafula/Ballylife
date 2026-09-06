@@ -914,4 +914,40 @@ export const mktMock = {
     }
     return { success:true, data:sh };
   },
+  adminResolveSupplierOrder: (id: string, body: R) => {
+    const so = MKT_SUPPLIER_ORDERS.find(x => x.id === id);
+    if (!so) return { success:false, error:"Supplier order not found" };
+    if (so.status !== "qc_failed_origin") return { success:false, error:`Only a failed-QC order can be resolved — this one is "${so.status}"` };
+    if (body.action === "refund") {
+      so.status = "refunded"; so.qcNotes = body.notes ?? so.qcNotes; so.updatedAt = new Date().toISOString();
+      const order = MKT_ORDERS.find((o: R) => o.id === so.orderId);
+      if (order) { order.status = "refunded"; order.paymentStatus = "refunded"; }
+      return { success:true, data:so, message:"Order refunded." };
+    } else if (body.action === "reorder") {
+      so.status = "ordered_from_supplier"; so.qcNotes = body.notes ?? "Reordered after failed origin QC."; so.updatedAt = new Date().toISOString();
+      return { success:true, data:so, message:"Sent back to the supplier for reorder." };
+    }
+    return { success:false, error:"action must be 'refund' or 'reorder'" };
+  },
+  sellerSupplierOrders: (sellerId: string) => ({ success:true, data:MKT_SUPPLIER_ORDERS.filter(so => so.sellerId === sellerId), meta:{ total:MKT_SUPPLIER_ORDERS.filter(so => so.sellerId === sellerId).length } }),
+  pendingProducts: () => { const list = MKT_PRODUCTS.filter((p: R) => p.status === "pending_review"); return { success:true, data:list, meta:{ total:list.length } }; },
+  approveProduct: (id: string) => {
+    const p = MKT_PRODUCTS.find((x: R) => x.id === id);
+    if (!p) return { success:false, error:"Product not found" };
+    p.status = "active";
+    return { success:true, data:p };
+  },
+  adminAllProducts: (qs: Record<string,string>) => {
+    let list = [...MKT_PRODUCTS] as R[];
+    if (qs.search) list = list.filter(p => String(p.name).toLowerCase().includes(qs.search.toLowerCase()) || String(p.sellerName).toLowerCase().includes(qs.search.toLowerCase()));
+    if (qs.fulfillmentType) list = list.filter(p => (p.fulfillmentType ?? "local") === qs.fulfillmentType);
+    return { success:true, data:list, meta:{ page:1, limit:24, total:list.length, pages:1 } };
+  },
+  adminUpdateProductPrice: (id: string, body: R) => {
+    const p = MKT_PRODUCTS.find((x: R) => x.id === id);
+    if (!p) return { success:false, error:"Product not found" };
+    p.price = Number(body.price); p.compareAtPrice = body.compareAtPrice !== undefined ? (body.compareAtPrice === null ? null : Number(body.compareAtPrice)) : p.compareAtPrice;
+    p.updatedAt = new Date().toISOString();
+    return { success:true, data:p };
+  },
 };

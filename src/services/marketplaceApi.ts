@@ -40,6 +40,10 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
 
   if (path.includes("/categories"))              return mktMock.categories();
   if (path.includes("/search-suggest"))          return mktMock.searchSuggest(qs.q ?? "");
+  if (path.includes("/admin/products/") && path.includes("/price")) return mktMock.adminUpdateProductPrice(path.split("/admin/products/")[1].split("/price")[0], body);
+  if (path.includes("/admin/products/") && path.includes("/approve")) return mktMock.approveProduct(path.split("/admin/products/")[1].split("/approve")[0]);
+  if (path.includes("/admin/products/pending")) return mktMock.pendingProducts();
+  if (path.includes("/admin/products")) return mktMock.adminAllProducts(qs);
   if (path.match(/\/products\/[^/?]+$/) && !path.includes("reviews") && method === "GET") return mktMock.productById(path.split("/products/")[1].split("?")[0]);
   if (path.includes("/products") && method === "GET") return mktMock.products(qs);
   if (path.includes("/reviews") && method === "POST") return mktMock.addReview(body);
@@ -49,6 +53,7 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/cart") && path.includes("/coupon")) return mktMock.applyCoupon(body.code);
   if (path.includes("/cart") && method === "PATCH")    return mktMock.updateCartItem(body);
   if (path.includes("/cart") && method === "DELETE")   return mktMock.removeCartItem(path.split("/item/")[1]);
+  if (path.includes("/admin/supplier-orders") && path.includes("/resolve")) return mktMock.adminResolveSupplierOrder(path.split("/admin/supplier-orders/")[1].split("/resolve")[0], body);
   if (path.includes("/admin/supplier-orders") && path.includes("/status")) return mktMock.adminUpdateSupplierOrderStatus(path.split("/admin/supplier-orders/")[1].split("/status")[0], body);
   if (path.includes("/admin/supplier-orders"))  return mktMock.adminSupplierOrders();
   if (path.includes("/orders") && method === "POST")   return mktMock.placeOrder(body);
@@ -71,6 +76,7 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/shipments") && path.includes("/status")) return mktMock.adminUpdateShipmentStatus(path.split("/admin/shipments/")[1].split("/status")[0], body);
   if (path.includes("/admin/shipments") && method === "POST") return mktMock.adminCreateShipment(body);
   if (path.includes("/admin/shipments"))        return mktMock.adminShipments();
+  if (path.includes("/sellers") && path.includes("/supplier-orders")) return mktMock.sellerSupplierOrders(path.split("/sellers/")[1].split("/supplier-orders")[0]);
   if (path.includes("/sellers"))                 return mktMock.sellers();
   if (path.includes("/admin/stats"))             return mktMock.adminStats();
   if (path.includes("/admin/orders"))            return mktMock.orders();
@@ -122,6 +128,7 @@ export const mktSellers = {
   deleteProduct: (sellerId: string, productId: string) => api(`/api/marketplace/sellers/${sellerId}/products/${productId}`, { method: "DELETE" }),
   updateProfile: (sellerId: string, body: unknown) => api<{ success: boolean; data: unknown }>(`/api/marketplace/sellers/${sellerId}`, { method: "PATCH", body: JSON.stringify(body) }),
   importListing: (sellerId: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string; message?: string }>(`/api/marketplace/sellers/${sellerId}/import-listing`, { method: "POST", body: JSON.stringify(body) }),
+  supplierOrders: (sellerId: string) => api<{ success: boolean; data: unknown[]; meta: unknown }>(`/api/marketplace/sellers/${sellerId}/supplier-orders`),
 };
 
 export const mktAdmin = {
@@ -135,6 +142,8 @@ export const mktAdmin = {
   rejectSeller:  (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/reject`, { method: "PATCH" }),
   customers: () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/customers"),
   reportUrl: (report: "orders" | "products") => `${BASE}/api/marketplace/admin/reports/${report}.csv`,
+  allProducts: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: Record<string, unknown> }>(`/api/marketplace/admin/products?${new URLSearchParams(params)}`),
+  updateProductPrice: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/products/${id}/price`, { method: "PATCH", body: JSON.stringify(body) }),
   suppliers: {
     list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/suppliers"),
     create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/suppliers", { method: "POST", body: JSON.stringify(body) }),
@@ -152,6 +161,7 @@ export const mktAdmin = {
   supplierOrders: {
     list:         (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: Record<string, unknown> }>(`/api/marketplace/admin/supplier-orders?${new URLSearchParams(params)}`),
     updateStatus: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/supplier-orders/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
+    resolve:      (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string; message?: string }>(`/api/marketplace/admin/supplier-orders/${id}/resolve`, { method: "POST", body: JSON.stringify(body) }),
   },
   shipments: {
     list:         () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/shipments"),

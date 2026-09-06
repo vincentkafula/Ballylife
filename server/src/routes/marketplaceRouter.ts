@@ -494,15 +494,44 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     const { rows: countRows } = await client.query(`SELECT COUNT(*)::int AS n FROM mkt_orders`);
     const orderNumber = `VNK-ORD-${String(100000 + countRows[0].n).padStart(6, "0")}`;
 
+    // Look up each item's fulfilment type once, up front — used both to
+    // pick a realistic delivery estimate (local-only orders ship in days;
+    // an order with any supplier-sourced line needs the supplier's lead
+    // time plus international shipping/customs, not the same 5-day promise)
+    // and, further down, to open the two-leg supplier-order records.
+    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null }>();
+    let maxLeadTimeDays = 0;
+    for (const item of items) {
+      const { rows: prodRows } = await client.query(
+        `SELECT p.fulfillment_type, p.supplier_product_id, sp.supplier_id, sp.cost_price, sp.origin_country, sup.lead_time_days
+         FROM mkt_products p
+         LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
+         LEFT JOIN mkt_suppliers sup ON sup.id = sp.supplier_id
+         WHERE p.id::text = $1`, [item.productId]
+      );
+      const p = prodRows[0];
+      itemFulfillment.set(item.productId, {
+        fulfillmentType: p?.fulfillment_type ?? "local", supplierProductId: p?.supplier_product_id ?? null,
+        supplierId: p?.supplier_id ?? null, costPrice: p?.cost_price ?? null, originCountry: p?.origin_country ?? null,
+        leadTimeDays: p?.lead_time_days ?? null,
+      });
+      if (p?.fulfillment_type === "imported" && p?.lead_time_days) maxLeadTimeDays = Math.max(maxLeadTimeDays, Number(p.lead_time_days));
+    }
+    // 12-day buffer covers origin-hub QC + consolidated freight + customs +
+    // last-mile once it lands — matches the 10-30 day range international
+    // dropship realistically takes. Local-only orders keep the original
+    // 5-day promise.
+    const estimatedDeliveryDays = maxLeadTimeDays > 0 ? maxLeadTimeDays + 12 : 5;
+
     const { rows } = await client.query(
       `INSERT INTO mkt_orders (order_number, user_id, customer_name, customer_email, items, subtotal, shipping_cost,
          tax_amount, discount_amount, total_amount, currency, status, payment_status, payment_method, shipping_address,
          shipping_status, estimated_delivery, coupon_code, confirmed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ZAR','pending','pending_payment',$11,$12,'not_shipped', now() + interval '5 days', $13, NULL)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'ZAR','pending','pending_payment',$11,$12,'not_shipped', now() + ($14 || ' days')::interval, $13, NULL)
        RETURNING *`,
       [orderNumber, userId, `${shippingAddress.firstName} ${shippingAddress.lastName}`, customerEmail,
        JSON.stringify(items), cart.subtotal, cart.shipping, cart.tax, cart.coupon_discount, cart.total,
-       paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code]
+       paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code, estimatedDeliveryDays]
     );
     const order = rows[0];
 
@@ -514,20 +543,15 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // country (ZA/ZM); origin by the supplier's country (CN/JP/KR).
     const destinationWarehouseId = DESTINATION_WAREHOUSE_BY_COUNTRY[shippingAddress.country] ?? "wh-dest-za";
     for (const item of items) {
-      const { rows: prodRows } = await client.query(
-        `SELECT p.fulfillment_type, p.supplier_product_id, sp.supplier_id, sp.cost_price, sp.origin_country
-         FROM mkt_products p LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
-         WHERE p.id::text = $1`, [item.productId]
-      );
-      const p = prodRows[0];
-      if (!p || p.fulfillment_type !== "imported" || !p.supplier_product_id) continue;
-      const originWarehouseId = ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY[p.origin_country] ?? "wh-origin-cn";
+      const p = itemFulfillment.get(item.productId);
+      if (!p || p.fulfillmentType !== "imported" || !p.supplierProductId) continue;
+      const originWarehouseId = ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY[p.originCountry ?? ""] ?? "wh-origin-cn";
       await client.query(
         `INSERT INTO mkt_supplier_orders (order_id, product_id, supplier_id, supplier_product_id, seller_id, quantity,
            cost_amount, origin_warehouse_id, destination_warehouse_id, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ordered_from_supplier')`,
-        [order.id, item.productId, p.supplier_id, p.supplier_product_id, item.sellerId, item.quantity,
-         Number(p.cost_price) * item.quantity, originWarehouseId, destinationWarehouseId]
+        [order.id, item.productId, p.supplierId, p.supplierProductId, item.sellerId, item.quantity,
+         Number(p.costPrice) * item.quantity, originWarehouseId, destinationWarehouseId]
       );
     }
 
@@ -751,6 +775,41 @@ router.patch("/admin/products/:id/approve", requireAuth, requireRole(...MANAGER_
   res.json({ success: true, data: mapProduct(rows[0]) });
 });
 
+// Full product browse for managers — search across every listing (any
+// status, any seller) so price/discount can be set on something already
+// live, not just items still pending first approval.
+router.get("/admin/products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { search, fulfillmentType, page: pg, limit: lim } = req.query as Record<string, string>;
+  const page = Math.max(1, Number(pg) || 1);
+  const limit = Math.min(60, Number(lim) || 24);
+  const where: string[] = []; const params: unknown[] = [];
+  const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
+  if (search) where.push(`(LOWER(p.name) LIKE ${p(`%${search.toLowerCase()}%`)} OR LOWER(s.store_name) LIKE ${p(`%${search.toLowerCase()}%`)})`);
+  if (fulfillmentType) where.push(`p.fulfillment_type = ${p(fulfillmentType)}`);
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const baseQuery = `FROM mkt_products p JOIN mkt_sellers s ON s.id = p.seller_id JOIN mkt_categories c ON c.id = p.category_id ${whereClause}`;
+  const { rows: countRows } = await pool!.query(`SELECT COUNT(*)::int AS total ${baseQuery}`, params);
+  const { rows } = await pool!.query(
+    `SELECT p.*, s.store_name AS seller_name, c.name AS category_name ${baseQuery} ORDER BY p.updated_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, (page - 1) * limit]
+  );
+  res.json({ success: true, data: rows.map(r => mapProduct(r)), meta: { page, limit, total: countRows[0].total, pages: Math.ceil(countRows[0].total / limit) } });
+});
+
+// Dedicated manager price/discount edit — separate from the seller-facing
+// PATCH /sellers/:id/products/:productId (which now rejects price changes
+// from non-managers) so this doesn't need a sellerId in the URL at all.
+router.patch("/admin/products/:id/price", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { price, compareAtPrice } = req.body;
+  if (price === undefined) { res.status(400).json({ success: false, error: "price is required" }); return; }
+  const { rows } = await pool!.query(
+    `UPDATE mkt_products SET price = $1, compare_at_price = $2, updated_at = now() WHERE id::text = $3 RETURNING *`,
+    [price, compareAtPrice ?? null, req.params.id]
+  );
+  if (!rows.length) { res.status(404).json({ success: false, error: "Product not found" }); return; }
+  res.json({ success: true, data: mapProduct(rows[0]) });
+});
+
 // ── ADDRESSES ─────────────────────────────────────────────────────────────────
 router.get("/addresses/:userId", requireAuth, requireSelf, async (req: Request, res: Response): Promise<void> => {
   const { rows } = await pool!.query(`SELECT * FROM mkt_addresses WHERE user_id = $1`, [req.params.userId]);
@@ -890,6 +949,26 @@ router.get("/sellers/:id/orders", requireAuth, requireSellerOwner, async (req: R
     `SELECT * FROM mkt_orders WHERE items::text LIKE $1 ORDER BY placed_at DESC`, [`%"sellerId":"${req.params.id}"%`]
   );
   res.json({ success: true, data: rows.map(mapOrder), meta: { total: rows.length } });
+});
+
+// Read-only view into the fulfilment pipeline for this seller's imported
+// lines — where each one currently sits between "ordered from supplier"
+// and "delivered". Sellers can see this but never change it; only admins
+// (PATCH /admin/supplier-orders/:id/status) advance the pipeline.
+router.get("/sellers/:id/supplier-orders", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT so.*, o.order_number, p.name AS product_name, sup.name AS supplier_name,
+       ow.name AS origin_warehouse_name, dw.name AS destination_warehouse_name
+     FROM mkt_supplier_orders so
+     JOIN mkt_orders o ON o.id = so.order_id
+     JOIN mkt_products p ON p.id = so.product_id
+     JOIN mkt_suppliers sup ON sup.id = so.supplier_id
+     JOIN mkt_warehouses ow ON ow.id = so.origin_warehouse_id
+     JOIN mkt_warehouses dw ON dw.id = so.destination_warehouse_id
+     WHERE so.seller_id = $1 ORDER BY so.created_at DESC LIMIT 100`,
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows.map(mapSupplierOrder), meta: { total: rows.length } });
 });
 
 router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
@@ -1187,6 +1266,60 @@ router.patch("/admin/supplier-orders/:id/status", requireAuth, requireRole(...MA
     [status, qcNotes ?? null, req.params.id]
   );
   res.json({ success: true, data: mapSupplierOrder(rows[0]) });
+});
+
+// A failed origin-hub QC check is a dead end for the normal status
+// machine (SUPPLIER_ORDER_TRANSITIONS has no forward move from
+// qc_failed_origin) — this is the deliberate off-ramp: either refund the
+// customer's payment for that line, or reorder the same quantity from the
+// supplier and send it back through the pipeline from the start.
+router.post("/admin/supplier-orders/:id/resolve", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { action, notes } = req.body;
+  if (!["refund", "reorder"].includes(action)) { res.status(400).json({ success: false, error: "action must be 'refund' or 'reorder'" }); return; }
+  const { rows: existing } = await pool!.query(`SELECT * FROM mkt_supplier_orders WHERE id::text = $1`, [req.params.id]);
+  if (!existing.length) { res.status(404).json({ success: false, error: "Supplier order not found" }); return; }
+  if (existing[0].status !== "qc_failed_origin") { res.status(409).json({ success: false, error: `Only a failed-QC order can be resolved — this one is "${existing[0].status}"` }); return; }
+
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    if (action === "refund") {
+      await client.query(
+        `UPDATE mkt_supplier_orders SET status = 'refunded', qc_notes = COALESCE($1, qc_notes), updated_at = now() WHERE id::text = $2`,
+        [notes ?? null, req.params.id]
+      );
+      // Refunds the whole parent order's payment status — this backend
+      // doesn't yet support partial/line-level refunds on mkt_orders, so a
+      // failed-QC item on a mixed cart currently refunds the full order.
+      // Worth revisiting once mkt_pay_transactions supports partial amounts.
+      await client.query(
+        `UPDATE mkt_orders SET status = 'refunded', payment_status = 'refunded' WHERE id = $1`,
+        [existing[0].order_id]
+      );
+    } else {
+      await client.query(
+        `UPDATE mkt_supplier_orders SET status = 'ordered_from_supplier', qc_notes = $1, updated_at = now() WHERE id::text = $2`,
+        [notes ?? "Reordered after failed origin QC.", req.params.id]
+      );
+    }
+    await client.query("COMMIT");
+    const { rows } = await pool!.query(
+      `SELECT so.*, o.order_number, p.name AS product_name, sup.name AS supplier_name, sel.store_name AS seller_name,
+         ow.name AS origin_warehouse_name, dw.name AS destination_warehouse_name
+       FROM mkt_supplier_orders so
+       JOIN mkt_orders o ON o.id = so.order_id JOIN mkt_products p ON p.id = so.product_id
+       JOIN mkt_suppliers sup ON sup.id = so.supplier_id JOIN mkt_sellers sel ON sel.id = so.seller_id
+       JOIN mkt_warehouses ow ON ow.id = so.origin_warehouse_id JOIN mkt_warehouses dw ON dw.id = so.destination_warehouse_id
+       WHERE so.id::text = $1`, [req.params.id]
+    );
+    res.json({ success: true, data: mapSupplierOrder(rows[0]), message: action === "refund" ? "Order refunded." : "Sent back to the supplier for reorder." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Supplier order resolution failed:", err);
+    res.status(500).json({ success: false, error: "Could not resolve this order, please try again." });
+  } finally {
+    client.release();
+  }
 });
 
 // ── ADMIN: shipments (batches the 2nd leg — origin hub -> destination hub) ──

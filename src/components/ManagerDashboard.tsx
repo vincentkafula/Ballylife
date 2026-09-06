@@ -247,17 +247,20 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
             )}
 
             {tab === "productApproval" && (
-              <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Pending Product Listings</span></div>
-                {pendingProducts.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No pending listings.</p> : pendingProducts.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{String(p.emoji)}</span>
-                      <div><p className="text-sm font-semibold text-gray-900">{String(p.name)}</p><p className="text-[11px] text-gray-400">{String(p.sellerName)} · {fmtZAR(Number(p.price))}</p></div>
+              <div>
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
+                  <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Pending Product Listings</span></div>
+                  {pendingProducts.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No pending listings.</p> : pendingProducts.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{String(p.emoji)}</span>
+                        <div><p className="text-sm font-semibold text-gray-900">{String(p.name)}</p><p className="text-[11px] text-gray-400">{String(p.sellerName)} · {fmtZAR(Number(p.price))}</p></div>
+                      </div>
+                      <button onClick={async () => { await mktAdmin.approveProduct(String(p.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white shrink-0" style={{ background: "#10B981" }}><CheckCircle className="w-3.5 h-3.5" /> Approve</button>
                     </div>
-                    <button onClick={async () => { await mktAdmin.approveProduct(String(p.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white shrink-0" style={{ background: "#10B981" }}><CheckCircle className="w-3.5 h-3.5" /> Approve</button>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                <AllProductsPricing />
               </div>
             )}
 
@@ -403,6 +406,16 @@ function SupplyChainPanel() {
     load();
   };
 
+  const resolveOrder = async (id: string, action: "refund" | "reorder") => {
+    if (action === "refund" && !confirm("Refund the customer for this order? This can't be undone.")) return;
+    setBusyId(id);
+    const res = await mktAdmin.supplierOrders.resolve(id, { action });
+    setBusyId(null);
+    if (!res.success) toast.error(res.error ?? "Could not resolve this order.");
+    else toast.success(res.message ?? "Resolved.");
+    load();
+  };
+
   const SUB_TABS: { id: typeof subTab; label: string; icon: React.ReactNode }[] = [
     { id: "orders", label: "Supplier Orders", icon: <Package className="w-3.5 h-3.5" /> },
     { id: "shipments", label: "Shipments", icon: <Truck className="w-3.5 h-3.5" /> },
@@ -445,7 +458,18 @@ function SupplyChainPanel() {
                     <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
                     <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(so.status).replace(/_/g, " ")}</td>
                     <td className="px-4 py-2.5">
-                      {next.length ? next.map(n => (
+                      {so.status === "qc_failed_origin" ? (
+                        <>
+                          <button onClick={() => resolveOrder(String(so.id), "refund")} disabled={busyId === so.id}
+                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: "#DC2626" }}>
+                            {busyId === so.id ? "..." : "Refund customer"}
+                          </button>
+                          <button onClick={() => resolveOrder(String(so.id), "reorder")} disabled={busyId === so.id}
+                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                            {busyId === so.id ? "..." : "Reorder from supplier"}
+                          </button>
+                        </>
+                      ) : next.length ? next.map(n => (
                         <button key={n} onClick={() => advanceOrder(String(so.id), n)} disabled={busyId === so.id}
                           className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: n.includes("failed") ? "#DC2626" : "#B8862E" }}>
                           {busyId === so.id ? "..." : n.replace(/_/g, " ")}
@@ -765,3 +789,109 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   );
 }
 
+// Browse every listing (any status/seller/fulfilment type) and edit its
+// price + discount directly — the manager-only counterpart to sellers no
+// longer being able to touch price/compareAtPrice themselves.
+function AllProductsPricing() {
+  const [products, setProducts] = useState<R[]>([]);
+  const [search, setSearch] = useState("");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [priceEdit, setPriceEdit] = useState({ price: "", compareAtPrice: "" });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params: Record<string, string> = {};
+    if (search) params.search = search;
+    if (fulfillmentFilter) params.fulfillmentType = fulfillmentFilter;
+    const res = await mktAdmin.allProducts(params);
+    if (res.success) setProducts(res.data as R[]);
+    setLoading(false);
+  }, [search, fulfillmentFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const startEdit = (p: R) => {
+    setEditingId(String(p.id));
+    setPriceEdit({ price: String(p.price ?? ""), compareAtPrice: p.compareAtPrice !== null && p.compareAtPrice !== undefined ? String(p.compareAtPrice) : "" });
+  };
+
+  const save = async (id: string) => {
+    if (!priceEdit.price) return;
+    setSaving(true);
+    const res = await mktAdmin.updateProductPrice(id, { price: Number(priceEdit.price), compareAtPrice: priceEdit.compareAtPrice ? Number(priceEdit.compareAtPrice) : null });
+    setSaving(false);
+    if (!res.success) { toast.error(res.error ?? "Could not update price."); return; }
+    setEditingId(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">All Products & Pricing</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <input placeholder="Search by product or store name..." value={search} onChange={e => setSearch(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-64" />
+        {[{ id: "", label: "All" }, { id: "local", label: "Local" }, { id: "imported", label: "Imported" }].map(f => (
+          <button key={f.id} onClick={() => setFulfillmentFilter(f.id)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border"
+            style={{ background: fulfillmentFilter === f.id ? "#14110D" : "white", color: fulfillmentFilter === f.id ? "white" : "#374151", borderColor: fulfillmentFilter === f.id ? "#14110D" : "#E5E7EB" }}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Store</th>
+              <th className="px-4 py-2 font-medium">Source</th><th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 font-medium">Price / Discount</th><th className="px-4 py-2 font-medium">Action</th>
+            </tr></thead>
+            <tbody>
+              {products.map((p, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(p.emoji ?? "📦")} {String(p.name)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(p.sellerName)}</td>
+                  <td className="px-4 py-2.5 text-gray-500 capitalize">{String(p.fulfillmentType ?? "local")}</td>
+                  <td className="px-4 py-2.5 text-gray-500 capitalize">{String(p.status).replace("_", " ")}</td>
+                  <td className="px-4 py-2.5">
+                    {editingId === p.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <input type="number" step="0.01" placeholder="Price" value={priceEdit.price} onChange={e => setPriceEdit({ ...priceEdit, price: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
+                        <input type="number" step="0.01" placeholder="Was" value={priceEdit.compareAtPrice} onChange={e => setPriceEdit({ ...priceEdit, compareAtPrice: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
+                      </div>
+                    ) : (
+                      <span className="text-gray-700 font-medium">
+                        {fmtZAR(Number(p.price))}
+                        {p.compareAtPrice ? <span className="text-gray-400 line-through ml-1.5 text-xs">{fmtZAR(Number(p.compareAtPrice))}</span> : null}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {editingId === p.id ? (
+                      <div className="flex gap-1">
+                        <button onClick={() => save(String(p.id))} disabled={saving} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "..." : "Save"}</button>
+                        <button onClick={() => setEditingId(null)} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600">Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEdit(p)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit price</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!products.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No products match this filter.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

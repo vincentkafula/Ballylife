@@ -44,12 +44,13 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
   const [sellerData, setSellerData] = useState<R | null>(null);
   const [products, setProducts] = useState<R[]>([]);
   const [orders, setOrders] = useState<R[]>([]);
+  const [supplierOrders, setSupplierOrders] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [analyticsRes, ordersRes] = await Promise.allSettled([
-      mktSellers.analytics(seller.id), mktSellers.myOrders(seller.id),
+    const [analyticsRes, ordersRes, supplierOrdersRes] = await Promise.allSettled([
+      mktSellers.analytics(seller.id), mktSellers.myOrders(seller.id), mktSellers.supplierOrders(seller.id),
     ]);
     if (analyticsRes.status === "fulfilled") {
       const d = analyticsRes.value.data as R;
@@ -57,6 +58,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
       setProducts((d.products as R[]) ?? []);
     }
     if (ordersRes.status === "fulfilled") setOrders(ordersRes.value.data as R[]);
+    if (supplierOrdersRes.status === "fulfilled") setSupplierOrders(supplierOrdersRes.value.data as R[]);
     setLoading(false);
   }, [seller.id]);
 
@@ -137,21 +139,24 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
             )}
 
             {tab === "orders" && (
-              <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Orders containing your products</span></div>
-                {orders.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No orders yet.</p> : (
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-                      <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
-                      <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
-                    </tr></thead>
-                    <tbody>
-                      {orders.map((o, i) => (
-                        <SellerOrderRow key={i} order={o} onUpdated={load} />
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+              <div>
+                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
+                  <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Orders containing your products</span></div>
+                  {orders.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No orders yet.</p> : (
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                        <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
+                        <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+                      </tr></thead>
+                      <tbody>
+                        {orders.map((o, i) => (
+                          <SellerOrderRow key={i} order={o} onUpdated={load} />
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <ImportPipeline supplierOrders={supplierOrders} />
               </div>
             )}
 
@@ -214,6 +219,59 @@ function SellerOrderRow({ order, onUpdated }: { order: R; onUpdated: () => void 
         ) : <span className="text-xs text-gray-300">—</span>}
       </td>
     </tr>
+  );
+}
+
+// Read-only view of where each imported line currently sits in the
+// origin-hub QC → consolidated shipment → destination customs → delivery
+// pipeline. Sellers can see this so they know when to expect stock/payment,
+// but only admins (Supply Chain tab) can advance or resolve it.
+const PIPELINE_STAGE_META: Record<string, { label: string; color: string }> = {
+  ordered_from_supplier: { label: "Ordered from supplier", color: "#6B7280" },
+  received_at_origin_hub: { label: "Received at origin hub", color: "#2563EB" },
+  qc_passed_origin: { label: "QC passed", color: "#2563EB" },
+  qc_failed_origin: { label: "QC failed — under review", color: "#DC2626" },
+  refunded: { label: "Refunded", color: "#DC2626" },
+  in_transit_to_destination: { label: "In transit", color: "#B8862E" },
+  received_at_destination_hub: { label: "Arrived at destination hub", color: "#B8862E" },
+  customs_cleared: { label: "Customs cleared", color: "#059669" },
+  shipped_to_customer: { label: "Shipped to customer", color: "#059669" },
+  delivered: { label: "Delivered", color: "#10B981" },
+};
+
+function ImportPipeline({ supplierOrders }: { supplierOrders: R[] }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <span className="text-sm font-bold text-gray-900">Import pipeline</span>
+        <span className="text-[11px] text-gray-400 ml-2">Where your supplier-sourced items currently are — view only</span>
+      </div>
+      {supplierOrders.length === 0 ? (
+        <p className="text-sm text-gray-400 p-6 text-center">No imported items in orders yet.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
+            <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Stage</th>
+          </tr></thead>
+          <tbody>
+            {supplierOrders.map((so, i) => {
+              const meta = PIPELINE_STAGE_META[String(so.status)] ?? { label: String(so.status).replace(/_/g, " "), color: "#6B7280" };
+              return (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: meta.color, background: `${meta.color}15` }}>{meta.label}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
