@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Seller, Category, Product, Coupon } from "../types/marketplace";
+import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const future = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
@@ -133,4 +133,36 @@ export const COUPONS: Coupon[] = [
   { id:"cpn-01", code:"WELCOME10", type:"percentage",    value:10, minOrderAmount:200, maxDiscountAmount:100, usageLimit:null, usageCount:0, validFrom:ago(43800), validTo:future(365), active:true, sellerId:null },
   { id:"cpn-02", code:"SAVE50",    type:"fixed_amount",  value:50, minOrderAmount:400, maxDiscountAmount:null, usageLimit:5000, usageCount:0, validFrom:ago(4380), validTo:future(30), active:true, sellerId:null },
   { id:"cpn-03", code:"FREESHIP",  type:"free_shipping", value:0,  minOrderAmount:100, maxDiscountAmount:null, usageLimit:null, usageCount:0, validFrom:ago(8760), validTo:future(90), active:true, sellerId:null },
+];
+
+// ─── Supply chain: warehouses (the 5-hub network), suppliers, catalog ───────
+// Two destination hubs' ids (wh-dest-za, wh-dest-zm) and three origin hubs'
+// ids (wh-origin-cn/jp/kr) are referenced by fixed id in marketplaceRouter's
+// routing tables — keep these ids stable if this list is ever edited.
+export const WAREHOUSES: Warehouse[] = [
+  { id: "wh-origin-cn", name: "Guangzhou Consolidation Hub", country: "CN", type: "origin", address: "Baiyun District, Guangzhou, China", status: "active", createdAt: ago(4380) },
+  { id: "wh-origin-jp", name: "Osaka Sourcing Hub", country: "JP", type: "origin", address: "Konohana-ku, Osaka, Japan", status: "active", createdAt: ago(4380) },
+  { id: "wh-origin-kr", name: "Incheon Sourcing Hub", country: "KR", type: "origin", address: "Yeonsu-gu, Incheon, South Korea", status: "active", createdAt: ago(4380) },
+  { id: "wh-dest-za", name: "Cape Town Fulfilment Centre", country: "ZA", type: "destination", address: "Epping Industria, Cape Town, South Africa", status: "active", createdAt: ago(4380) },
+  { id: "wh-dest-zm", name: "Lusaka Fulfilment Centre", country: "ZM", type: "destination", address: "Heavy Industrial Area, Lusaka, Zambia", status: "active", createdAt: ago(4380) },
+];
+
+export const SUPPLIERS: Supplier[] = [
+  { id: "sup-cn-01", name: "Guangzhou Fortune Trading Co.", country: "CN", contactName: "Li Wei", contactEmail: "liwei@fortunetrading.example", contactPhone: "+86 20 5555 0101", platform: "Alibaba Trade Assurance", paymentTerms: "30% deposit / 70% before shipment", leadTimeDays: 12, dropshipSupported: true, verified: true, status: "active", notes: "Electronics accessories and home goods, strong on MOQ flexibility.", createdAt: ago(3000) },
+  { id: "sup-cn-02", name: "Shenzhen Bright Electronics Ltd.", country: "CN", contactName: "Chen Jing", contactEmail: "chenjing@brightelec.example", contactPhone: "+86 755 5555 0202", platform: "1688.com (via sourcing agent)", paymentTerms: "T/T, 50/50", leadTimeDays: 15, dropshipSupported: true, verified: true, status: "active", notes: "Consumer electronics, requires a sourcing agent to interface directly.", createdAt: ago(2500) },
+  { id: "sup-jp-01", name: "Osaka Craft & Home Co.", country: "JP", contactName: "Tanaka Yuki", contactEmail: "tanaka@osakacraft.example", contactPhone: "+81 6 5555 0303", platform: "JETRO-matched", paymentTerms: "T/T on confirmation", leadTimeDays: 18, dropshipSupported: true, verified: true, status: "active", notes: "Home goods and stationery, relationship-driven, slower email response times.", createdAt: ago(2000) },
+  { id: "sup-kr-01", name: "Seoul Beauty Export Group", country: "KR", contactName: "Park Min-jun", contactEmail: "parkminjun@seoulbeauty.example", contactPhone: "+82 2 5555 0404", platform: "Gobizkorea", paymentTerms: "30% deposit / 70% on shipment", leadTimeDays: 14, dropshipSupported: true, verified: true, status: "active", notes: "K-beauty and skincare, well-suited to dropship — small, light parcels.", createdAt: ago(1800) },
+  { id: "sup-kr-02", name: "Incheon Home Living Co.", country: "KR", contactName: "Kim Soo-jin", contactEmail: "kimsoojin@incheonhome.example", contactPhone: "+82 32 5555 0505", platform: "EC21", paymentTerms: "T/T, 50/50", leadTimeDays: 16, dropshipSupported: true, verified: false, status: "active", notes: "Newer relationship — pending first sample-order verification.", createdAt: ago(200) },
+];
+
+export const SUPPLIER_PRODUCTS: SupplierProduct[] = [
+  { id: randomUUID(), supplierId: "sup-cn-01", categoryId: "cat-01", name: "Wireless Earbuds Pro Case", description: "TWS earbuds with charging case, Bluetooth 5.3.", costPrice: 8.5, currency: "USD", moq: 20, images: ["#1a1a2e"], emoji: "🎧", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(1200), updatedAt: ago(30) },
+  { id: randomUUID(), supplierId: "sup-cn-01", categoryId: "cat-03", name: "Foldable Silicone Storage Set", description: "Collapsible kitchen storage containers, 5-piece set.", costPrice: 4.2, currency: "USD", moq: 50, images: ["#0e7490"], emoji: "🍱", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(900), updatedAt: ago(20) },
+  { id: randomUUID(), supplierId: "sup-cn-02", categoryId: "cat-01", name: "Mini Portable Projector", description: "1080p-supported mini projector with HDMI/USB.", costPrice: 22, currency: "USD", moq: 10, images: ["#2d3748"], emoji: "📽️", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(700), updatedAt: ago(10) },
+  { id: randomUUID(), supplierId: "sup-cn-02", categoryId: "cat-01", name: "Smart Fitness Tracker Band", description: "Heart-rate and sleep tracking, 7-day battery.", costPrice: 6.8, currency: "USD", moq: 30, images: ["#1c1c1e"], emoji: "⌚", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(500), updatedAt: ago(5) },
+  { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-03", name: "Japanese Ceramic Tea Set", description: "4-cup traditional ceramic tea set, hand-glazed finish.", costPrice: 15, currency: "USD", moq: 10, images: ["#78350f"], emoji: "🍵", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(1000), updatedAt: ago(40) },
+  { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-06", name: "Washi Tape Stationery Bundle", description: "12-roll decorative washi tape set for journaling.", costPrice: 5.5, currency: "USD", moq: 25, images: ["#f59e0b"], emoji: "📝", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(650), updatedAt: ago(15) },
+  { id: randomUUID(), supplierId: "sup-kr-01", categoryId: "cat-04", name: "K-Beauty Snail Mucin Serum", description: "Hydrating repair serum, 100ml, dermatologist-tested.", costPrice: 3.9, currency: "USD", moq: 40, images: ["#fecaca"], emoji: "💧", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(800), updatedAt: ago(25) },
+  { id: randomUUID(), supplierId: "sup-kr-01", categoryId: "cat-04", name: "K-Beauty Sheet Mask Variety Pack (10)", description: "Assorted hydrating and brightening sheet masks.", costPrice: 6.2, currency: "USD", moq: 30, images: ["#fda4af"], emoji: "🧖", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(400), updatedAt: ago(8) },
+  { id: randomUUID(), supplierId: "sup-kr-02", categoryId: "cat-03", name: "Minimalist LED Desk Lamp", description: "Touch-dimmable LED lamp with USB charging port.", costPrice: 9.4, currency: "USD", moq: 15, images: ["#e2e8f0"], emoji: "💡", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(150), updatedAt: ago(3) },
 ];

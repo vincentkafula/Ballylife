@@ -60,8 +60,64 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   brand: r.brand, tags: r.tags, attributes: r.attributes, variants: r.variants,
   avgRating: Number(r.avg_rating), reviewCount: r.review_count, totalSold: r.total_sold,
   isFeatured: r.is_featured, isFlashDeal: r.is_flash_deal, flashDealEndsAt: r.flash_deal_ends_at,
+  fulfillmentType: r.fulfillment_type ?? "local", supplierProductId: r.supplier_product_id ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
+
+const mapSupplier = (r: any) => ({
+  id: r.id, name: r.name, country: r.country, contactName: r.contact_name, contactEmail: r.contact_email,
+  contactPhone: r.contact_phone, platform: r.platform, paymentTerms: r.payment_terms, leadTimeDays: r.lead_time_days,
+  dropshipSupported: r.dropship_supported, verified: r.verified, status: r.status, notes: r.notes, createdAt: r.created_at,
+});
+
+const mapSupplierProduct = (r: any) => ({
+  id: r.id, supplierId: r.supplier_id, supplierName: r.supplier_name, supplierCountry: r.supplier_country,
+  categoryId: r.category_id, name: r.name, description: r.description, costPrice: Number(r.cost_price),
+  currency: r.currency, moq: r.moq, images: r.images, emoji: r.emoji, originCountry: r.origin_country,
+  status: r.status, importCount: r.import_count, createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+const mapWarehouse = (r: any) => ({
+  id: r.id, name: r.name, country: r.country, type: r.type, address: r.address, status: r.status, createdAt: r.created_at,
+});
+
+const mapShipment = (r: any) => ({
+  id: r.id, originWarehouseId: r.origin_warehouse_id, originWarehouseName: r.origin_warehouse_name,
+  destinationWarehouseId: r.destination_warehouse_id, destinationWarehouseName: r.destination_warehouse_name,
+  status: r.status, carrier: r.carrier, trackingNumber: r.tracking_number, dispatchedAt: r.dispatched_at,
+  receivedAt: r.received_at, customsClearedAt: r.customs_cleared_at, closedAt: r.closed_at,
+  orderCount: r.order_count !== undefined ? Number(r.order_count) : undefined, createdAt: r.created_at,
+});
+
+const mapSupplierOrder = (r: any) => ({
+  id: r.id, orderId: r.order_id, orderNumber: r.order_number, productId: r.product_id, productName: r.product_name,
+  supplierId: r.supplier_id, supplierName: r.supplier_name, supplierProductId: r.supplier_product_id,
+  sellerId: r.seller_id, sellerName: r.seller_name, quantity: r.quantity, costAmount: Number(r.cost_amount),
+  originWarehouseId: r.origin_warehouse_id, originWarehouseName: r.origin_warehouse_name,
+  destinationWarehouseId: r.destination_warehouse_id, destinationWarehouseName: r.destination_warehouse_name,
+  shipmentId: r.shipment_id, status: r.status, qcNotes: r.qc_notes, createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+// Destination warehouse is picked from the customer's shipping country —
+// each supplier order routes to whichever of the two destination hubs
+// (South Africa / Zambia) serves that customer, defaulting to South Africa
+// for any other/unrecognised country rather than failing the order.
+const DESTINATION_WAREHOUSE_BY_COUNTRY: Record<string, string> = { ZA: "wh-dest-za", ZM: "wh-dest-zm" };
+const ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY: Record<string, string> = { CN: "wh-origin-cn", JP: "wh-origin-jp", KR: "wh-origin-kr" };
+
+// Valid forward transitions for a supplier order's two-leg status machine —
+// used to reject an admin trying to skip steps or move backwards.
+const SUPPLIER_ORDER_TRANSITIONS: Record<string, string[]> = {
+  ordered_from_supplier: ["received_at_origin_hub"],
+  received_at_origin_hub: ["qc_passed_origin", "qc_failed_origin"],
+  qc_passed_origin: ["in_transit_to_destination"],
+  qc_failed_origin: [], // terminal — handled manually (refund/reorder) outside this state machine
+  in_transit_to_destination: ["received_at_destination_hub"],
+  received_at_destination_hub: ["customs_cleared"],
+  customs_cleared: ["shipped_to_customer"],
+  shipped_to_customer: ["delivered"],
+  delivered: [],
+};
 
 const mapOrder = (r: any) => ({
   id: r.id, orderNumber: r.order_number, userId: r.user_id, customerName: r.customer_name,
@@ -191,6 +247,40 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
       reviews: reviewRows.map(mapReview), related: relatedRows.map(r => mapProduct(r)),
     },
   });
+});
+
+// ── SUPPLIER CATALOG (sellers browse/import; never exposed to customers) ────
+// Requires auth (any signed-in seller account) but not requireSellerOwner —
+// every seller may browse the same shared catalog, they just each decide
+// independently whether to import a given item into their own store.
+router.get("/supplier-catalog", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { country, category, search, page: pg, limit: lim } = req.query as Record<string, string>;
+  const page = Math.max(1, Number(pg) || 1);
+  const limit = Math.min(60, Number(lim) || 20);
+  const where: string[] = [`sp.status = 'active'`];
+  const params: unknown[] = [];
+  const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
+  if (country)  where.push(`sp.origin_country = ${p(country)}`);
+  if (category) where.push(`sp.category_id = ${p(category)}`);
+  if (search)   where.push(`LOWER(sp.name) LIKE ${p(`%${search.toLowerCase()}%`)}`);
+
+  const baseQuery = `FROM mkt_supplier_products sp JOIN mkt_suppliers s ON s.id = sp.supplier_id WHERE ${where.join(" AND ")}`;
+  const { rows: countRows } = await pool!.query(`SELECT COUNT(*)::int AS total ${baseQuery}`, params);
+  const { rows } = await pool!.query(
+    `SELECT sp.*, s.name AS supplier_name, s.country AS supplier_country ${baseQuery}
+     ORDER BY sp.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, (page - 1) * limit]
+  );
+  res.json({ success: true, data: rows.map(mapSupplierProduct), meta: { page, limit, total: countRows[0].total, pages: Math.ceil(countRows[0].total / limit) } });
+});
+
+router.get("/supplier-catalog/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT sp.*, s.name AS supplier_name, s.country AS supplier_country
+     FROM mkt_supplier_products sp JOIN mkt_suppliers s ON s.id = sp.supplier_id WHERE sp.id::text = $1`, [req.params.id]
+  );
+  if (!rows.length) { res.status(404).json({ success: false, error: "Catalog item not found" }); return; }
+  res.json({ success: true, data: mapSupplierProduct(rows[0]) });
 });
 
 // ── CART ──────────────────────────────────────────────────────────────────────
@@ -379,7 +469,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
   }));
   const shippingAddress = {
     label: "Home", firstName: addr.first_name ?? "Customer", lastName: addr.last_name ?? "", line1: addr.line1 ?? "",
-    line2: null, city: addr.city ?? "", state: addr.state ?? "", postalCode: addr.postal_code ?? "", country: "ZA", phone: addr.phone ?? "",
+    line2: null, city: addr.city ?? "", state: addr.state ?? "", postalCode: addr.postal_code ?? "", country: addr.country ?? "ZA", phone: addr.phone ?? "",
   };
 
   const client = await pool!.connect();
@@ -414,6 +504,31 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
        paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code]
     );
     const order = rows[0];
+
+    // For every line that's an imported (supplier-sourced) listing, open a
+    // mkt_supplier_orders row that starts the two-leg fulfilment pipeline —
+    // local-seller lines (fulfillment_type='local') need no such record,
+    // the seller ships those themselves via the existing shipping_status
+    // on mkt_orders. Destination warehouse is picked by the customer's
+    // country (ZA/ZM); origin by the supplier's country (CN/JP/KR).
+    const destinationWarehouseId = DESTINATION_WAREHOUSE_BY_COUNTRY[shippingAddress.country] ?? "wh-dest-za";
+    for (const item of items) {
+      const { rows: prodRows } = await client.query(
+        `SELECT p.fulfillment_type, p.supplier_product_id, sp.supplier_id, sp.cost_price, sp.origin_country
+         FROM mkt_products p LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
+         WHERE p.id::text = $1`, [item.productId]
+      );
+      const p = prodRows[0];
+      if (!p || p.fulfillment_type !== "imported" || !p.supplier_product_id) continue;
+      const originWarehouseId = ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY[p.origin_country] ?? "wh-origin-cn";
+      await client.query(
+        `INSERT INTO mkt_supplier_orders (order_id, product_id, supplier_id, supplier_product_id, seller_id, quantity,
+           cost_amount, origin_warehouse_id, destination_warehouse_id, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ordered_from_supplier')`,
+        [order.id, item.productId, p.supplier_id, p.supplier_product_id, item.sellerId, item.quantity,
+         Number(p.cost_price) * item.quantity, originWarehouseId, destinationWarehouseId]
+      );
+    }
 
     await client.query(`UPDATE mkt_carts SET items = '[]', coupon_code = NULL, coupon_discount = 0, subtotal = 0, shipping = 0, tax = 0, total = 0, updated_at = now() WHERE id = $1`, [cart.id]);
     await client.query("COMMIT");
@@ -790,6 +905,49 @@ router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req
   res.status(201).json({ success: true, data: mapProduct(rows[0]), message: "Product submitted — it will appear once approved by the marketplace team." });
 });
 
+// Import a supplier-catalog item into this seller's own store — the seller
+// never sees the supplier, warehouse, or cost price beyond what's needed to
+// pick a sane retail price; fulfilment (QC, customs, delivery) is handled
+// centrally by mkt_supplier_orders once a customer actually buys it.
+router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
+  const { supplierProductId, retailPrice, compareAtPrice, stock } = req.body;
+  if (!supplierProductId || !retailPrice) { res.status(400).json({ success: false, error: "supplierProductId and retailPrice are required" }); return; }
+
+  const { rows: spRows } = await pool!.query(
+    `SELECT * FROM mkt_supplier_products WHERE id::text = $1 AND status = 'active'`, [supplierProductId]
+  );
+  if (!spRows.length) { res.status(404).json({ success: false, error: "Supplier catalog item not found or no longer available" }); return; }
+  const sp = spRows[0];
+
+  if (Number(retailPrice) < Number(sp.cost_price)) {
+    res.status(400).json({ success: false, error: `Retail price must be at least the cost price (${sp.currency} ${sp.cost_price})` });
+    return;
+  }
+  if (!sp.category_id) { res.status(400).json({ success: false, error: "This catalog item has no category set — ask the marketplace team to assign one before importing." }); return; }
+
+  const slug = `${String(sp.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
+         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13) RETURNING *`,
+      [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", retailPrice, compareAtPrice ?? null,
+       JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId]
+    );
+    await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [supplierProductId]);
+    await client.query("COMMIT");
+    res.status(201).json({ success: true, data: mapProduct(rows[0]), message: "Imported to your store — it will appear once approved by the marketplace team." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Import listing failed:", err);
+    res.status(500).json({ success: false, error: "Could not import this item, please try again." });
+  } finally {
+    client.release();
+  }
+});
+
 router.patch("/sellers/:id/products/:productId", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
   const { rows: existing } = await pool!.query(`SELECT * FROM mkt_products WHERE id::text = $1 AND seller_id = $2`, [req.params.productId, req.params.id]);
   if (!existing.length) { res.status(404).json({ success: false, error: "Product not found" }); return; }
@@ -877,6 +1035,231 @@ router.get("/admin/reports/products.csv", requireAuth, requireRole(...MANAGER_RO
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="products-${new Date().toISOString().slice(0,10)}.csv"`);
   res.send(csv);
+});
+
+// ── ADMIN: SUPPLY CHAIN (suppliers, catalog, warehouses, shipments) ─────────
+// All gated to marketplace_admin — this is Ballylife's own sourcing/ops
+// team managing supplier relationships and the fulfilment pipeline, never
+// exposed to sellers or customers beyond the read-only supplier-catalog
+// browse route above.
+
+router.get("/admin/suppliers", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_suppliers ORDER BY created_at DESC`);
+  res.json({ success: true, data: rows.map(mapSupplier) });
+});
+
+router.post("/admin/suppliers", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { name, country, contactName, contactEmail, contactPhone, platform, paymentTerms, leadTimeDays, dropshipSupported, verified, notes } = req.body;
+  if (!name || !country) { res.status(400).json({ success: false, error: "name and country are required" }); return; }
+  if (!["CN", "JP", "KR"].includes(country)) { res.status(400).json({ success: false, error: "country must be CN, JP or KR" }); return; }
+  const id = `sup-${country.toLowerCase()}-${Date.now().toString(36)}`;
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_suppliers (id, name, country, contact_name, contact_email, contact_phone, platform, payment_terms, lead_time_days, dropship_supported, verified, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+    [id, name, country, contactName ?? null, contactEmail ?? null, contactPhone ?? null, platform ?? null,
+     paymentTerms ?? null, leadTimeDays ?? 14, dropshipSupported ?? true, verified ?? false, notes ?? null]
+  );
+  res.status(201).json({ success: true, data: mapSupplier(rows[0]) });
+});
+
+router.patch("/admin/suppliers/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const fields = ["name","contactName","contactEmail","contactPhone","platform","paymentTerms","leadTimeDays","dropshipSupported","verified","status","notes"] as const;
+  const colMap: Record<string,string> = { name:"name", contactName:"contact_name", contactEmail:"contact_email", contactPhone:"contact_phone",
+    platform:"platform", paymentTerms:"payment_terms", leadTimeDays:"lead_time_days", dropshipSupported:"dropship_supported", verified:"verified", status:"status", notes:"notes" };
+  const sets: string[] = []; const vals: unknown[] = [];
+  for (const f of fields) { if (req.body[f] !== undefined) { vals.push(req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); } }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_suppliers SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Supplier not found" }); return; }
+  res.json({ success: true, data: mapSupplier(rows[0]) });
+});
+
+router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { supplierId } = req.query as Record<string, string>;
+  const where = supplierId ? `WHERE sp.supplier_id = $1` : "";
+  const { rows } = await pool!.query(
+    `SELECT sp.*, s.name AS supplier_name, s.country AS supplier_country FROM mkt_supplier_products sp
+     JOIN mkt_suppliers s ON s.id = sp.supplier_id ${where} ORDER BY sp.created_at DESC`,
+    supplierId ? [supplierId] : []
+  );
+  res.json({ success: true, data: rows.map(mapSupplierProduct) });
+});
+
+router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { supplierId, categoryId, name, description, costPrice, currency, moq, images, emoji, originCountry } = req.body;
+  if (!supplierId || !name || costPrice === undefined || !originCountry) {
+    res.status(400).json({ success: false, error: "supplierId, name, costPrice and originCountry are required" }); return;
+  }
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, moq, images, emoji, origin_country)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [supplierId, categoryId ?? null, name, description ?? "", costPrice, currency ?? "USD", moq ?? 1, JSON.stringify(images ?? []), emoji ?? "📦", originCountry]
+  );
+  res.status(201).json({ success: true, data: mapSupplierProduct(rows[0]) });
+});
+
+router.patch("/admin/supplier-products/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const fields = ["categoryId","name","description","costPrice","currency","moq","emoji","status"] as const;
+  const colMap: Record<string,string> = { categoryId:"category_id", name:"name", description:"description", costPrice:"cost_price", currency:"currency", moq:"moq", emoji:"emoji", status:"status" };
+  const sets: string[] = []; const vals: unknown[] = [];
+  for (const f of fields) { if (req.body[f] !== undefined) { vals.push(req.body[f]); sets.push(`${colMap[f]} = $${vals.length}`); } }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_supplier_products SET ${sets.join(", ")}, updated_at = now() WHERE id::text = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Catalog item not found" }); return; }
+  res.json({ success: true, data: mapSupplierProduct(rows[0]) });
+});
+
+router.get("/admin/warehouses", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_warehouses ORDER BY type, country`);
+  res.json({ success: true, data: rows.map(mapWarehouse) });
+});
+
+router.post("/admin/warehouses", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { name, country, type, address } = req.body;
+  if (!name || !country || !type) { res.status(400).json({ success: false, error: "name, country and type are required" }); return; }
+  if (!["origin", "destination"].includes(type)) { res.status(400).json({ success: false, error: "type must be origin or destination" }); return; }
+  const id = `wh-${type === "origin" ? "origin" : "dest"}-${country.toLowerCase()}-${Date.now().toString(36)}`;
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_warehouses (id, name, country, type, address) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [id, name, country, type, address ?? null]
+  );
+  res.status(201).json({ success: true, data: mapWarehouse(rows[0]) });
+});
+
+// ── ADMIN: supplier orders (per-order-line fulfilment tracking) ────────────
+router.get("/admin/supplier-orders", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { status, originWarehouseId, shipmentId } = req.query as Record<string, string>;
+  const where: string[] = []; const params: unknown[] = [];
+  const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
+  if (status)            where.push(`so.status = ${p(status)}`);
+  if (originWarehouseId) where.push(`so.origin_warehouse_id = ${p(originWarehouseId)}`);
+  if (shipmentId)        where.push(`so.shipment_id::text = ${p(shipmentId)}`);
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const { rows } = await pool!.query(
+    `SELECT so.*, o.order_number, p.name AS product_name, sup.name AS supplier_name, sel.store_name AS seller_name,
+       ow.name AS origin_warehouse_name, dw.name AS destination_warehouse_name
+     FROM mkt_supplier_orders so
+     JOIN mkt_orders o ON o.id = so.order_id
+     JOIN mkt_products p ON p.id = so.product_id
+     JOIN mkt_suppliers sup ON sup.id = so.supplier_id
+     JOIN mkt_sellers sel ON sel.id = so.seller_id
+     JOIN mkt_warehouses ow ON ow.id = so.origin_warehouse_id
+     JOIN mkt_warehouses dw ON dw.id = so.destination_warehouse_id
+     ${whereClause} ORDER BY so.created_at DESC LIMIT 200`,
+    params
+  );
+  res.json({ success: true, data: rows.map(mapSupplierOrder), meta: { total: rows.length } });
+});
+
+// Advances (or fails) a supplier order one step through its two-leg status
+// machine. Rejects skips/backward moves so ops can't accidentally mark
+// something "delivered" without it ever clearing customs, etc.
+router.patch("/admin/supplier-orders/:id/status", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { status, qcNotes } = req.body;
+  if (!status) { res.status(400).json({ success: false, error: "status is required" }); return; }
+  const { rows: existing } = await pool!.query(`SELECT status FROM mkt_supplier_orders WHERE id::text = $1`, [req.params.id]);
+  if (!existing.length) { res.status(404).json({ success: false, error: "Supplier order not found" }); return; }
+  const current = existing[0].status;
+  const allowed = SUPPLIER_ORDER_TRANSITIONS[current] ?? [];
+  if (!allowed.includes(status)) {
+    res.status(409).json({ success: false, error: `Cannot move from "${current}" to "${status}" — valid next step(s): ${allowed.join(", ") || "none (terminal state)"}` });
+    return;
+  }
+  const { rows } = await pool!.query(
+    `UPDATE mkt_supplier_orders SET status = $1, qc_notes = COALESCE($2, qc_notes), updated_at = now() WHERE id::text = $3 RETURNING *`,
+    [status, qcNotes ?? null, req.params.id]
+  );
+  res.json({ success: true, data: mapSupplierOrder(rows[0]) });
+});
+
+// ── ADMIN: shipments (batches the 2nd leg — origin hub -> destination hub) ──
+router.get("/admin/shipments", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT sh.*, ow.name AS origin_warehouse_name, dw.name AS destination_warehouse_name,
+       (SELECT COUNT(*)::int FROM mkt_supplier_orders WHERE shipment_id = sh.id) AS order_count
+     FROM mkt_shipments sh
+     JOIN mkt_warehouses ow ON ow.id = sh.origin_warehouse_id
+     JOIN mkt_warehouses dw ON dw.id = sh.destination_warehouse_id
+     ORDER BY sh.created_at DESC`
+  );
+  res.json({ success: true, data: rows.map(mapShipment) });
+});
+
+// Creates a shipment and batches every mkt_supplier_orders row that is
+// currently qc_passed_origin at the given origin/destination pair into it —
+// this is the consolidation step: many small QC'd orders become one
+// international freight movement instead of shipping individually.
+router.post("/admin/shipments", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { originWarehouseId, destinationWarehouseId, carrier, trackingNumber } = req.body;
+  if (!originWarehouseId || !destinationWarehouseId) { res.status(400).json({ success: false, error: "originWarehouseId and destinationWarehouseId are required" }); return; }
+
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: batchRows } = await client.query(
+      `SELECT id FROM mkt_supplier_orders WHERE origin_warehouse_id = $1 AND destination_warehouse_id = $2 AND status = 'qc_passed_origin' FOR UPDATE`,
+      [originWarehouseId, destinationWarehouseId]
+    );
+    if (!batchRows.length) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ success: false, error: "No QC-passed orders waiting at this origin/destination pair to batch into a shipment." });
+      return;
+    }
+    const { rows: shipRows } = await client.query(
+      `INSERT INTO mkt_shipments (origin_warehouse_id, destination_warehouse_id, carrier, tracking_number, status, dispatched_at)
+       VALUES ($1,$2,$3,$4,'in_transit', now()) RETURNING *`,
+      [originWarehouseId, destinationWarehouseId, carrier ?? null, trackingNumber ?? null]
+    );
+    const shipment = shipRows[0];
+    const ids = batchRows.map(r => r.id);
+    await client.query(
+      `UPDATE mkt_supplier_orders SET shipment_id = $1, status = 'in_transit_to_destination', updated_at = now() WHERE id = ANY($2::uuid[])`,
+      [shipment.id, ids]
+    );
+    await client.query("COMMIT");
+    res.status(201).json({ success: true, data: mapShipment(shipment), message: `${ids.length} order(s) batched into this shipment.` });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Shipment batching failed:", err);
+    res.status(500).json({ success: false, error: "Could not create shipment, please try again." });
+  } finally {
+    client.release();
+  }
+});
+
+// Advances a shipment's own status and, on arrival/customs, cascades that
+// to every supplier order riding in it — so ops updates one shipment
+// record instead of dozens of individual order rows by hand.
+router.patch("/admin/shipments/:id/status", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { status } = req.body;
+  const CASCADE: Record<string, string> = { received_at_destination: "received_at_destination_hub", customs_cleared: "customs_cleared" };
+  const timestampCol: Record<string, string> = { received_at_destination: "received_at", customs_cleared: "customs_cleared_at", closed: "closed_at" };
+  if (!status || !["in_transit", "received_at_destination", "customs_cleared", "closed"].includes(status)) {
+    res.status(400).json({ success: false, error: "status must be one of in_transit, received_at_destination, customs_cleared, closed" }); return;
+  }
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const col = timestampCol[status];
+    const { rows } = await client.query(
+      `UPDATE mkt_shipments SET status = $1${col ? `, ${col} = now()` : ""} WHERE id::text = $2 RETURNING *`,
+      [status, req.params.id]
+    );
+    if (!rows.length) { await client.query("ROLLBACK"); res.status(404).json({ success: false, error: "Shipment not found" }); return; }
+    if (CASCADE[status]) {
+      await client.query(`UPDATE mkt_supplier_orders SET status = $1, updated_at = now() WHERE shipment_id::text = $2`, [CASCADE[status], req.params.id]);
+    }
+    await client.query("COMMIT");
+    res.json({ success: true, data: mapShipment(rows[0]) });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Shipment status update failed:", err);
+    res.status(500).json({ success: false, error: "Could not update shipment status, please try again." });
+  } finally {
+    client.release();
+  }
 });
 
 export default router;

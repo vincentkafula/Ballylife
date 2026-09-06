@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -24,6 +24,11 @@ export async function migrate(): Promise<void> {
   const { rows } = await pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_products");
   if (Number(rows[0].count) >= PRODUCTS.length) {
     console.log("[db] Catalog already seeded — skipping.");
+    // Supply chain was added after this catalog-seed gate existed, so an
+    // already-deployed database (products already at target count) still
+    // needs its own, independently-gated chance to seed on first boot
+    // after the upgrade — never short-circuit past it.
+    await seedSupplyChain();
     return;
   }
 
@@ -88,6 +93,67 @@ export async function migrate(): Promise<void> {
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[db] Catalog seed failed, rolled back:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  await seedSupplyChain();
+}
+
+/**
+ * Seeds the supply-chain domain (warehouses, suppliers, supplier catalog)
+ * independently of the main catalog seed above, gated on its own table
+ * (mkt_suppliers) rather than mkt_products — this feature was added after
+ * the marketplace catalog, so an already-deployed database with products
+ * already seeded still needs this to run once on its first deploy after
+ * the upgrade.
+ */
+async function seedSupplyChain(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_suppliers");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Supply chain already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding supply chain (warehouses, suppliers, supplier catalog)...");
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+
+    for (const w of WAREHOUSES) {
+      await client.query(
+        `INSERT INTO mkt_warehouses (id, name, country, type, address, status, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+        [w.id, w.name, w.country, w.type, w.address, w.status, w.createdAt]
+      );
+    }
+
+    for (const s of SUPPLIERS) {
+      await client.query(
+        `INSERT INTO mkt_suppliers (id, name, country, contact_name, contact_email, contact_phone, platform,
+           payment_terms, lead_time_days, dropship_supported, verified, status, notes, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (id) DO NOTHING`,
+        [s.id, s.name, s.country, s.contactName, s.contactEmail, s.contactPhone, s.platform, s.paymentTerms,
+         s.leadTimeDays, s.dropshipSupported, s.verified, s.status, s.notes, s.createdAt]
+      );
+    }
+
+    for (const sp of SUPPLIER_PRODUCTS) {
+      await client.query(
+        `INSERT INTO mkt_supplier_products (id, supplier_id, category_id, name, description, cost_price, currency,
+           moq, images, emoji, origin_country, status, import_count, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (id) DO NOTHING`,
+        [sp.id, sp.supplierId, sp.categoryId, sp.name, sp.description, sp.costPrice, sp.currency, sp.moq,
+         JSON.stringify(sp.images), sp.emoji, sp.originCountry, sp.status, sp.importCount, sp.createdAt, sp.updatedAt]
+      );
+    }
+
+    await client.query("COMMIT");
+    console.log(`[db] Seeded ${WAREHOUSES.length} warehouses, ${SUPPLIERS.length} suppliers, ${SUPPLIER_PRODUCTS.length} supplier catalog items.`);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[db] Supply chain seed failed, rolled back:", err);
     throw err;
   } finally {
     client.release();

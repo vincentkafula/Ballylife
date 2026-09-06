@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   BarChart3, Package, ShoppingBag, Star, Settings, Plus, Trash2, Edit2, Loader2,
-  TrendingUp, Users, AlertTriangle, CheckCircle, Clock,
+  TrendingUp, Users, AlertTriangle, CheckCircle, Clock, Globe2, Search,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { mktSellers, mktAdmin, type MktAuthUser } from "../services/marketplaceApi";
+import { mktSellers, mktAdmin, mktSupplierCatalog, type MktAuthUser } from "../services/marketplaceApi";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "orders" | "products" | "inventory" | "reviews" | "settings";
+type Tab = "overview" | "orders" | "products" | "import" | "inventory" | "reviews" | "settings";
 
 const fmtZAR = (n: number) => `R${Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -72,6 +72,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
     { id: "overview", label: "Overview", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "orders", label: "Orders", icon: <ShoppingBag className="w-4 h-4" /> },
     { id: "products", label: "Products", icon: <Package className="w-4 h-4" /> },
+    { id: "import", label: "Import from Suppliers", icon: <Globe2 className="w-4 h-4" /> },
     { id: "inventory", label: "Inventory", icon: <AlertTriangle className="w-4 h-4" /> },
     { id: "reviews", label: "Reviews", icon: <Star className="w-4 h-4" /> },
     { id: "settings", label: "Store Settings", icon: <Settings className="w-4 h-4" /> },
@@ -155,6 +156,8 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
             )}
 
             {tab === "products" && <ProductManagement sellerId={seller.id} products={products} onChanged={load} />}
+
+            {tab === "import" && <SupplierImport sellerId={seller.id} onImported={load} />}
 
             {tab === "inventory" && (
               <div className="grid sm:grid-cols-3 gap-4 mb-5">
@@ -279,6 +282,108 @@ function ProductManagement({ sellerId, products, onChanged }: { sellerId: string
             ))}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+// Lets a seller browse Ballylife's vetted international supplier catalog
+// (China/Japan/Korea) and turn any item into their own store listing — the
+// seller never talks to the supplier or sees warehouse/customs details,
+// they just pick an item and set a retail price above cost.
+function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported: () => void }) {
+  const [items, setItems] = useState<R[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [country, setCountry] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [importingId, setImportingId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params: Record<string, string> = {};
+    if (country) params.country = country;
+    if (search) params.search = search;
+    const res = await mktSupplierCatalog.list(params);
+    if (res.success) setItems(res.data as R[]);
+    setLoading(false);
+  }, [country, search]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const importItem = async (item: R) => {
+    const retailPrice = Number(priceDraft[String(item.id)]);
+    if (!retailPrice || retailPrice < Number(item.costPrice)) return;
+    setImportingId(String(item.id));
+    setMessage(null);
+    const res = await mktSellers.importListing(sellerId, { supplierProductId: item.id, retailPrice });
+    setImportingId(null);
+    if (res.success) {
+      setMessage(res.message ?? "Imported to your store.");
+      onImported();
+    } else {
+      setMessage(res.error ?? "Could not import this item.");
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-4">
+        <p className="text-sm font-bold text-gray-900 mb-1">Import from Suppliers</p>
+        <p className="text-xs text-gray-500">Pick an item from Ballylife's vetted China / Japan / South Korea supplier catalog, set your own retail price, and it becomes a listing in your store. Sourcing, warehouse QC, customs, and delivery are all handled centrally — you never deal with the supplier directly.</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-gray-300 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input placeholder="Search catalog..." value={search} onChange={e => setSearch(e.target.value)}
+            className="border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-sm w-56" />
+        </div>
+        {[{ id: "", label: "All countries" }, { id: "CN", label: "🇨🇳 China" }, { id: "JP", label: "🇯🇵 Japan" }, { id: "KR", label: "🇰🇷 South Korea" }].map(c => (
+          <button key={c.id} onClick={() => setCountry(c.id)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border"
+            style={{ background: country === c.id ? "#14110D" : "white", color: country === c.id ? "white" : "#374151", borderColor: country === c.id ? "#14110D" : "#E5E7EB" }}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {message && <div className="mb-3 text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">{message}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-gray-400 p-6 text-center bg-white rounded-xl border border-gray-100">No catalog items match this filter.</p>
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {items.map(item => {
+            const cost = Number(item.costPrice);
+            const draft = priceDraft[String(item.id)] ?? "";
+            const suggested = Math.ceil(cost * 18 * 1.4); // rough USD->ZAR + markup starting point
+            return (
+              <div key={String(item.id)} className="bg-white rounded-xl border border-gray-100 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-2xl">{String(item.emoji ?? "📦")}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{String(item.originCountry)}</span>
+                </div>
+                <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
+                <p className="text-xs text-gray-400 mb-2 line-clamp-2">{String(item.description ?? "")}</p>
+                <p className="text-[11px] text-gray-400 mb-1">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
+                <p className="text-xs font-semibold text-gray-600 mb-3">Cost: {String(item.currency)} {cost.toFixed(2)} / unit</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" placeholder={`e.g. ${suggested}`} value={draft}
+                    onChange={e => setPriceDraft({ ...priceDraft, [String(item.id)]: e.target.value })}
+                    className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-24" />
+                  <button onClick={() => importItem(item)} disabled={importingId === item.id || !draft}
+                    className="flex-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#B8862E" }}>
+                    {importingId === item.id ? "Importing..." : "Import to my store"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

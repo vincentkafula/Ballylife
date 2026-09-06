@@ -20,6 +20,7 @@ export function demoLogin(username: string) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+type R = Record<string, any>;
 const rand  = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randF = (min: number, max: number) => +(Math.random() * (max - min) + min).toFixed(2);
 const ago   = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -667,6 +668,49 @@ const MKT_ORDERS = Array.from({ length: 8 }, (_, i) => {
 
 const DEMO_CART = { id:"cart-demo", userId:"demo-customer-001", items:[] as { productId:string;variantId:string|null;quantity:number;unitPrice:number;name:string;emoji:string;sellerName:string;maxStock:number }[], couponCode:null as string|null, couponDiscount:0, subtotal:0, shipping:0, tax:0, total:0, createdAt:ago(60), updatedAt:ago(5) };
 
+// ─── Supply chain mock data (mutable, in-memory for the demo session) ───────
+const MKT_WAREHOUSES = [
+  { id: "wh-origin-cn", name: "Guangzhou Consolidation Hub", country: "CN", type: "origin", address: "Baiyun District, Guangzhou, China", status: "active", createdAt: ago(4380*60) },
+  { id: "wh-origin-jp", name: "Osaka Sourcing Hub", country: "JP", type: "origin", address: "Konohana-ku, Osaka, Japan", status: "active", createdAt: ago(4380*60) },
+  { id: "wh-origin-kr", name: "Incheon Sourcing Hub", country: "KR", type: "origin", address: "Yeonsu-gu, Incheon, South Korea", status: "active", createdAt: ago(4380*60) },
+  { id: "wh-dest-za", name: "Cape Town Fulfilment Centre", country: "ZA", type: "destination", address: "Epping Industria, Cape Town, South Africa", status: "active", createdAt: ago(4380*60) },
+  { id: "wh-dest-zm", name: "Lusaka Fulfilment Centre", country: "ZM", type: "destination", address: "Heavy Industrial Area, Lusaka, Zambia", status: "active", createdAt: ago(4380*60) },
+];
+
+const MKT_SUPPLIERS = [
+  { id: "sup-cn-01", name: "Guangzhou Fortune Trading Co.", country: "CN", contactName: "Li Wei", contactEmail: "liwei@fortunetrading.example", contactPhone: "+86 20 5555 0101", platform: "Alibaba Trade Assurance", paymentTerms: "30% deposit / 70% before shipment", leadTimeDays: 12, dropshipSupported: true, verified: true, status: "active", notes: "Electronics accessories and home goods.", createdAt: ago(3000*60) },
+  { id: "sup-cn-02", name: "Shenzhen Bright Electronics Ltd.", country: "CN", contactName: "Chen Jing", contactEmail: "chenjing@brightelec.example", contactPhone: "+86 755 5555 0202", platform: "1688.com (via sourcing agent)", paymentTerms: "T/T, 50/50", leadTimeDays: 15, dropshipSupported: true, verified: true, status: "active", notes: "Consumer electronics.", createdAt: ago(2500*60) },
+  { id: "sup-jp-01", name: "Osaka Craft & Home Co.", country: "JP", contactName: "Tanaka Yuki", contactEmail: "tanaka@osakacraft.example", contactPhone: "+81 6 5555 0303", platform: "JETRO-matched", paymentTerms: "T/T on confirmation", leadTimeDays: 18, dropshipSupported: true, verified: true, status: "active", notes: "Home goods and stationery.", createdAt: ago(2000*60) },
+  { id: "sup-kr-01", name: "Seoul Beauty Export Group", country: "KR", contactName: "Park Min-jun", contactEmail: "parkminjun@seoulbeauty.example", contactPhone: "+82 2 5555 0404", platform: "Gobizkorea", paymentTerms: "30% deposit / 70% on shipment", leadTimeDays: 14, dropshipSupported: true, verified: true, status: "active", notes: "K-beauty and skincare.", createdAt: ago(1800*60) },
+  { id: "sup-kr-02", name: "Incheon Home Living Co.", country: "KR", contactName: "Kim Soo-jin", contactEmail: "kimsoojin@incheonhome.example", contactPhone: "+82 32 5555 0505", platform: "EC21", paymentTerms: "T/T, 50/50", leadTimeDays: 16, dropshipSupported: true, verified: false, status: "active", notes: "Newer relationship, pending verification.", createdAt: ago(200*60) },
+];
+
+const MKT_SUPPLIER_PRODUCTS = [
+  { id: "spr-01", supplierId: "sup-cn-01", supplierName: "Guangzhou Fortune Trading Co.", supplierCountry: "CN", categoryId: "cat-01", name: "Wireless Earbuds Pro Case", description: "TWS earbuds with charging case, Bluetooth 5.3.", costPrice: 8.5, currency: "USD", moq: 20, images: ["#1a1a2e"], emoji: "🎧", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(1200*60), updatedAt: ago(30*60) },
+  { id: "spr-02", supplierId: "sup-cn-01", supplierName: "Guangzhou Fortune Trading Co.", supplierCountry: "CN", categoryId: "cat-03", name: "Foldable Silicone Storage Set", description: "Collapsible kitchen storage containers, 5-piece set.", costPrice: 4.2, currency: "USD", moq: 50, images: ["#0e7490"], emoji: "🍱", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(900*60), updatedAt: ago(20*60) },
+  { id: "spr-03", supplierId: "sup-cn-02", supplierName: "Shenzhen Bright Electronics Ltd.", supplierCountry: "CN", categoryId: "cat-01", name: "Mini Portable Projector", description: "1080p-supported mini projector with HDMI/USB.", costPrice: 22, currency: "USD", moq: 10, images: ["#2d3748"], emoji: "📽️", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(700*60), updatedAt: ago(10*60) },
+  { id: "spr-04", supplierId: "sup-cn-02", supplierName: "Shenzhen Bright Electronics Ltd.", supplierCountry: "CN", categoryId: "cat-01", name: "Smart Fitness Tracker Band", description: "Heart-rate and sleep tracking, 7-day battery.", costPrice: 6.8, currency: "USD", moq: 30, images: ["#1c1c1e"], emoji: "⌚", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(500*60), updatedAt: ago(5*60) },
+  { id: "spr-05", supplierId: "sup-jp-01", supplierName: "Osaka Craft & Home Co.", supplierCountry: "JP", categoryId: "cat-03", name: "Japanese Ceramic Tea Set", description: "4-cup traditional ceramic tea set, hand-glazed finish.", costPrice: 15, currency: "USD", moq: 10, images: ["#78350f"], emoji: "🍵", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(1000*60), updatedAt: ago(40*60) },
+  { id: "spr-06", supplierId: "sup-jp-01", supplierName: "Osaka Craft & Home Co.", supplierCountry: "JP", categoryId: "cat-06", name: "Washi Tape Stationery Bundle", description: "12-roll decorative washi tape set for journaling.", costPrice: 5.5, currency: "USD", moq: 25, images: ["#f59e0b"], emoji: "📝", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(650*60), updatedAt: ago(15*60) },
+  { id: "spr-07", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", supplierCountry: "KR", categoryId: "cat-04", name: "K-Beauty Snail Mucin Serum", description: "Hydrating repair serum, 100ml, dermatologist-tested.", costPrice: 3.9, currency: "USD", moq: 40, images: ["#fecaca"], emoji: "💧", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(800*60), updatedAt: ago(25*60) },
+  { id: "spr-08", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", supplierCountry: "KR", categoryId: "cat-04", name: "K-Beauty Sheet Mask Variety Pack (10)", description: "Assorted hydrating and brightening sheet masks.", costPrice: 6.2, currency: "USD", moq: 30, images: ["#fda4af"], emoji: "🧖", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(400*60), updatedAt: ago(8*60) },
+  { id: "spr-09", supplierId: "sup-kr-02", supplierName: "Incheon Home Living Co.", supplierCountry: "KR", categoryId: "cat-03", name: "Minimalist LED Desk Lamp", description: "Touch-dimmable LED lamp with USB charging port.", costPrice: 9.4, currency: "USD", moq: 15, images: ["#e2e8f0"], emoji: "💡", originCountry: "KR", status: "active", importCount: 0, createdAt: ago(150*60), updatedAt: ago(3*60) },
+];
+
+const ORIGIN_WH_BY_COUNTRY: Record<string,string> = { CN: "wh-origin-cn", JP: "wh-origin-jp", KR: "wh-origin-kr" };
+
+const MKT_SUPPLIER_ORDERS: Record<string, unknown>[] = [
+  { id: "so-01", orderId: "ord-1001", orderNumber: "VNK-ORD-100003", productId: "p-imp-01", productName: "K-Beauty Snail Mucin Serum", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", supplierProductId: "spr-07", sellerId: "sel-02", sellerName: "Fashion Hub", quantity: 3, costAmount: 11.7, originWarehouseId: "wh-origin-kr", originWarehouseName: "Incheon Sourcing Hub", destinationWarehouseId: "wh-dest-za", destinationWarehouseName: "Cape Town Fulfilment Centre", shipmentId: null, status: "ordered_from_supplier", qcNotes: null, createdAt: ago(2880), updatedAt: ago(2880) },
+  { id: "so-02", orderId: "ord-1002", orderNumber: "VNK-ORD-100004", productId: "p-imp-02", productName: "Mini Portable Projector", supplierId: "sup-cn-02", supplierName: "Shenzhen Bright Electronics Ltd.", supplierProductId: "spr-03", sellerId: "sel-03", sellerName: "HomeStyle", quantity: 1, costAmount: 22, originWarehouseId: "wh-origin-cn", originWarehouseName: "Guangzhou Consolidation Hub", destinationWarehouseId: "wh-dest-za", destinationWarehouseName: "Cape Town Fulfilment Centre", shipmentId: null, status: "received_at_origin_hub", qcNotes: null, createdAt: ago(4320), updatedAt: ago(1440) },
+  { id: "so-03", orderId: "ord-1003", orderNumber: "VNK-ORD-100005", productId: "p-imp-03", productName: "Japanese Ceramic Tea Set", supplierId: "sup-jp-01", supplierName: "Osaka Craft & Home Co.", supplierProductId: "spr-05", sellerId: "sel-05", sellerName: "BeautyBar", quantity: 2, costAmount: 30, originWarehouseId: "wh-origin-jp", originWarehouseName: "Osaka Sourcing Hub", destinationWarehouseId: "wh-dest-zm", destinationWarehouseName: "Lusaka Fulfilment Centre", shipmentId: null, status: "qc_passed_origin", qcNotes: "Passed — no chips or cracks.", createdAt: ago(5760), updatedAt: ago(720) },
+  { id: "so-04", orderId: "ord-1004", orderNumber: "VNK-ORD-100006", productId: "p-imp-04", productName: "Smart Fitness Tracker Band", supplierId: "sup-cn-02", supplierName: "Shenzhen Bright Electronics Ltd.", supplierProductId: "spr-04", sellerId: "sel-04", sellerName: "SportsPro", quantity: 5, costAmount: 34, originWarehouseId: "wh-origin-cn", originWarehouseName: "Guangzhou Consolidation Hub", destinationWarehouseId: "wh-dest-za", destinationWarehouseName: "Cape Town Fulfilment Centre", shipmentId: "sh-01", status: "in_transit_to_destination", qcNotes: "Passed QC — batched into shipment.", createdAt: ago(10080), updatedAt: ago(2880) },
+  { id: "so-05", orderId: "ord-1005", orderNumber: "VNK-ORD-100007", productId: "p-imp-05", productName: "K-Beauty Sheet Mask Variety Pack (10)", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", supplierProductId: "spr-08", sellerId: "sel-01", sellerName: "TechZone SA", quantity: 4, costAmount: 24.8, originWarehouseId: "wh-origin-kr", originWarehouseName: "Incheon Sourcing Hub", destinationWarehouseId: "wh-dest-za", destinationWarehouseName: "Cape Town Fulfilment Centre", shipmentId: null, status: "delivered", qcNotes: "Passed QC, cleared customs, delivered on schedule.", createdAt: ago(20160), updatedAt: ago(4320) },
+];
+
+const MKT_SHIPMENTS: Record<string, unknown>[] = [
+  { id: "sh-01", originWarehouseId: "wh-origin-cn", originWarehouseName: "Guangzhou Consolidation Hub", destinationWarehouseId: "wh-dest-za", destinationWarehouseName: "Cape Town Fulfilment Centre", status: "in_transit", carrier: "DHL Global Forwarding", trackingNumber: "DHL-GZ-CT-88213", dispatchedAt: ago(2880), receivedAt: null, customsClearedAt: null, closedAt: null, orderCount: 1, createdAt: ago(2880) },
+];
+
 export const mktMock = {
   categories: () => ({ success:true, data:MKT_CATS }),
   products: (qs?: Record<string,string>) => {
@@ -759,4 +803,115 @@ export const mktMock = {
   }}),
   adminStats: () => ({ success:true, data:{ totalProducts:12, totalSellers:5, totalOrders:8, totalRevenue:MKT_ORDERS.reduce((s,o)=>s+o.totalAmount,0), activeCustomers:4820, pendingReviews:14, pendingSellerApprovals:3, topCategories:MKT_CATS.slice(0,5).map(c=>({name:c.name,count:c.productCount})) } }),
   addresses: () => ({ success:true, data:[{ id:"addr-1", userId:"demo-customer-001", label:"Home", firstName:"Margaret", lastName:"Botha", line1:"42 Kloof Street", line2:"Apt 3B", city:"Cape Town", state:"Western Cape", postalCode:"8001", country:"ZA", phone:"+27821000001", isDefault:true }] }),
+
+  // ─── Supply chain (supplier catalog, warehouses, shipments, supplier orders) ─
+  supplierCatalog: (qs: Record<string,string>) => {
+    let list = MKT_SUPPLIER_PRODUCTS.filter(sp => sp.status === "active");
+    if (qs.country)  list = list.filter(sp => sp.originCountry === qs.country);
+    if (qs.category) list = list.filter(sp => sp.categoryId === qs.category);
+    if (qs.search)   list = list.filter(sp => sp.name.toLowerCase().includes(qs.search.toLowerCase()));
+    return { success:true, data:list, meta:{ page:1, limit:20, total:list.length, pages:1 } };
+  },
+  supplierCatalogItem: (id: string) => {
+    const item = MKT_SUPPLIER_PRODUCTS.find(sp => sp.id === id);
+    return item ? { success:true, data:item } : { success:false, error:"Catalog item not found" };
+  },
+  importListing: (body: R) => {
+    const sp = MKT_SUPPLIER_PRODUCTS.find(s => s.id === body.supplierProductId);
+    if (!sp) return { success:false, error:"Supplier catalog item not found or no longer available" };
+    const retailPrice = Number(body.retailPrice);
+    if (!retailPrice || retailPrice < sp.costPrice) return { success:false, error:`Retail price must be at least the cost price (${sp.currency} ${sp.costPrice})` };
+    sp.importCount = (sp.importCount ?? 0) + 1;
+    const newProduct = {
+      id:`p-new-${uuid()}`, sellerId:"sel-01", sellerName:"TechZone SA", categoryId:sp.categoryId, categoryName:"Electronics",
+      name:sp.name, slug:sp.name.toLowerCase().replace(/[^a-z0-9]+/g,"-"), shortDescription:sp.description, description:sp.description,
+      price:retailPrice, compareAtPrice:body.compareAtPrice ?? null, currency:"ZAR", images:sp.images, emoji:sp.emoji,
+      status:"pending_review", stock:Number(body.stock) || 0, sku:null, brand:"Imported", tags:[], attributes:{}, variants:[],
+      avgRating:0, reviewCount:0, totalSold:0, isFeatured:false, isFlashDeal:false, flashDealEndsAt:null,
+      fulfillmentType:"imported", supplierProductId:sp.id, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString(),
+    };
+    MKT_PRODUCTS.push(newProduct as never);
+    return { success:true, data:newProduct, message:"Imported to your store — it will appear once approved by the marketplace team." };
+  },
+  adminSuppliers: () => ({ success:true, data:MKT_SUPPLIERS }),
+  adminCreateSupplier: (body: R) => {
+    if (!body.name || !body.country) return { success:false, error:"name and country are required" };
+    const s = { id:`sup-${String(body.country).toLowerCase()}-${uuid()}`, name:body.name, country:body.country, contactName:body.contactName ?? null,
+      contactEmail:body.contactEmail ?? null, contactPhone:body.contactPhone ?? null, platform:body.platform ?? null, paymentTerms:body.paymentTerms ?? null,
+      leadTimeDays:body.leadTimeDays ?? 14, dropshipSupported:body.dropshipSupported ?? true, verified:body.verified ?? false, status:"active",
+      notes:body.notes ?? null, createdAt:new Date().toISOString() };
+    MKT_SUPPLIERS.push(s as never);
+    return { success:true, data:s };
+  },
+  adminUpdateSupplier: (id: string, body: R) => {
+    const s = MKT_SUPPLIERS.find(x => x.id === id);
+    if (!s) return { success:false, error:"Supplier not found" };
+    Object.assign(s, body);
+    return { success:true, data:s };
+  },
+  adminSupplierProducts: () => ({ success:true, data:MKT_SUPPLIER_PRODUCTS }),
+  adminCreateSupplierProduct: (body: R) => {
+    if (!body.supplierId || !body.name || body.costPrice === undefined || !body.originCountry) return { success:false, error:"supplierId, name, costPrice and originCountry are required" };
+    const supplier = MKT_SUPPLIERS.find(s => s.id === body.supplierId);
+    const sp = { id:`spr-${uuid()}`, supplierId:body.supplierId, supplierName:supplier?.name ?? "", supplierCountry:supplier?.country ?? body.originCountry,
+      categoryId:body.categoryId ?? null, name:body.name, description:body.description ?? "", costPrice:Number(body.costPrice), currency:body.currency ?? "USD",
+      moq:body.moq ?? 1, images:body.images ?? [], emoji:body.emoji ?? "📦", originCountry:body.originCountry, status:"active", importCount:0,
+      createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
+    MKT_SUPPLIER_PRODUCTS.push(sp as never);
+    return { success:true, data:sp };
+  },
+  adminUpdateSupplierProduct: (id: string, body: R) => {
+    const sp = MKT_SUPPLIER_PRODUCTS.find(x => x.id === id);
+    if (!sp) return { success:false, error:"Catalog item not found" };
+    Object.assign(sp, body);
+    return { success:true, data:sp };
+  },
+  adminWarehouses: () => ({ success:true, data:MKT_WAREHOUSES }),
+  adminCreateWarehouse: (body: R) => {
+    if (!body.name || !body.country || !body.type) return { success:false, error:"name, country and type are required" };
+    const w = { id:`wh-${body.type === "origin" ? "origin" : "dest"}-${String(body.country).toLowerCase()}-${uuid()}`, name:body.name, country:body.country,
+      type:body.type, address:body.address ?? null, status:"active", createdAt:new Date().toISOString() };
+    MKT_WAREHOUSES.push(w as never);
+    return { success:true, data:w };
+  },
+  adminSupplierOrders: () => ({ success:true, data:MKT_SUPPLIER_ORDERS, meta:{ total:MKT_SUPPLIER_ORDERS.length } }),
+  adminUpdateSupplierOrderStatus: (id: string, body: R) => {
+    const TRANSITIONS: Record<string,string[]> = {
+      ordered_from_supplier: ["received_at_origin_hub"], received_at_origin_hub: ["qc_passed_origin","qc_failed_origin"],
+      qc_passed_origin: ["in_transit_to_destination"], qc_failed_origin: [], in_transit_to_destination: ["received_at_destination_hub"],
+      received_at_destination_hub: ["customs_cleared"], customs_cleared: ["shipped_to_customer"], shipped_to_customer: ["delivered"], delivered: [],
+    };
+    const so = MKT_SUPPLIER_ORDERS.find(x => x.id === id);
+    if (!so) return { success:false, error:"Supplier order not found" };
+    const allowed = TRANSITIONS[so.status as string] ?? [];
+    if (!allowed.includes(body.status as string)) return { success:false, error:`Cannot move from "${so.status}" to "${body.status}" — valid next step(s): ${allowed.join(", ") || "none (terminal state)"}` };
+    so.status = body.status; if (body.qcNotes) so.qcNotes = body.qcNotes; so.updatedAt = new Date().toISOString();
+    return { success:true, data:so };
+  },
+  adminShipments: () => ({ success:true, data:MKT_SHIPMENTS }),
+  adminCreateShipment: (body: R) => {
+    const batch = MKT_SUPPLIER_ORDERS.filter(so => so.originWarehouseId === body.originWarehouseId && so.destinationWarehouseId === body.destinationWarehouseId && so.status === "qc_passed_origin");
+    if (!batch.length) return { success:false, error:"No QC-passed orders waiting at this origin/destination pair to batch into a shipment." };
+    const originWh = MKT_WAREHOUSES.find(w => w.id === body.originWarehouseId);
+    const destWh = MKT_WAREHOUSES.find(w => w.id === body.destinationWarehouseId);
+    const sh = { id:`sh-${uuid()}`, originWarehouseId:body.originWarehouseId, originWarehouseName:originWh?.name ?? "", destinationWarehouseId:body.destinationWarehouseId,
+      destinationWarehouseName:destWh?.name ?? "", status:"in_transit", carrier:body.carrier ?? null, trackingNumber:body.trackingNumber ?? null,
+      dispatchedAt:new Date().toISOString(), receivedAt:null, customsClearedAt:null, closedAt:null, orderCount:batch.length, createdAt:new Date().toISOString() };
+    MKT_SHIPMENTS.push(sh as never);
+    batch.forEach(so => { so.shipmentId = sh.id; so.status = "in_transit_to_destination"; so.updatedAt = new Date().toISOString(); });
+    return { success:true, data:sh, message:`${batch.length} order(s) batched into this shipment.` };
+  },
+  adminUpdateShipmentStatus: (id: string, body: R) => {
+    const sh = MKT_SHIPMENTS.find(x => x.id === id);
+    if (!sh) return { success:false, error:"Shipment not found" };
+    sh.status = body.status;
+    const CASCADE: Record<string,string> = { received_at_destination:"received_at_destination_hub", customs_cleared:"customs_cleared" };
+    if (body.status === "received_at_destination") sh.receivedAt = new Date().toISOString();
+    if (body.status === "customs_cleared") sh.customsClearedAt = new Date().toISOString();
+    if (body.status === "closed") sh.closedAt = new Date().toISOString();
+    if (CASCADE[body.status as string]) {
+      MKT_SUPPLIER_ORDERS.filter(so => so.shipmentId === id).forEach(so => { so.status = CASCADE[body.status as string]; so.updatedAt = new Date().toISOString(); });
+    }
+    return { success:true, data:sh };
+  },
 };

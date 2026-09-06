@@ -83,6 +83,11 @@ export interface Product {
   isFeatured: boolean;
   isFlashDeal: boolean;
   flashDealEndsAt: string | null;
+  // Optional: absent/undefined means "local" (seller-sourced), the same as
+  // every product created before the supplier-catalog feature existed —
+  // only imports (see mkt_supplier_orders) set these.
+  fulfillmentType?: "local" | "imported";
+  supplierProductId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -224,4 +229,103 @@ export interface MarketplaceStats {
   pendingReviews: number;
   pendingSellerApprovals: number;
   topCategories: { name: string; count: number }[];
+}
+
+// ─── Supply chain (international sourcing + dropship-to-warehouse) ───────────
+export type SupplierCountry        = "CN" | "JP" | "KR";
+export type WarehouseCountry       = "CN" | "JP" | "KR" | "ZA" | "ZM";
+export type WarehouseType          = "origin" | "destination";
+export type ShipmentStatus         = "preparing" | "in_transit" | "received_at_destination" | "customs_cleared" | "closed";
+export type SupplierOrderStatus    =
+  | "ordered_from_supplier" | "received_at_origin_hub" | "qc_passed_origin" | "qc_failed_origin"
+  | "in_transit_to_destination" | "received_at_destination_hub" | "customs_cleared"
+  | "shipped_to_customer" | "delivered";
+export type FulfillmentType        = "local" | "imported";
+
+export interface Supplier {
+  id: string;
+  name: string;
+  country: SupplierCountry;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  platform: string | null;
+  paymentTerms: string | null;
+  leadTimeDays: number;
+  dropshipSupported: boolean;
+  verified: boolean;
+  status: "active" | "suspended";
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface SupplierProduct {
+  id: string;
+  supplierId: string;
+  supplierName?: string;
+  supplierCountry?: SupplierCountry;
+  categoryId: string | null;
+  name: string;
+  description: string | null;
+  costPrice: number;
+  currency: string;
+  moq: number;
+  images: string[];
+  emoji: string | null;
+  originCountry: SupplierCountry;
+  status: "active" | "inactive";
+  importCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Warehouse {
+  id: string;
+  name: string;
+  country: WarehouseCountry;
+  type: WarehouseType;
+  address: string | null;
+  status: "active" | "inactive";
+  createdAt: string;
+}
+
+export interface Shipment {
+  id: string;
+  originWarehouseId: string;
+  originWarehouseName?: string;
+  destinationWarehouseId: string;
+  destinationWarehouseName?: string;
+  status: ShipmentStatus;
+  carrier: string | null;
+  trackingNumber: string | null;
+  dispatchedAt: string | null;
+  receivedAt: string | null;
+  customsClearedAt: string | null;
+  closedAt: string | null;
+  orderCount?: number;
+  createdAt: string;
+}
+
+export interface SupplierOrder {
+  id: string;
+  orderId: string;
+  orderNumber?: string;
+  productId: string;
+  productName?: string;
+  supplierId: string;
+  supplierName?: string;
+  supplierProductId: string;
+  sellerId: string;
+  sellerName?: string;
+  quantity: number;
+  costAmount: number;
+  originWarehouseId: string;
+  originWarehouseName?: string;
+  destinationWarehouseId: string;
+  destinationWarehouseName?: string;
+  shipmentId: string | null;
+  status: SupplierOrderStatus;
+  qcNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   BarChart3, Users, Store, Package, ShoppingBag, DollarSign, CheckCircle, XCircle,
-  Download, Loader2, Clock, Shield, Percent, FileText,
+  Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { mktAdmin, mktSellers, getMktToken, type MktAuthUser } from "../services/marketplaceApi";
 import { toast } from "sonner";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "financial" | "reports" | "security";
+type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "supplyChain" | "financial" | "reports" | "security";
 
 // Maps a specific granted Marketplace Management position (from the job
 // application flow) to which of the 8 real tabs this dashboard already
@@ -42,9 +42,9 @@ type MarketTier = "executive" | "marketplace_ops" | "fulfillment" | "finance_sec
 const TIER_TABS: Record<MarketTier, Tab[]> = {
   executive: ["overview", "financial", "reports"],
   marketplace_ops: ["overview", "sellerApproval", "productApproval"],
-  fulfillment: ["overview", "orders"],
+  fulfillment: ["overview", "orders", "supplyChain"],
   finance_security: ["overview", "financial", "security", "reports"],
-  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "financial", "reports", "security"],
+  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "supplyChain", "financial", "reports", "security"],
 };
 
 function positionToMarketTier(position: string | null): MarketTier {
@@ -149,6 +149,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     { id: "sellerApproval", label: "Seller Approval", icon: <Store className="w-4 h-4" />, badge: pendingSellers.length },
     { id: "productApproval", label: "Product Approval", icon: <Package className="w-4 h-4" />, badge: pendingProducts.length },
     { id: "orders", label: "Order Monitoring", icon: <ShoppingBag className="w-4 h-4" /> },
+    { id: "supplyChain", label: "Supply Chain", icon: <Globe2 className="w-4 h-4" /> },
     { id: "financial", label: "Financial", icon: <DollarSign className="w-4 h-4" /> },
     { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
     { id: "security", label: "Security & Fraud", icon: <Shield className="w-4 h-4" /> },
@@ -283,6 +284,9 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
+            {tab === "supplyChain" && <SupplyChainPanel />}
+
+
             {tab === "financial" && (
               <div>
                 <div className="grid sm:grid-cols-3 gap-3 mb-5">
@@ -335,6 +339,195 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Ops view over the whole international sourcing pipeline: which suppliers
+// exist, what's sitting at each of the 5 warehouse hubs, and the two-leg
+// journey (origin QC -> consolidated shipment -> destination customs) every
+// imported order line travels through.
+const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
+  ordered_from_supplier: ["received_at_origin_hub"],
+  received_at_origin_hub: ["qc_passed_origin", "qc_failed_origin"],
+  qc_passed_origin: ["in_transit_to_destination"],
+  qc_failed_origin: [],
+  in_transit_to_destination: ["received_at_destination_hub"],
+  received_at_destination_hub: ["customs_cleared"],
+  customs_cleared: ["shipped_to_customer"],
+  shipped_to_customer: ["delivered"],
+  delivered: [],
+};
+
+function SupplyChainPanel() {
+  const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments">("orders");
+  const [suppliers, setSuppliers] = useState<R[]>([]);
+  const [warehouses, setWarehouses] = useState<R[]>([]);
+  const [supplierOrders, setSupplierOrders] = useState<R[]>([]);
+  const [shipments, setShipments] = useState<R[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [supRes, whRes, soRes, shRes] = await Promise.allSettled([
+      mktAdmin.suppliers.list(), mktAdmin.warehouses.list(), mktAdmin.supplierOrders.list(), mktAdmin.shipments.list(),
+    ]);
+    if (supRes.status === "fulfilled") setSuppliers(supRes.value.data as R[]);
+    if (whRes.status === "fulfilled") setWarehouses(whRes.value.data as R[]);
+    if (soRes.status === "fulfilled") setSupplierOrders(soRes.value.data as R[]);
+    if (shRes.status === "fulfilled") setShipments(shRes.value.data as R[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const advanceOrder = async (id: string, status: string) => {
+    setBusyId(id);
+    const res = await mktAdmin.supplierOrders.updateStatus(id, { status });
+    setBusyId(null);
+    if (!res.success) toast.error(res.error ?? "Could not update this order.");
+    load();
+  };
+
+  const advanceShipment = async (id: string, status: string) => {
+    setBusyId(id);
+    const res = await mktAdmin.shipments.updateStatus(id, { status });
+    setBusyId(null);
+    if (!res.success) toast.error(res.error ?? "Could not update this shipment.");
+    load();
+  };
+
+  const SUB_TABS: { id: typeof subTab; label: string; icon: React.ReactNode }[] = [
+    { id: "orders", label: "Supplier Orders", icon: <Package className="w-3.5 h-3.5" /> },
+    { id: "shipments", label: "Shipments", icon: <Truck className="w-3.5 h-3.5" /> },
+    { id: "warehouses", label: "Warehouses", icon: <Warehouse className="w-3.5 h-3.5" /> },
+    { id: "suppliers", label: "Suppliers", icon: <Globe2 className="w-3.5 h-3.5" /> },
+  ];
+
+  if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+
+  return (
+    <div>
+      <div className="flex gap-1 mb-4">
+        {SUB_TABS.map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
+            style={{ background: subTab === t.id ? "#14110D" : "#F3F4F6", color: subTab === t.id ? "white" : "#374151" }}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "orders" && (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Supplier Orders — two-leg fulfilment ({supplierOrders.length})</span></div>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
+              <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Route</th>
+              <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+            </tr></thead>
+            <tbody>
+              {supplierOrders.map((so, i) => {
+                const next = SUPPLIER_ORDER_NEXT[String(so.status)] ?? [];
+                return (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(so.sellerName)}</td>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
+                    <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(so.status).replace(/_/g, " ")}</td>
+                    <td className="px-4 py-2.5">
+                      {next.length ? next.map(n => (
+                        <button key={n} onClick={() => advanceOrder(String(so.id), n)} disabled={busyId === so.id}
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: n.includes("failed") ? "#DC2626" : "#B8862E" }}>
+                          {busyId === so.id ? "..." : n.replace(/_/g, " ")}
+                        </button>
+                      )) : <span className="text-xs text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!supplierOrders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No supplier orders yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === "shipments" && (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Shipments — consolidated 2nd-leg freight ({shipments.length})</span></div>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Carrier</th>
+              <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+            </tr></thead>
+            <tbody>
+              {shipments.map((sh, i) => {
+                const next: Record<string, string> = { in_transit: "received_at_destination", received_at_destination: "customs_cleared", customs_cleared: "closed" };
+                const n = next[String(sh.status)];
+                return (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 text-gray-600 text-xs">{String(sh.originWarehouseName)} → {String(sh.destinationWarehouseName)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(sh.carrier ?? "—")}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(sh.orderCount ?? 0)}</td>
+                    <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(sh.status).replace(/_/g, " ")}</td>
+                    <td className="px-4 py-2.5">
+                      {n ? (
+                        <button onClick={() => advanceShipment(String(sh.id), n)} disabled={busyId === sh.id}
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                          {busyId === sh.id ? "..." : `Mark ${n.replace(/_/g, " ")}`}
+                        </button>
+                      ) : <span className="text-xs text-gray-300">—</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!shipments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-400">No shipments yet — batch QC-passed orders once enough have accumulated at an origin hub.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {subTab === "warehouses" && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {warehouses.map((w, i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-bold text-gray-900">{String(w.name)}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: w.type === "origin" ? "#EFF6FF" : "#ECFDF5", color: w.type === "origin" ? "#1D4ED8" : "#059669" }}>{String(w.type)}</span>
+              </div>
+              <p className="text-xs text-gray-400">{String(w.country)} · {String(w.address ?? "")}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {subTab === "suppliers" && (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Suppliers ({suppliers.length})</span></div>
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
+              <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
+              <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
+            </tr></thead>
+            <tbody>
+              {suppliers.map((s, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
+                  <td className="px-4 py-2.5">{s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
