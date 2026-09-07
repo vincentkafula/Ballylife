@@ -49,6 +49,7 @@ import { OrderTracking } from "./OrderTracking";
 import { ContactPage } from "./ContactPage";
 import { TermsPage } from "./TermsPage";
 import { HumanRightsPage } from "./HumanRightsPage";
+import { DisclosurePage } from "./DisclosurePage";
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
@@ -59,7 +60,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1668,15 +1669,16 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     setView("home");
   };
 
-  // "Track Order", "Contact Us", "Platform Terms" and "Human Rights
-  // Statement" are wired to actual destinations; every other footer link
-  // stays a structural placeholder (dispatches the existing fallback
-  // event) until it has somewhere real to go.
+  // "Track Order", "Contact Us", "Platform Terms", "Human Rights
+  // Statement" and "Responsible Disclosure Policy" are wired to actual
+  // destinations; every other footer link stays a structural placeholder
+  // (dispatches the existing fallback event) until it has somewhere real to go.
   const handleFooterLink = (label: string) => {
     if (label === "Track Order") { setView("trackOrder"); return; }
     if (label === "Contact Us") { setView("contactPage"); return; }
     if (label === "Platform Terms") { setView("termsPage"); return; }
     if (label === "Human Rights Statement") { setView("humanRightsPage"); return; }
+    if (label === "Responsible Disclosure Policy") { setView("disclosurePage"); return; }
     window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
   };
 
@@ -1973,6 +1975,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
           {view === "humanRightsPage" && (
             <HumanRightsPage onBack={() => setView("home")} />
+          )}
+          {view === "disclosurePage" && (
+            <DisclosurePage onBack={() => setView("home")} />
           )}
           {view === "admin" && authUser && role === "manager" && (
             <ManagerDashboard user={authUser} onSignOut={handleSignOut} />
