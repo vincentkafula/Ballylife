@@ -96,11 +96,14 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
     }
     #bl-country-search:focus{border-color:var(--bl-green); box-shadow:0 0 0 3px rgba(20,108,67,.12);}
 
-    /* Balanced masonry-style columns -- regions settle into place by their
-       own height instead of being wedged into fixed column pairings
-       (which is exactly why one long region used to tower over the rest). */
-    .bl-region-columns{columns:3 220px; column-gap:22px;}
-    .bl-region{break-inside:avoid; margin-bottom:20px; display:inline-block; width:100%;}
+    /* Fixed 3-column grid, top-aligned -- each column starts flush at
+       the top, same as the page's original layout. Long regions
+       (West/Southern Africa) stay well-behaved via the chip-truncation
+       below instead of needing an auto-balancing masonry layout. */
+    .bl-region-columns{display:grid; grid-template-columns:repeat(3,1fr); gap:20px; align-items:start;}
+    .bl-region-col{min-width:0;}
+    .bl-region{margin-bottom:0;}
+    .bl-region + .bl-region{margin-top:22px;}
     .bl-region h5{color:var(--bl-orange); font-size:14px; margin:0 0 10px; font-weight:700;}
 
     .bl-chip-wrap{display:flex; flex-wrap:wrap; gap:6px;}
@@ -243,14 +246,14 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
       .bl-hero{padding:50px 0 60px;}
       .bl-hero h1{font-size:36px;}
       .bl-hero-tag{display:none;}
-      .bl-region-columns{columns:2 180px;}
+      .bl-region-columns{grid-template-columns:repeat(2,1fr);}
       .bl-field-row{grid-template-columns:1fr;}
       .bl-feature-strip{grid-template-columns:1fr;}
       .bl-map-grid{grid-template-columns:1fr;}
       .bl-footer-inner{flex-direction:column; text-align:center;}
     }
     @media (max-width:480px){
-      .bl-region-columns{columns:1;}
+      .bl-region-columns{columns:1; grid-template-columns:1fr;}
     }
   </style>
 
@@ -320,36 +323,42 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
             <input type="text" id="bl-country-search" placeholder="Find your country..." autocomplete="off">
           </div>
           <div class="bl-region-columns" id="bl-region-columns">
-            <div class="bl-region" data-region="North Africa">
-              <h5>North Africa</h5>
-              <div class="bl-chip-wrap">
-                <button class="bl-chip" data-country="Algeria">Algeria</button><button class="bl-chip" data-country="Egypt">Egypt</button><button class="bl-chip" data-country="Libya">Libya</button><button class="bl-chip" data-country="Morocco">Morocco</button><button class="bl-chip" data-country="Sudan">Sudan</button><button class="bl-chip" data-country="Tunisia">Tunisia</button><button class="bl-chip" data-country="Western Sahara">Western Sahara</button>
+            <div class="bl-region-col">
+              <div class="bl-region" data-region="North Africa">
+                <h5>North Africa</h5>
+                <div class="bl-chip-wrap">
+                  <button class="bl-chip" data-country="Algeria">Algeria</button><button class="bl-chip" data-country="Egypt">Egypt</button><button class="bl-chip" data-country="Libya">Libya</button><button class="bl-chip" data-country="Morocco">Morocco</button><button class="bl-chip" data-country="Sudan">Sudan</button><button class="bl-chip" data-country="Tunisia">Tunisia</button><button class="bl-chip" data-country="Western Sahara">Western Sahara</button>
+                </div>
+              </div>
+              <div class="bl-region" data-region="West Africa">
+                <h5>West Africa</h5>
+                <div class="bl-chip-wrap">
+                  <button class="bl-chip" data-country="Benin">Benin</button><button class="bl-chip" data-country="Burkina Faso">Burkina Faso</button><button class="bl-chip" data-country="Cabo Verde">Cabo Verde</button><button class="bl-chip" data-country="Cote d'Ivoire">Cote d'Ivoire</button><button class="bl-chip" data-country="Gambia">Gambia</button><button class="bl-chip" data-country="Ghana">Ghana</button><button class="bl-chip" data-country="Guinea">Guinea</button><button class="bl-chip" data-country="Guinea-Bissau">Guinea-Bissau</button><button class="bl-chip" data-country="Liberia">Liberia</button><button class="bl-chip" data-country="Mali">Mali</button><button class="bl-chip" data-country="Mauritania">Mauritania</button><button class="bl-chip" data-country="Niger">Niger</button><button class="bl-chip" data-country="Nigeria">Nigeria</button><button class="bl-chip" data-country="Senegal">Senegal</button><button class="bl-chip" data-country="Sierra Leone">Sierra Leone</button><button class="bl-chip" data-country="Togo">Togo</button>
+                  <span class="bl-chip-toggle" role="button" tabindex="0" data-more="7">+7 more</span>
+                </div>
               </div>
             </div>
-            <div class="bl-region" data-region="West Africa">
-              <h5>West Africa</h5>
-              <div class="bl-chip-wrap">
-                <button class="bl-chip" data-country="Benin">Benin</button><button class="bl-chip" data-country="Burkina Faso">Burkina Faso</button><button class="bl-chip" data-country="Cabo Verde">Cabo Verde</button><button class="bl-chip" data-country="Cote d'Ivoire">Cote d'Ivoire</button><button class="bl-chip" data-country="Gambia">Gambia</button><button class="bl-chip" data-country="Ghana">Ghana</button><button class="bl-chip" data-country="Guinea">Guinea</button><button class="bl-chip" data-country="Guinea-Bissau">Guinea-Bissau</button><button class="bl-chip" data-country="Liberia">Liberia</button><button class="bl-chip" data-country="Mali">Mali</button><button class="bl-chip" data-country="Mauritania">Mauritania</button><button class="bl-chip" data-country="Niger">Niger</button><button class="bl-chip" data-country="Nigeria">Nigeria</button><button class="bl-chip" data-country="Senegal">Senegal</button><button class="bl-chip" data-country="Sierra Leone">Sierra Leone</button><button class="bl-chip" data-country="Togo">Togo</button>
-                <span class="bl-chip-toggle" role="button" tabindex="0" data-more="7">+7 more</span>
+            <div class="bl-region-col">
+              <div class="bl-region" data-region="East Africa">
+                <h5>East Africa</h5>
+                <div class="bl-chip-wrap">
+                  <button class="bl-chip" data-country="Burundi">Burundi</button><button class="bl-chip" data-country="Djibouti">Djibouti</button><button class="bl-chip" data-country="Eritrea">Eritrea</button><button class="bl-chip" data-country="Ethiopia">Ethiopia</button><button class="bl-chip" data-country="Kenya">Kenya</button><button class="bl-chip" data-country="Rwanda">Rwanda</button><button class="bl-chip" data-country="Somalia">Somalia</button><button class="bl-chip" data-country="South Sudan">South Sudan</button><button class="bl-chip" data-country="Uganda">Uganda</button>
+                </div>
               </div>
             </div>
-            <div class="bl-region" data-region="East Africa">
-              <h5>East Africa</h5>
-              <div class="bl-chip-wrap">
-                <button class="bl-chip" data-country="Burundi">Burundi</button><button class="bl-chip" data-country="Djibouti">Djibouti</button><button class="bl-chip" data-country="Eritrea">Eritrea</button><button class="bl-chip" data-country="Ethiopia">Ethiopia</button><button class="bl-chip" data-country="Kenya">Kenya</button><button class="bl-chip" data-country="Rwanda">Rwanda</button><button class="bl-chip" data-country="Somalia">Somalia</button><button class="bl-chip" data-country="South Sudan">South Sudan</button><button class="bl-chip" data-country="Uganda">Uganda</button>
+            <div class="bl-region-col">
+              <div class="bl-region" data-region="Central Africa">
+                <h5>Central Africa</h5>
+                <div class="bl-chip-wrap">
+                  <button class="bl-chip" data-country="Cameroon">Cameroon</button><button class="bl-chip" data-country="Central African Republic">Central African Republic</button><button class="bl-chip" data-country="Chad">Chad</button><button class="bl-chip" data-country="Republic of the Congo">Republic of the Congo</button><button class="bl-chip" data-country="Equatorial Guinea">Equatorial Guinea</button><button class="bl-chip" data-country="Gabon">Gabon</button><button class="bl-chip" data-country="Sao Tome and Principe">Sao Tome and Principe</button>
+                </div>
               </div>
-            </div>
-            <div class="bl-region" data-region="Central Africa">
-              <h5>Central Africa</h5>
-              <div class="bl-chip-wrap">
-                <button class="bl-chip" data-country="Cameroon">Cameroon</button><button class="bl-chip" data-country="Central African Republic">Central African Republic</button><button class="bl-chip" data-country="Chad">Chad</button><button class="bl-chip" data-country="Republic of the Congo">Republic of the Congo</button><button class="bl-chip" data-country="Equatorial Guinea">Equatorial Guinea</button><button class="bl-chip" data-country="Gabon">Gabon</button><button class="bl-chip" data-country="Sao Tome and Principe">Sao Tome and Principe</button>
-              </div>
-            </div>
-            <div class="bl-region" data-region="Southern Africa (SADC)">
-              <h5>Southern Africa (SADC)</h5>
-              <div class="bl-chip-wrap">
-                <button class="bl-chip" data-country="Angola">Angola</button><button class="bl-chip" data-country="Botswana">Botswana</button><button class="bl-chip" data-country="Comoros">Comoros</button><button class="bl-chip" data-country="Democratic Republic of the Congo">Democratic Republic of the Congo</button><button class="bl-chip" data-country="Eswatini (Swaziland)">Eswatini (Swaziland)</button><button class="bl-chip" data-country="Lesotho">Lesotho</button><button class="bl-chip" data-country="Madagascar">Madagascar</button><button class="bl-chip" data-country="Malawi">Malawi</button><button class="bl-chip" data-country="Mauritius">Mauritius</button><button class="bl-chip" data-country="Mozambique">Mozambique</button><button class="bl-chip" data-country="Namibia">Namibia</button><button class="bl-chip" data-country="Seychelles">Seychelles</button><button class="bl-chip" data-country="South Africa">South Africa</button><button class="bl-chip" data-country="Tanzania">Tanzania</button><button class="bl-chip" data-country="Zambia">Zambia</button><button class="bl-chip" data-country="Zimbabwe">Zimbabwe</button>
-                <span class="bl-chip-toggle" role="button" tabindex="0" data-more="7">+7 more</span>
+              <div class="bl-region" data-region="Southern Africa (SADC)">
+                <h5>Southern Africa (SADC)</h5>
+                <div class="bl-chip-wrap">
+                  <button class="bl-chip" data-country="Angola">Angola</button><button class="bl-chip" data-country="Botswana">Botswana</button><button class="bl-chip" data-country="Comoros">Comoros</button><button class="bl-chip" data-country="Democratic Republic of the Congo">Democratic Republic of the Congo</button><button class="bl-chip" data-country="Eswatini (Swaziland)">Eswatini (Swaziland)</button><button class="bl-chip" data-country="Lesotho">Lesotho</button><button class="bl-chip" data-country="Madagascar">Madagascar</button><button class="bl-chip" data-country="Malawi">Malawi</button><button class="bl-chip" data-country="Mauritius">Mauritius</button><button class="bl-chip" data-country="Mozambique">Mozambique</button><button class="bl-chip" data-country="Namibia">Namibia</button><button class="bl-chip" data-country="Seychelles">Seychelles</button><button class="bl-chip" data-country="South Africa">South Africa</button><button class="bl-chip" data-country="Tanzania">Tanzania</button><button class="bl-chip" data-country="Zambia">Zambia</button><button class="bl-chip" data-country="Zimbabwe">Zimbabwe</button>
+                  <span class="bl-chip-toggle" role="button" tabindex="0" data-more="7">+7 more</span>
+                </div>
               </div>
             </div>
           </div>
