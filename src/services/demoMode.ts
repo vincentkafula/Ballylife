@@ -816,6 +816,16 @@ export const mktMock = {
     return { success:true, data:order };
   },
   orders: () => ({ success:true, data:MKT_ORDERS, meta:{ total:MKT_ORDERS.length } }),
+  trackOrder: (qs: Record<string,string>) => {
+    const order = MKT_ORDERS.find((o: R) => o.orderNumber === qs.orderNumber) ?? MKT_ORDERS[0];
+    if (!order) return { success:false, error:"No order found with that order number and email" };
+    return { success:true, data:{
+      orderNumber: order.orderNumber, status: order.status, shippingStatus: order.shippingStatus, paymentStatus: order.paymentStatus,
+      totalAmount: order.totalAmount, currency: order.currency, trackingNumber: order.trackingNumber ?? null, carrier: order.carrier ?? null,
+      estimatedDelivery: order.estimatedDelivery, placedAt: order.placedAt, shippedAt: order.shippedAt ?? null, deliveredAt: order.deliveredAt ?? null,
+      items: order.items, importedItems: [],
+    } };
+  },
   wishlist: () => ({ success:true, data:MKT_PRODUCTS.slice(0,3), meta:{ total:3 } }),
   sellers: () => ({ success:true, data:[
     { id:"sel-01", storeName:"TechZone SA",  avgRating:4.7, totalSales:1842, totalRevenue:2480000, status:"active", kycVerified:true, totalProducts:5 },

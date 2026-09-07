@@ -66,6 +66,7 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/supplier-orders") && path.includes("/resolve")) return mktMock.adminResolveSupplierOrder(path.split("/admin/supplier-orders/")[1].split("/resolve")[0], body);
   if (path.includes("/admin/supplier-orders") && path.includes("/status")) return mktMock.adminUpdateSupplierOrderStatus(path.split("/admin/supplier-orders/")[1].split("/status")[0], body);
   if (path.includes("/admin/supplier-orders"))  return mktMock.adminSupplierOrders();
+  if (path.includes("/orders/track"))            return mktMock.trackOrder(qs);
   if (path.includes("/orders") && method === "POST")   return mktMock.placeOrder(body);
   if (path.includes("/orders"))                  return mktMock.orders();
   if (path.includes("/wishlist") && method === "POST")   return { success: true, message: "Added to wishlist" };
@@ -147,6 +148,7 @@ export const mktOrders = {
   place:  (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/orders", { method: "POST", body: JSON.stringify(body) }),
   cancel: (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/${id}/cancel`, { method: "POST" }),
   requestReturn: (id: string, reason: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/${id}/request-return`, { method: "POST", body: JSON.stringify({ reason }) }),
+  track: (orderNumber: string, email: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/track?${new URLSearchParams({ orderNumber, email })}`),
 };
 
 export const mktWishlist = {

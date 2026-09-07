@@ -355,6 +355,7 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
   const [country, setCountry] = useState<string>("");
   const [search, setSearch] = useState("");
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -370,9 +371,11 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
   useEffect(() => { load(); }, [load]);
 
   const importItem = async (item: R) => {
+    const draft = priceDraft[String(item.id)];
+    const retailPrice = draft ? Number(draft) : undefined;
     setImportingId(String(item.id));
     setMessage(null);
-    const res = await mktSellers.importListing(sellerId, { supplierProductId: item.id });
+    const res = await mktSellers.importListing(sellerId, { supplierProductId: item.id, retailPrice });
     setImportingId(null);
     if (res.success) {
       setMessage(res.message ?? "Imported to your store.");
@@ -386,7 +389,7 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
     <div>
       <div className="mb-4">
         <p className="text-sm font-bold text-gray-900 mb-1">Import from Suppliers</p>
-        <p className="text-xs text-gray-500">Pick an item from Ballylife's vetted China / Japan / South Korea supplier catalog and it becomes a listing in your store, at the price the supplier relationship is sold at. Sourcing, pricing, warehouse QC, customs, and delivery are all handled centrally — you never deal with the supplier directly, and price/discount changes need marketplace-team approval.</p>
+        <p className="text-xs text-gray-500">Pick an item from Ballylife's vetted China / Japan / South Korea supplier catalog, see the supplier's price, and set your own retail price (your profit margin) before it becomes a listing in your store. Sourcing, warehouse QC, customs, and delivery are all handled centrally — you never deal with the supplier directly. Once live, price changes need marketplace-team approval.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -413,9 +416,11 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {items.map(item => {
-            const retail = Number(item.retailPrice ?? 0);
-            const compareAt = item.compareAtPrice !== null && item.compareAtPrice !== undefined ? Number(item.compareAtPrice) : null;
-            const priceNotSet = !retail || retail <= 0;
+            const cost = Number(item.costPrice ?? 0);
+            const suggested = Number(item.retailPrice ?? 0);
+            const draft = priceDraft[String(item.id)] ?? (suggested > 0 ? String(suggested) : "");
+            const finalPrice = draft ? Number(draft) : 0;
+            const canImport = finalPrice > 0;
             return (
               <div key={String(item.id)} className="bg-white rounded-xl border border-gray-100 p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -436,17 +441,17 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                 ) : (
                   <p className="text-[11px] text-gray-400 mb-2">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
                 )}
-                <div className="flex items-baseline gap-2 mb-3">
-                  {priceNotSet ? (
-                    <span className="text-xs font-semibold text-amber-600">Price not set yet</span>
-                  ) : (
-                    <>
-                      <span className="text-sm font-bold text-gray-900">R{retail.toFixed(2)}</span>
-                      {compareAt && compareAt > retail && <span className="text-xs text-gray-400 line-through">R{compareAt.toFixed(2)}</span>}
-                    </>
-                  )}
-                </div>
-                <button onClick={() => importItem(item)} disabled={importingId === item.id || priceNotSet}
+                <p className="text-xs font-semibold text-gray-600 mb-2">Supplier price: {String(item.currency)} {cost.toFixed(2)}{suggested > 0 ? ` · Suggested R${suggested.toFixed(2)}` : ""}</p>
+                <label className="block mb-2">
+                  <span className="text-[11px] text-gray-500">Your retail price (ZAR)</span>
+                  <input type="number" step="0.01" placeholder="Set your price" value={draft}
+                    onChange={e => setPriceDraft({ ...priceDraft, [String(item.id)]: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm mt-1" />
+                </label>
+                {canImport && suggested > 0 && finalPrice !== suggested && (
+                  <p className="text-[11px] text-gray-400 mb-2">Suggested was R{suggested.toFixed(2)}</p>
+                )}
+                <button onClick={() => importItem(item)} disabled={importingId === item.id || !canImport}
                   className="w-full text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#B8862E" }}>
                   {importingId === item.id ? "Importing..." : "Import to my store"}
                 </button>

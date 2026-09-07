@@ -45,6 +45,7 @@ function getProductIllustration(p: Record<string, unknown>): (() => ReactNode) |
   return undefined;
 }
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
+import { OrderTracking } from "./OrderTracking";
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
@@ -55,7 +56,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -485,10 +486,10 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
   );
 }
 
-function HomeView({ categories, products, onCategory, onProduct, onCart, wishlistIds, onWishlist }: {
+function HomeView({ categories, products, onCategory, onProduct, onCart, wishlistIds, onWishlist, onFooterLink }: {
   categories: R[]; products: R[];
   onCategory: () => void; onProduct: (p: R) => void;
-  onCart: (p: R) => void; wishlistIds: Set<string>; onWishlist: (id: string) => void;
+  onCart: (p: R) => void; wishlistIds: Set<string>; onWishlist: (id: string) => void; onFooterLink: (label: string) => void;
 }) {
   const featured = products.filter(p => p.isFeatured);
   const topPicks = products.slice(0, 78);
@@ -652,15 +653,15 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         ))}
       </div>
 
-      <Footer />
+      <Footer onLinkClick={onFooterLink} />
     </div>
   );
 }
 
 // ─── CATALOG ──────────────────────────────────────────────────────────────────
-function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, initialSearch }: {
+function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, initialSearch, onFooterLink }: {
   categories: R[]; onProduct: (p: R) => void; onCart: (p: R) => void;
-  wishlistIds: Set<string>; onWishlist: (id: string) => void; initialSearch?: string;
+  wishlistIds: Set<string>; onWishlist: (id: string) => void; initialSearch?: string; onFooterLink: (label: string) => void;
 }) {
   const [products, setProducts] = useState<R[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -778,18 +779,18 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
             })}
           </div>
         )}
-        <Footer />
+        <Footer onLinkClick={onFooterLink} />
       </div>
     </div>
   );
 }
 
 // ─── PRODUCT DETAIL ───────────────────────────────────────────────────────────
-function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist, authUser, onRequireAuth }: {
+function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist, authUser, onRequireAuth, onFooterLink }: {
   productId: string; onBack: () => void;
   onCart: (p: R, variantId?: string) => void;
   wishlistIds: Set<string>; onWishlist: (id: string) => void;
-  authUser: { id: string; name: string } | null; onRequireAuth: () => void;
+  authUser: { id: string; name: string } | null; onRequireAuth: () => void; onFooterLink: (label: string) => void;
 }) {
   const [data, setData]   = useState<{ product: R; seller: R; reviews: R[]; related: R[] } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1065,7 +1066,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           </div>
         </div>
       )}
-      <Footer />
+      <Footer onLinkClick={onFooterLink} />
     </div>
   );
 }
@@ -1579,6 +1580,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     setView("home");
   };
 
+  // Only "Track Order" is wired to an actual destination right now — every
+  // other footer link stays a structural placeholder (dispatches the
+  // existing fallback event) until it has somewhere real to go.
+  const handleFooterLink = (label: string) => {
+    if (label === "Track Order") { setView("trackOrder"); return; }
+    window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
+  };
+
   const gateOrPrompt = (dest: View) => {
     if (!authUser) { setShowAuthModal(true); return; }
     setView(dest);
@@ -1802,6 +1811,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               onProduct={p => { setSelProductId(String(p.id)); setView("product"); }}
               onCart={handleAddToCart}
               wishlistIds={wishlistIds} onWishlist={handleWishlist}
+              onFooterLink={handleFooterLink}
             />
           )}
           {view === "catalog" && (
@@ -1811,6 +1821,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               onCart={handleAddToCart}
               wishlistIds={wishlistIds} onWishlist={handleWishlist}
               initialSearch={submittedSearch}
+              onFooterLink={handleFooterLink}
             />
           )}
           {view === "product" && (
@@ -1820,6 +1831,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               onCart={(p, v) => { handleAddToCart(p, v); setView("cart"); }}
               wishlistIds={wishlistIds} onWishlist={handleWishlist}
               authUser={authUser} onRequireAuth={() => setShowAuthModal(true)}
+              onFooterLink={handleFooterLink}
             />
           )}
           {view === "cart" && authUser && (
@@ -1857,6 +1869,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
           {view === "authority" && authUser && authAuthority && role === "authority" && (
             <AuthorityDashboard user={authUser} authority={authAuthority} onSignOut={handleSignOut} />
+          )}
+          {view === "trackOrder" && (
+            <OrderTracking onBack={() => setView("home")} />
           )}
           {view === "admin" && authUser && role === "manager" && (
             <ManagerDashboard user={authUser} onSignOut={handleSignOut} />

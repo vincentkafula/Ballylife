@@ -801,7 +801,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           <Plus className="w-3.5 h-3.5" /> Add catalog item
         </button>
       </div>
-      <p className="text-xs text-gray-400 mb-3">Retail price and discount are set here by the marketplace team on the supplier's behalf — sellers who import an item get this price as-is and can't change it themselves.</p>
+      <p className="text-xs text-gray-400 mb-3">Cost price is what the supplier charges Ballylife — set that here to reflect the actual supplier agreement. Retail price here is only a suggested starting point sellers see; each seller sets their own final retail price (their profit margin) when they import an item. Any price change after a listing is live still needs manager approval.</p>
 
       {adding && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">

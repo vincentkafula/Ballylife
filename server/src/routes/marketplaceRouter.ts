@@ -442,6 +442,45 @@ router.post("/cart/:userId/coupon", requireAuth, requireSelf, async (req: Reques
 });
 
 // ── ORDERS ────────────────────────────────────────────────────────────────────
+// Public order tracking — no login required, since a guest checkout buyer
+// still needs to check on their order. Requires both the order number and
+// the email it was placed with (a lightweight anti-enumeration check, not
+// full auth) — a mismatch returns the same 404 as a nonexistent order
+// number, so this can't be used to confirm whether an email placed an
+// order at all. Returns customer-safe fields only: no supplier names, no
+// cost/margin figures, no internal warehouse identifiers — just enough to
+// show a timeline.
+router.get("/orders/track", async (req: Request, res: Response): Promise<void> => {
+  const { orderNumber, email } = req.query as Record<string, string>;
+  if (!orderNumber || !email) { res.status(400).json({ success: false, error: "orderNumber and email are required" }); return; }
+
+  const { rows } = await pool!.query(`SELECT * FROM mkt_orders WHERE order_number = $1`, [orderNumber]);
+  if (!rows.length || rows[0].customer_email.toLowerCase() !== email.toLowerCase()) {
+    res.status(404).json({ success: false, error: "No order found with that order number and email" });
+    return;
+  }
+  const order = rows[0];
+
+  const { rows: supplierOrders } = await pool!.query(
+    `SELECT so.status, so.quantity, p.name AS product_name, p.emoji
+     FROM mkt_supplier_orders so JOIN mkt_products p ON p.id = so.product_id
+     WHERE so.order_id = $1 ORDER BY so.created_at`,
+    [order.id]
+  );
+
+  res.json({
+    success: true,
+    data: {
+      orderNumber: order.order_number, status: order.status, shippingStatus: order.shipping_status,
+      paymentStatus: order.payment_status, totalAmount: Number(order.total_amount), currency: order.currency,
+      trackingNumber: order.tracking_number, carrier: order.carrier, estimatedDelivery: order.estimated_delivery,
+      placedAt: order.placed_at, shippedAt: order.shipped_at, deliveredAt: order.delivered_at,
+      items: order.items,
+      importedItems: supplierOrders.map((so: any) => ({ productName: so.product_name, emoji: so.emoji, quantity: so.quantity, status: so.status })),
+    },
+  });
+});
+
 router.get("/orders", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { status, page: pg, limit: lim } = req.query as Record<string, string>;
   const isManager = MANAGER_ROLES.includes(req.user!.role as any);
@@ -1146,13 +1185,16 @@ router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req
   res.status(201).json({ success: true, data: mapProduct(rows[0]), message: "Product submitted — it will appear once approved by the marketplace team." });
 });
 
-// Import a supplier-catalog item into this seller's own store — the seller
-// never sees the supplier, warehouse, or cost price, and never sets the
-// retail price either: that's set by the supplier relationship (entered by
-// a manager on mkt_supplier_products) and copied onto the listing as-is.
-// Sellers only choose whether to list it and how much stock to carry.
+// Import a supplier-catalog item into this seller's own store — the
+// seller picks their own retail price (their markup on top of the
+// supplier's price), same as the business actually runs: supplier sets
+// their price, seller adds their profit margin on top. sp.retail_price is
+// now only a manager-set *suggested* starting point shown to the seller,
+// not the enforced price — but a manager can still edit/override any
+// listing's price after the fact via PATCH /sellers/:id/products/:id or
+// PATCH /admin/products/:id/price, which stay manager-only.
 router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
-  const { supplierProductId, stock } = req.body;
+  const { supplierProductId, stock, retailPrice, compareAtPrice } = req.body;
   if (!supplierProductId) { res.status(400).json({ success: false, error: "supplierProductId is required" }); return; }
 
   const { rows: spRows } = await pool!.query(
@@ -1162,7 +1204,11 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
   const sp = spRows[0];
 
   if (!sp.category_id) { res.status(400).json({ success: false, error: "This catalog item has no category set — ask the marketplace team to assign one before importing." }); return; }
-  if (Number(sp.retail_price) <= 0) { res.status(400).json({ success: false, error: "This catalog item has no retail price set yet — ask a manager to set one before importing." }); return; }
+  // Seller's own price if they gave one; otherwise fall back to the
+  // manager's suggested price on the catalog item, if any was set.
+  const finalRetailPrice = retailPrice !== undefined && retailPrice !== null && retailPrice !== "" ? Number(retailPrice) : Number(sp.retail_price);
+  if (!finalRetailPrice || finalRetailPrice <= 0) { res.status(400).json({ success: false, error: "Set a retail price for this listing (your price on top of the supplier's cost)." }); return; }
+  const finalCompareAtPrice = compareAtPrice !== undefined && compareAtPrice !== null && compareAtPrice !== "" ? Number(compareAtPrice) : (sp.compare_at_price ?? null);
   // Note: a used vehicle can still be listed here even though it can never
   // be delivered to a South African address — Zambia allows used-vehicle
   // imports freely, so the same listing legitimately serves Zambian
@@ -1177,7 +1223,7 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
       `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
          currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17) RETURNING *`,
-      [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", sp.retail_price, sp.compare_at_price ?? null,
+      [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", finalRetailPrice, finalCompareAtPrice,
        JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId,
        sp.vehicle_details ? JSON.stringify(sp.vehicle_details) : null, sp.condition ?? null, sp.nrcs_approved ?? false, sp.nrcs_reference ?? null]
     );
