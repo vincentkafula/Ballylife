@@ -847,6 +847,13 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     const defaultDutyRatePct = taxRateRows.length ? Number(taxRateRows[0].default_duty_rate_pct) : 20;
     const { rows: dutyRateRows } = await client.query(`SELECT category_id, duty_rate_pct FROM mkt_duty_rates WHERE country = $1`, [shippingAddress.country]);
     const dutyRateByCategory = new Map(dutyRateRows.map((r: any) => [r.category_id, Number(r.duty_rate_pct)]));
+    // Fetched once, reused for both the duty calculation below (a
+    // supplier's cost, and Zambia's flat vehicle duty, are both quoted in
+    // a foreign currency and need converting to ZAR before they mean
+    // anything alongside the rest of this order) and the settlement
+    // calculation further down.
+    const { rows: fxRows } = await client.query(`SELECT * FROM mkt_fx_rates`);
+    const fxByCurrency = new Map(fxRows.map((r: any) => [r.currency, Number(r.rate_to_zar)]));
     // Zambia taxes used vehicles 2+ years old on ZRA's flat specific-duty
     // schedule (kwacha, by body type/engine size/age band) instead of a
     // percentage of value — a fundamentally different mechanism from
@@ -859,9 +866,11 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // Import duty is never charged to the customer directly — it's a cost
     // Ballylife carries and settles at the border (see mkt_customs_records
     // once the shipment is batched). Computed here on the supplier cost
-    // value (the actual CIF-ish base customs assesses against) purely so
-    // an order's full landed-cost picture is visible to admins reconciling
-    // against what's later declared.
+    // value (the actual CIF-ish base customs assesses against), converted
+    // to ZAR via mkt_fx_rates so it's actually comparable to the rest of
+    // this order's figures — purely so an order's full landed-cost
+    // picture is visible to admins reconciling against what's later
+    // declared.
     let dutyAmount = 0;
     for (const item of items) {
       const f = itemFulfillment.get(item.productId);
@@ -878,17 +887,28 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
           ? vehicleDutyZmRows.find((r: any) => r.body_type === vd.bodyType && r.age_band === ageBand && Number(vd.engineCc) >= r.engine_cc_min && (r.engine_cc_max === null || Number(vd.engineCc) <= r.engine_cc_max))
           : null;
         if (match) {
-          // NOTE: this flat amount is in Zambian Kwacha (ZRA's schedule),
-          // added directly into an order total that's otherwise tracked
-          // in ZAR throughout this system — a real FX conversion belongs
-          // here before this is relied on for an actual ZM filing.
-          dutyAmount += (Number(match.duty_kwacha) + Number(match.carbon_surtax_kwacha)) * item.quantity;
+          // ZRA's schedule is in Zambian Kwacha — converted to ZAR here
+          // via mkt_fx_rates (currency "ZMW") rather than added raw, so
+          // this stays comparable to the rest of the order. If no ZMW
+          // rate is on file yet, the kwacha figure is skipped entirely
+          // (flagged via console) rather than silently added unconverted.
+          const zmwRate = fxByCurrency.get("ZMW");
+          if (zmwRate) {
+            dutyAmount += (Number(match.duty_kwacha) + Number(match.carbon_surtax_kwacha)) * item.quantity * zmwRate;
+          } else {
+            console.error(`[orders] No ZMW FX rate on file — Zambia vehicle duty for order ${orderNumber} item ${item.productId} was skipped, not silently added unconverted. Add a ZMW rate under Payouts > Manage FX rates.`);
+          }
           continue;
         }
       }
 
       const rate = f.categoryId ? (dutyRateByCategory.get(f.categoryId) ?? defaultDutyRatePct) : defaultDutyRatePct;
-      dutyAmount += Number(f.costPrice) * item.quantity * (rate / 100);
+      const costRate = f.costCurrency ? fxByCurrency.get(f.costCurrency) : undefined;
+      if (costRate) {
+        dutyAmount += Number(f.costPrice) * costRate * item.quantity * (rate / 100);
+      } else {
+        console.error(`[orders] No FX rate on file for ${f.costCurrency} — duty for order ${orderNumber} item ${item.productId} was skipped, not silently computed in the wrong currency. Add a rate under Payouts > Manage FX rates.`);
+      }
     }
     dutyAmount = +dutyAmount.toFixed(2);
     const totalAmount = +(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount).toFixed(2);
@@ -928,12 +948,11 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // Settlement — the four-way split: platform fee (seller's commission
     // rate, already existed but was display-only until now), what the
     // supplier is owed (imported lines only, converted to ZAR via
-    // mkt_fx_rates), and what's left for the seller. Tax/duty are already
-    // tracked separately on the order and in mkt_customs_records — this
-    // is purely the payout side. One row per line, since a single order
-    // can span multiple sellers and suppliers.
-    const { rows: fxRows } = await client.query(`SELECT * FROM mkt_fx_rates`);
-    const fxByCurrency = new Map(fxRows.map((r: any) => [r.currency, Number(r.rate_to_zar)]));
+    // mkt_fx_rates, fetched earlier alongside the duty calculation), and
+    // what's left for the seller. Tax/duty are already tracked separately
+    // on the order and in mkt_customs_records — this is purely the payout
+    // side. One row per line, since a single order can span multiple
+    // sellers and suppliers.
     for (const item of items) {
       const f = itemFulfillment.get(item.productId);
       if (!f) continue;
@@ -2379,7 +2398,10 @@ router.post("/admin/customs-records/generate", requireAuth, requireRole(...MANAG
   const shipment = shipRows[0];
 
   const { rows: lineRows } = await pool!.query(
-    `SELECT so.cost_amount, p.category_id FROM mkt_supplier_orders so JOIN mkt_products p ON p.id = so.product_id WHERE so.shipment_id::text = $1`,
+    `SELECT so.cost_amount, p.category_id, sp.currency AS cost_currency
+     FROM mkt_supplier_orders so JOIN mkt_products p ON p.id = so.product_id
+     LEFT JOIN mkt_supplier_products sp ON sp.id = so.supplier_product_id
+     WHERE so.shipment_id::text = $1`,
     [shipmentId]
   );
   if (!lineRows.length) { res.status(400).json({ success: false, error: "This shipment has no supplier orders to base a customs record on." }); return; }
@@ -2389,13 +2411,29 @@ router.post("/admin/customs-records/generate", requireAuth, requireRole(...MANAG
   const defaultDutyRatePct = taxRateRows.length ? Number(taxRateRows[0].default_duty_rate_pct) : 20;
   const { rows: dutyRateRows } = await pool!.query(`SELECT category_id, duty_rate_pct FROM mkt_duty_rates WHERE country = $1`, [shipment.destination_country]);
   const dutyRateByCategory = new Map(dutyRateRows.map((r: any) => [r.category_id, Number(r.duty_rate_pct)]));
+  // mkt_supplier_orders.cost_amount is quoted in the supplier's own
+  // currency (USD/CNY/JPY/KRW), same as everywhere else in this system —
+  // converted to ZAR here via mkt_fx_rates rather than added raw, so
+  // declared_value/duty actually mean something in the currency this
+  // record is stored in.
+  const { rows: fxRows } = await pool!.query(`SELECT * FROM mkt_fx_rates`);
+  const fxByCurrency = new Map(fxRows.map((r: any) => [r.currency, Number(r.rate_to_zar)]));
 
   let declaredValue = 0, dutyAmount = 0;
   for (const line of lineRows) {
-    const cost = Number(line.cost_amount);
-    declaredValue += cost;
+    const fxRate = line.cost_currency ? fxByCurrency.get(line.cost_currency) : undefined;
+    if (!fxRate) {
+      console.error(`[customs] No FX rate on file for ${line.cost_currency} — a line was skipped generating the customs record for shipment ${shipmentId}, not silently added in the wrong currency.`);
+      continue;
+    }
+    const costZar = Number(line.cost_amount) * fxRate;
+    declaredValue += costZar;
     const rate = line.category_id ? (dutyRateByCategory.get(line.category_id) ?? defaultDutyRatePct) : defaultDutyRatePct;
-    dutyAmount += cost * (rate / 100);
+    dutyAmount += costZar * (rate / 100);
+  }
+  if (declaredValue === 0) {
+    res.status(400).json({ success: false, error: "Couldn't compute a declared value — missing FX rate(s) for this shipment's currency. Add one under Payouts > Manage FX rates and try again." });
+    return;
   }
   // Import VAT is assessed on the customs value plus duty already applied
   // (SARS' "Added Tax Value" method) — a reasonable general approximation

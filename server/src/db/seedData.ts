@@ -252,4 +252,5 @@ export const FX_RATES: FxRate[] = [
   { currency: "CNY", rateToZar: 2.52,  notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
   { currency: "JPY", rateToZar: 0.122, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
   { currency: "KRW", rateToZar: 0.0134, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
+  { currency: "ZMW", rateToZar: 0.68,  notes: "Illustrative — used to convert ZRA's kwacha-denominated vehicle duty (mkt_vehicle_duty_zm) into ZAR. Verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
 ];
