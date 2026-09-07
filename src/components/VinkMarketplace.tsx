@@ -1195,6 +1195,27 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
       const { mktOrders: api } = await import("../services/marketplaceApi");
       const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod: payment });
       if ((res as { success: boolean }).success) {
+        // If PayFast (or any future redirect-based processor) is
+        // configured, the order exists but payment isn't done yet — send
+        // the browser to the gateway's own hosted page instead of
+        // treating this as a completed order. A hidden auto-submitting
+        // form is the standard way to hand off signed fields to PayFast;
+        // it can't be a plain link since the fields (and signature) must
+        // go via POST.
+        const redirect = res.meta?.redirect;
+        if (redirect) {
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = redirect.url;
+          Object.entries(redirect.fields).forEach(([k, v]) => {
+            const input = document.createElement("input");
+            input.type = "hidden"; input.name = k; input.value = v;
+            form.appendChild(input);
+          });
+          document.body.appendChild(form);
+          form.submit();
+          return; // browser is navigating away — nothing left to do here
+        }
         setStep("confirmation");
         onComplete(res.data as R);
       } else {

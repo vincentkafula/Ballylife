@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
 import { submitOrderPayment, getOrderTransactions } from "../services/mktPay";
+import { verifyItnSignature } from "../services/payfastProcessor";
+import { sendOrderConfirmationEmail } from "../services/emailService";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
@@ -454,6 +456,50 @@ router.post("/cart/:userId/coupon", requireAuth, requireSelf, async (req: Reques
   res.json({ success: true, data: cartRowToApi(updated), message: `Coupon applied — you save R${Number(updated.coupon_discount).toFixed(2)}!` });
 });
 
+// ── PAYFAST ITN WEBHOOK ─────────────────────────────────────────────────────
+// PayFast POSTs here (form-urlencoded, see index.ts's express.urlencoded
+// middleware) once a payment actually completes or fails — this is the
+// ONLY place a payment gets marked confirmed; nothing in the order-
+// creation flow does that optimistically. Always responds 200 unless the
+// signature check fails, since PayFast retries on anything else and a
+// 5xx here would just cause a hammering retry loop for a problem on our
+// side, not theirs.
+//
+// Signature check is the first of PayFast's two recommended layers — a
+// source-IP allowlist against PayFast's published ranges (or the second
+// POST-back to their /eng/query/validate endpoint) isn't implemented
+// here yet; add one before relying on this for real payments.
+router.post("/payfast/notify", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const body = req.body as Record<string, string>;
+    if (!verifyItnSignature(body)) {
+      console.error("[payfast] ITN signature mismatch — rejecting", { m_payment_id: body?.m_payment_id });
+      res.status(400).send("invalid signature");
+      return;
+    }
+    const processorRef = body.m_payment_id;
+    const paymentStatus = body.payment_status; // COMPLETE | FAILED | PENDING (PayFast's vocabulary)
+    const newStatus = paymentStatus === "COMPLETE" ? "confirmed" : paymentStatus === "FAILED" ? "failed" : "submitted";
+
+    const { rows: txRows } = await pool!.query(
+      `UPDATE mkt_pay_transactions SET status = $1, webhook_received_at = now() WHERE processor_ref = $2 RETURNING order_id`,
+      [newStatus, processorRef]
+    );
+    if (!txRows.length) { console.error("[payfast] No matching transaction for", processorRef); res.status(200).send("OK"); return; }
+    const orderId = txRows[0].order_id;
+
+    if (newStatus === "confirmed") {
+      await pool!.query(`UPDATE mkt_orders SET status = 'confirmed', payment_status = 'payment_confirmed', confirmed_at = now() WHERE id = $1`, [orderId]);
+    } else if (newStatus === "failed") {
+      await pool!.query(`UPDATE mkt_orders SET status = 'payment_failed', payment_status = 'payment_failed' WHERE id = $1`, [orderId]);
+    }
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("[payfast] ITN handling failed:", err);
+    res.status(200).send("OK"); // still 200 -- see comment above on why
+  }
+});
+
 // ── ORDERS ────────────────────────────────────────────────────────────────────
 // Public order tracking — no login required, since a guest checkout buyer
 // still needs to check on their order. Requires both the order number and
@@ -798,6 +844,12 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // or the payment submission call right below it.
     checkPaymentVelocity(order.id, userId).catch(err => console.error("[fraud-risk] Payment velocity check failed:", err));
 
+    // Best-effort — an email failure should never fail the order itself.
+    // Logs the email instead of sending if SMTP isn't configured yet
+    // (see emailService.ts).
+    sendOrderConfirmationEmail(customerEmail, order.order_number, Number(order.total_amount), order.currency)
+      .catch(err => console.error("[email] Order confirmation failed:", err));
+
     // Submit the charge *after* releasing the stock locks — a payment
     // gateway call is a network round trip and shouldn't hold a
     // transaction (and the FOR UPDATE locks from the stock check above)
@@ -826,7 +878,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       res.status(202).json({
         success: true,
         data: mapOrder(order),
-        meta: { paymentStatus: "pending_payment", mktPayTransactionId: submission.mktPayTransactionId },
+        meta: { paymentStatus: "pending_payment", mktPayTransactionId: submission.mktPayTransactionId, redirect: submission.redirect },
       });
       return;
     }

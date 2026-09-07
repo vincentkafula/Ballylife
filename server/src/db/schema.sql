@@ -582,3 +582,17 @@ CREATE TABLE IF NOT EXISTS mkt_order_line_settlements (
 CREATE INDEX IF NOT EXISTS idx_mkt_settlements_order    ON mkt_order_line_settlements(order_id);
 CREATE INDEX IF NOT EXISTS idx_mkt_settlements_seller   ON mkt_order_line_settlements(seller_id);
 CREATE INDEX IF NOT EXISTS idx_mkt_settlements_supplier ON mkt_order_line_settlements(supplier_id);
+
+-- Password reset — a random token is generated and only its SHA-256 hash
+-- is stored (same discipline as never storing the password itself), so a
+-- database read alone can't be used to reset someone's account. One-time
+-- use (used_at) and short-lived (expires_at, set to +1 hour at creation).
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id),
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);

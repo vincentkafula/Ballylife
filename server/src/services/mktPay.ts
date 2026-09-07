@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { pool, hasDb } from "../db/pool";
+import { payfastProcessor, getPayfastRedirectFields, payfastRedirectUrl } from "./payfastProcessor";
 
 /**
  * Marketplace's own payment engine — independent of VINK-GRUP-LIMITED's
@@ -80,11 +81,10 @@ const manualProcessor: MktPayProcessor = {
 };
 
 const PROCESSORS: Record<string, MktPayProcessor> = {
-  card: manualProcessor,
+  card: payfastProcessor.isConfigured() ? payfastProcessor : manualProcessor,
   bank_transfer: manualProcessor,
   wallet: manualProcessor,
-  // Add real processors here, e.g.:
-  // card: stripeProcessor,
+  payfast: payfastProcessor,
 };
 
 async function recordSubmission(req: ChargeRequest, processorName: string, result: SubmitResult): Promise<string | undefined> {
@@ -102,6 +102,7 @@ export interface SubmitOrderPaymentResult {
   accepted: boolean;
   mktPayTransactionId?: string;
   error?: string;
+  redirect?: { url: string; fields: Record<string, string> };
 }
 
 export async function submitOrderPayment(req: ChargeRequest): Promise<SubmitOrderPaymentResult> {
@@ -116,7 +117,8 @@ export async function submitOrderPayment(req: ChargeRequest): Promise<SubmitOrde
   const txId = await recordSubmission(req, processor.name, result);
 
   if (!result.success) return { accepted: false, mktPayTransactionId: txId, error: result.error };
-  return { accepted: true, mktPayTransactionId: txId };
+  const redirect = result.processorRef ? getRedirectInfo(processor.name, result.processorRef) : undefined;
+  return { accepted: true, mktPayTransactionId: txId, redirect };
 }
 
 export async function getOrderTransactions(orderId: string) {
@@ -127,6 +129,17 @@ export async function getOrderTransactions(orderId: string) {
     [orderId]
   );
   return rows;
+}
+
+// If the processor that just handled a charge is redirect-based (PayFast),
+// the order route needs the signed fields + destination URL to hand back
+// to the frontend so it can send the browser there. Returns undefined for
+// processors like "manual" that need no redirect.
+export function getRedirectInfo(processorName: string, processorRef: string): { url: string; fields: Record<string, string> } | undefined {
+  if (processorName !== "payfast") return undefined;
+  const fields = getPayfastRedirectFields(processorRef);
+  if (!fields) return undefined;
+  return { url: payfastRedirectUrl(), fields };
 }
 
 export async function refundOrder(processorName: string, processorRef: string, amount?: number): Promise<RefundResult> {

@@ -49,6 +49,8 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   const qs     = path.includes("?") ? Object.fromEntries(new URLSearchParams(path.split("?")[1])) : {};
 
   if (path.includes("/categories"))              return mktMock.categories();
+  if (path.includes("/auth/forgot-password"))    return { success:true, message:"If an account exists with that email, a password reset link has been sent." };
+  if (path.includes("/auth/reset-password"))     return { success:true, message:"Password reset successfully — you can now sign in with your new password." };
   if (path.includes("/search-suggest"))          return mktMock.searchSuggest(qs.q ?? "");
   if (path.includes("/admin/products/") && path.includes("/price")) return mktMock.adminUpdateProductPrice(path.split("/admin/products/")[1].split("/price")[0], body);
   if (path.includes("/admin/products/") && path.includes("/approve")) return mktMock.approveProduct(path.split("/admin/products/")[1].split("/approve")[0]);
@@ -149,7 +151,7 @@ export const mktCart = {
 export const mktOrders = {
   list:   (p?: Record<string, string>) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/orders?${new URLSearchParams(p)}`),
   get:    (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/orders/${id}`),
-  place:  (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/orders", { method: "POST", body: JSON.stringify(body) }),
+  place:  (body: unknown) => api<{ success: boolean; data: unknown; error?: string; meta?: { paymentStatus?: string; mktPayTransactionId?: string; redirect?: { url: string; fields: Record<string, string> } } }>("/api/marketplace/orders", { method: "POST", body: JSON.stringify(body) }),
   cancel: (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/${id}/cancel`, { method: "POST" }),
   requestReturn: (id: string, reason: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/${id}/request-return`, { method: "POST", body: JSON.stringify({ reason }) }),
   track: (orderNumber: string, email: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/track?${new URLSearchParams({ orderNumber, email })}`),
@@ -333,6 +335,10 @@ export const mktAuth = {
   logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); localStorage.removeItem("mkt_authority"); },
   changePassword: (currentPassword: string, newPassword: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
+  forgotPassword: (email: string) =>
+    api<{ success: boolean; message?: string; error?: string }>("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, newPassword: string) =>
+    api<{ success: boolean; message?: string; error?: string }>("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
   restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null; authority: Record<string, unknown> | null } | null => {
     if (!getMktToken()) return null;
     const raw = localStorage.getItem("mkt_user");

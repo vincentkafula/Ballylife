@@ -30,7 +30,12 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 app.use(helmet());
 app.use(cors({ origin: (origin, cb) => cb(null, isAllowedOrigin(origin)), credentials: true }));
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" })); // PayFast's ITN webhook posts form-urlencoded, not JSON
 app.use(rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false }));
+// Auth endpoints get a tighter limit on top of the general one above —
+// 300/min was generous enough to make credential-stuffing/brute-force
+// login attempts cheap; this caps login/register attempts specifically.
+app.use("/api/auth", rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false }));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", db: hasDb, service: "ballylife-backend" });

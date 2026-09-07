@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, User, Store, Loader2, Eye, EyeOff } from "lucide-react";
 import { mktAuth, type MktAuthUser } from "../services/marketplaceApi";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import { SellerApplicationWizard } from "./SellerApplicationWizard";
 
-type Tab = "signin" | "customer" | "seller";
+type Tab = "signin" | "customer" | "seller" | "forgot" | "reset";
 
 interface Props {
   onClose: () => void;
@@ -42,11 +42,26 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
   const [tab, setTab] = useState<Tab>(initialTab);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
 
   // Sign in
   const [siUsername, setSiUsername] = useState("");
   const [siPassword, setSiPassword] = useState("");
+
+  // Forgot / reset password
+  const [fpEmail, setFpEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [rpPassword, setRpPassword] = useState("");
+  const [rpConfirm, setRpConfirm] = useState("");
+
+  // A password-reset email link lands back here as ?resetToken=... — jump
+  // straight to the reset form instead of making the person find sign-in
+  // and a "forgot password" link on their own.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("resetToken");
+    if (token) { setResetToken(token); setTab("reset"); }
+  }, []);
 
   // Customer registration
   const [cName, setCName] = useState("");
@@ -75,6 +90,35 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     else setError((r as { error?: string }).error ?? "Registration failed.");
   };
 
+  const handleForgotPassword = async () => {
+    setError(null); setMessage(null);
+    if (!fpEmail) { setError("Enter the email address on your account."); return; }
+    setLoading(true);
+    const r = await mktAuth.forgotPassword(fpEmail);
+    setLoading(false);
+    if (r.success) setMessage(r.message ?? "If an account exists with that email, a password reset link has been sent.");
+    else setError(r.error ?? "Something went wrong — please try again.");
+  };
+
+  const handleResetPassword = async () => {
+    setError(null); setMessage(null);
+    if (!rpPassword || !rpConfirm) { setError("Enter and confirm your new password."); return; }
+    if (rpPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (rpPassword !== rpConfirm) { setError("Passwords don't match."); return; }
+    setLoading(true);
+    const r = await mktAuth.resetPassword(resetToken, rpPassword);
+    setLoading(false);
+    if (r.success) {
+      setMessage(r.message ?? "Password reset successfully — you can now sign in.");
+      // Clean the token out of the URL now that it's been used, and drop
+      // back to the sign-in form after a moment so it doesn't look stuck.
+      window.history.replaceState({}, "", window.location.pathname);
+      setTimeout(() => { setTab("signin"); setMessage(null); }, 2000);
+    } else {
+      setError(r.error ?? "This reset link is invalid or has expired — request a new one.");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
       <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -83,22 +127,25 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
           <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
         </div>
 
-        <div className="flex border-b border-gray-100 shrink-0">
-          {([
-            { id: "signin" as Tab, label: "Sign In" },
-            { id: "customer" as Tab, label: "New Customer" },
-            { id: "seller" as Tab, label: "Sell on Ballylife" },
-          ]).map(t => (
-            <button key={t.id} onClick={() => { setTab(t.id); setError(null); }}
-              className="flex-1 text-xs font-semibold py-2.5 border-b-2 transition-colors"
-              style={{ borderColor: tab === t.id ? "#D4A54A" : "transparent", color: tab === t.id ? "#14110D" : "#9CA3AF" }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {tab !== "forgot" && tab !== "reset" && (
+          <div className="flex border-b border-gray-100 shrink-0">
+            {([
+              { id: "signin" as Tab, label: "Sign In" },
+              { id: "customer" as Tab, label: "New Customer" },
+              { id: "seller" as Tab, label: "Sell on Ballylife" },
+            ]).map(t => (
+              <button key={t.id} onClick={() => { setTab(t.id); setError(null); setMessage(null); }}
+                className="flex-1 text-xs font-semibold py-2.5 border-b-2 transition-colors"
+                style={{ borderColor: tab === t.id ? "#D4A54A" : "transparent", color: tab === t.id ? "#14110D" : "#9CA3AF" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="p-5 overflow-y-auto">
           {error && <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium">{error}</div>}
+          {message && <div className="mb-3 px-3 py-2 rounded-lg bg-green-50 text-green-700 text-xs font-medium">{message}</div>}
 
           {tab === "signin" && (
             <div>
@@ -109,7 +156,38 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
                 style={{ background: "#D4A54A" }}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><User className="w-4 h-4" /> Sign In</>}
               </button>
-              <p className="text-[11px] text-gray-400 mt-3 text-center">Don't have an account? Use the tabs above to register.</p>
+              <button onClick={() => { setTab("forgot"); setError(null); setMessage(null); }} className="block w-full text-center text-[11px] text-gray-500 hover:text-gray-800 mt-3 hover:underline">
+                Forgot your password?
+              </button>
+              <p className="text-[11px] text-gray-400 mt-2 text-center">Don't have an account? Use the tabs above to register.</p>
+            </div>
+          )}
+
+          {tab === "forgot" && (
+            <div>
+              <p className="text-xs text-gray-500 mb-3">Enter the email address on your account and we'll send you a link to reset your password.</p>
+              <Field label="Email" value={fpEmail} onChange={setFpEmail} type="email" />
+              <button onClick={handleForgotPassword} disabled={loading}
+                className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"
+                style={{ background: "#D4A54A" }}>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send reset link"}
+              </button>
+              <button onClick={() => { setTab("signin"); setError(null); setMessage(null); }} className="block w-full text-center text-[11px] text-gray-500 hover:text-gray-800 mt-3 hover:underline">
+                Back to sign in
+              </button>
+            </div>
+          )}
+
+          {tab === "reset" && (
+            <div>
+              <p className="text-xs text-gray-500 mb-3">Choose a new password for your account.</p>
+              <Field label="New password" value={rpPassword} onChange={setRpPassword} type="password" placeholder="At least 8 characters" />
+              <Field label="Confirm new password" value={rpConfirm} onChange={setRpConfirm} type="password" />
+              <button onClick={handleResetPassword} disabled={loading}
+                className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"
+                style={{ background: "#D4A54A" }}>
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Reset password"}
+              </button>
             </div>
           )}
 
