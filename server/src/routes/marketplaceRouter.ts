@@ -267,7 +267,8 @@ router.get("/categories", async (_req: Request, res: Response): Promise<void> =>
 
 // ── PRODUCTS ──────────────────────────────────────────────────────────────────
 router.get("/products", async (req: Request, res: Response): Promise<void> => {
-  const { category, search, minPrice, maxPrice, brand, rating, sort, page: pg, limit: lim, featured, flashDeal } = req.query as Record<string, string>;
+  const { category, search, minPrice, maxPrice, brand, rating, sort, page: pg, limit: lim, featured, flashDeal,
+    condition, bodyType, minYear, maxYear, minMileage, maxMileage, minEngineCc, maxEngineCc, fuelType, transmission } = req.query as Record<string, string>;
   const page = Math.max(1, Number(pg) || 1);
   const limit = Math.min(80, Number(lim) || 12);
 
@@ -283,6 +284,20 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   if (rating)    where.push(`p.avg_rating >= ${p(Number(rating))}`);
   if (featured === "true")  where.push(`p.is_featured = ${p(true)}`);
   if (flashDeal === "true") where.push(`p.is_flash_deal = ${p(true)}`);
+  // Vehicle-specific filters — only meaningful on listings with
+  // vehicle_details set (Vehicles category), harmless no-ops elsewhere
+  // since a non-vehicle row's vehicle_details is NULL and these
+  // comparisons just exclude it, same as any other empty-field filter.
+  if (condition)     where.push(`p.condition = ${p(condition)}`);
+  if (bodyType)      where.push(`p.vehicle_details->>'bodyType' = ${p(bodyType)}`);
+  if (fuelType)      where.push(`p.vehicle_details->>'fuelType' = ${p(fuelType)}`);
+  if (transmission)  where.push(`p.vehicle_details->>'transmission' = ${p(transmission)}`);
+  if (minYear)       where.push(`(p.vehicle_details->>'year')::int >= ${p(Number(minYear))}`);
+  if (maxYear)       where.push(`(p.vehicle_details->>'year')::int <= ${p(Number(maxYear))}`);
+  if (minMileage)    where.push(`(p.vehicle_details->>'mileageKm')::int >= ${p(Number(minMileage))}`);
+  if (maxMileage)    where.push(`(p.vehicle_details->>'mileageKm')::int <= ${p(Number(maxMileage))}`);
+  if (minEngineCc)   where.push(`(p.vehicle_details->>'engineCc')::int >= ${p(Number(minEngineCc))}`);
+  if (maxEngineCc)   where.push(`(p.vehicle_details->>'engineCc')::int <= ${p(Number(maxEngineCc))}`);
 
   let orderBy = "p.created_at DESC";
   if (sort === "price_asc") orderBy = "p.price ASC";
@@ -290,6 +305,8 @@ router.get("/products", async (req: Request, res: Response): Promise<void> => {
   else if (sort === "rating") orderBy = "p.avg_rating DESC";
   else if (sort === "popular") orderBy = "p.total_sold DESC";
   else if (sort === "newest") orderBy = "p.created_at DESC";
+  else if (sort === "mileage_asc") orderBy = "(p.vehicle_details->>'mileageKm')::int ASC NULLS LAST";
+  else if (sort === "year_desc") orderBy = "(p.vehicle_details->>'year')::int DESC NULLS LAST";
 
   const baseQuery = `FROM mkt_products p JOIN mkt_sellers s ON s.id = p.seller_id JOIN mkt_categories c ON c.id = p.category_id WHERE ${where.join(" AND ")}`;
   const { rows: countRows } = await pool!.query(`SELECT COUNT(*)::int AS total ${baseQuery}`, params);
@@ -1892,6 +1909,94 @@ router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES
     supplierId ? [supplierId] : []
   );
   res.json({ success: true, data: rows.map(mapSupplierProduct) });
+});
+
+// Minimal but correct CSV parser — handles quoted fields (with embedded
+// commas/newlines) and doubled-quote escaping, which a naive split(",")
+// would break on. Not a full RFC 4180 implementation, but covers what a
+// spreadsheet export (Excel/Google Sheets/Numbers) actually produces.
+function parseCsv(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let row: string[] = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else { field += c; }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && next === "\n") i++;
+        row.push(field); field = "";
+        if (row.length > 1 || row[0] !== "") rows.push(row);
+        row = [];
+      } else { field += c; }
+    }
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).filter(r => r.some(c => c.trim() !== "")).map(r => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? "").trim()])));
+}
+
+router.post("/admin/supplier-products/bulk-import", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { csv } = req.body;
+  if (!csv || typeof csv !== "string") { res.status(400).json({ success: false, error: "csv (raw CSV text) is required" }); return; }
+
+  const rows = parseCsv(csv);
+  if (!rows.length) { res.status(400).json({ success: false, error: "No data rows found in the CSV." }); return; }
+
+  const { rows: supplierRows } = await pool!.query(`SELECT id, country FROM mkt_suppliers`);
+  const supplierCountry = new Map(supplierRows.map((s: any) => [s.id, s.country]));
+
+  const errors: { row: number; error: string }[] = [];
+  let created = 0;
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const rowNum = i + 2; // +1 for 0-index, +1 for header row
+      if (!r.supplierId || !supplierCountry.has(r.supplierId)) { errors.push({ row: rowNum, error: `Unknown supplierId "${r.supplierId}"` }); continue; }
+      if (!r.name) { errors.push({ row: rowNum, error: "name is required" }); continue; }
+      const costPrice = Number(r.costPrice);
+      if (!r.costPrice || Number.isNaN(costPrice) || costPrice <= 0) { errors.push({ row: rowNum, error: `Invalid costPrice "${r.costPrice}"` }); continue; }
+
+      const hasVehicleFields = r.make || r.model || r.year || r.bodyType;
+      const vehicleDetails = hasVehicleFields ? {
+        make: r.make || "", model: r.model || "", year: Number(r.year) || undefined,
+        mileageKm: Number(r.mileageKm) || 0, engineCc: Number(r.engineCc) || undefined,
+        bodyType: r.bodyType || undefined, transmission: r.transmission || undefined, fuelType: r.fuelType || undefined,
+      } : null;
+
+      try {
+        await client.query(
+          `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, compare_at_price, moq, images, emoji, origin_country, vehicle_details, condition)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'[]',$10,$11,$12,$13)`,
+          [r.supplierId, r.categoryId || null, r.name, r.description || "", costPrice, r.currency || "USD",
+           Number(r.retailPrice) || 0, r.compareAtPrice ? Number(r.compareAtPrice) : null, Number(r.moq) || 1,
+           r.emoji || "📦", r.originCountry || supplierCountry.get(r.supplierId),
+           vehicleDetails ? JSON.stringify(vehicleDetails) : null, r.condition || null]
+        );
+        created++;
+      } catch (err) {
+        errors.push({ row: rowNum, error: err instanceof Error ? err.message : "Insert failed" });
+      }
+    }
+    await client.query("COMMIT");
+    res.status(created > 0 ? 201 : 400).json({
+      success: created > 0, created, errorCount: errors.length, errors: errors.slice(0, 50),
+      message: `${created} item(s) added${errors.length ? `, ${errors.length} row(s) had errors` : ""}.`,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Bulk import failed:", err);
+    res.status(500).json({ success: false, error: "Bulk import failed, please try again." });
+  } finally {
+    client.release();
+  }
 });
 
 router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {

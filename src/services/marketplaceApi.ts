@@ -89,6 +89,7 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.match(/\/suppliers\/[^/]+\/orders$/)) return mktMock.supplierOrdersFor(path.split("/suppliers/")[1].split("/orders")[0]);
   if (path.match(/\/suppliers\/[^/?]+$/) && method === "PATCH") return mktMock.supplierUpdateProfile(path.split("/suppliers/")[1], body);
   if (path.match(/\/suppliers\/[^/?]+$/) && method === "GET") return mktMock.supplierGet(path.split("/suppliers/")[1].split("?")[0]);
+  if (path.includes("/admin/supplier-products/bulk-import")) return mktMock.adminBulkImportSupplierProducts(body);
   if (path.includes("/admin/supplier-products") && method === "GET")   return mktMock.adminSupplierProducts();
   if (path.includes("/admin/supplier-products") && method === "POST")  return mktMock.adminCreateSupplierProduct(body);
   if (path.includes("/admin/supplier-products") && method === "PATCH") return mktMock.adminUpdateSupplierProduct(path.split("/admin/supplier-products/")[1], body);
@@ -211,6 +212,7 @@ export const mktAdmin = {
     list:   (supplierId?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/supplier-products${supplierId ? `?supplierId=${supplierId}` : ""}`),
     create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/supplier-products", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/supplier-products/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    bulkImport: (csv: string) => api<{ success: boolean; created: number; errorCount: number; errors: { row: number; error: string }[]; message?: string; error?: string }>("/api/marketplace/admin/supplier-products/bulk-import", { method: "POST", body: JSON.stringify({ csv }) }),
   },
   warehouses: {
     list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/warehouses"),

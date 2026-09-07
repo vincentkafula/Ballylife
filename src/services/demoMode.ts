@@ -920,6 +920,31 @@ export const mktMock = {
     MKT_SUPPLIER_PRODUCTS.push(sp as never);
     return { success:true, data:sp };
   },
+  adminBulkImportSupplierProducts: (body: R) => {
+    const csv = String(body.csv ?? "");
+    const lines = csv.split(/\r\n|\n|\r/).filter(l => l.trim() !== "");
+    if (lines.length < 2) return { success:false, created:0, errorCount:0, errors:[], error:"No data rows found in the CSV." };
+    const headers = lines[0].split(",").map(h => h.trim());
+    let created = 0;
+    const errors: { row:number; error:string }[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cells = lines[i].split(",").map(c => c.trim());
+      const r: Record<string,string> = Object.fromEntries(headers.map((h, idx) => [h, cells[idx] ?? ""]));
+      const supplier = MKT_SUPPLIERS.find(s => s.id === r.supplierId);
+      if (!supplier) { errors.push({ row:i+1, error:`Unknown supplierId "${r.supplierId}"` }); continue; }
+      if (!r.name) { errors.push({ row:i+1, error:"name is required" }); continue; }
+      const costPrice = Number(r.costPrice);
+      if (!r.costPrice || Number.isNaN(costPrice) || costPrice <= 0) { errors.push({ row:i+1, error:`Invalid costPrice "${r.costPrice}"` }); continue; }
+      const sp: R = { id:`spr-${uuid()}`, supplierId:r.supplierId, supplierName:supplier.name, supplierCountry:supplier.country,
+        categoryId:r.categoryId || null, name:r.name, description:r.description || "", costPrice, currency:r.currency || "USD",
+        retailPrice:Number(r.retailPrice) || 0, compareAtPrice:r.compareAtPrice ? Number(r.compareAtPrice) : null,
+        moq:Number(r.moq) || 1, images:[], emoji:r.emoji || "📦", originCountry:r.originCountry || supplier.country, status:"active", importCount:0,
+        createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() };
+      MKT_SUPPLIER_PRODUCTS.push(sp as never);
+      created++;
+    }
+    return { success:created>0, created, errorCount:errors.length, errors:errors.slice(0,50), message:`${created} item(s) added${errors.length ? `, ${errors.length} row(s) had errors` : ""}.` };
+  },
   adminUpdateSupplierProduct: (id: string, body: R) => {
     const sp = MKT_SUPPLIER_PRODUCTS.find(x => x.id === id);
     if (!sp) return { success:false, error:"Catalog item not found" };

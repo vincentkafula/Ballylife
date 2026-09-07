@@ -717,6 +717,29 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   const [nrcsEditId, setNrcsEditId] = useState<string | null>(null);
   const [nrcsEdit, setNrcsEdit] = useState({ nrcsApproved: false, nrcsReference: "" });
   const [savingNrcs, setSavingNrcs] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ created: number; errorCount: number; errors: { row: number; error: string }[]; message?: string; error?: string } | null>(null);
+
+  const handleCsvFile = async (file: File) => {
+    setImporting(true);
+    setImportResult(null);
+    const text = await file.text();
+    const res = await mktAdmin.supplierProducts.bulkImport(text);
+    setImporting(false);
+    setImportResult(res);
+    if (res.created > 0) onChanged();
+  };
+
+  const downloadTemplate = () => {
+    const template = "supplierId,name,description,costPrice,currency,moq,categoryId,retailPrice,compareAtPrice,emoji,originCountry,condition,make,model,year,mileageKm,engineCc,bodyType,transmission,fuelType\n" +
+      "sup-cn-01,Example Widget,A sample product,12.50,USD,20,cat-01,449,,\uD83D\uDCE6,CN,,,,,,,,\n";
+    const blob = new Blob([template], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "supplier-products-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const isVehicleCategory = categories.find(c => c.id === form.categoryId)?.name === "Vehicles";
 
@@ -777,11 +800,30 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
     <div>
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-bold text-gray-900">Supplier Catalog ({catalog.length}) — what sellers can import</span>
-        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
-          <Plus className="w-3.5 h-3.5" /> Add catalog item
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={downloadTemplate} className="text-xs font-semibold text-amber-700 hover:underline">Download CSV template</button>
+          <label className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 cursor-pointer hover:bg-gray-50">
+            {importing ? "Importing..." : "Bulk import (CSV)"}
+            <input type="file" accept=".csv,text/csv" className="hidden" disabled={importing}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); e.target.value = ""; }} />
+          </label>
+          <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
+            <Plus className="w-3.5 h-3.5" /> Add catalog item
+          </button>
+        </div>
       </div>
       <p className="text-xs text-gray-400 mb-3">Cost price is what the supplier charges Ballylife — set that here to reflect the actual supplier agreement. Retail price here is only a suggested starting point sellers see; each seller sets their own final retail price (their profit margin) when they import an item. Any price change after a listing is live still needs manager approval.</p>
+
+      {importResult && (
+        <div className={`mb-3 text-xs font-medium px-3 py-2 rounded-lg border ${importResult.created > 0 ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+          <p>{importResult.message ?? importResult.error}</p>
+          {importResult.errors?.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 max-h-32 overflow-y-auto">
+              {importResult.errors.map((e, i) => <li key={i} className="text-[11px]">Row {e.row}: {e.error}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       {adding && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">
