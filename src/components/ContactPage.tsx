@@ -124,6 +124,15 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
     .bl-region.bl-no-match{display:none;}
     .bl-no-results{font-size:13.5px; color:var(--bl-muted); text-align:center; padding:18px 0;}
     .bl-no-results a{color:var(--bl-orange); font-weight:600;}
+
+    /* Southern Africa (SADC) -- our home region gets its own standalone
+       column, in the spot the contact form used to occupy. */
+    .bl-southern-col{position:relative; padding-left:26px;}
+    .bl-southern-col::before{
+      content:""; position:absolute; left:0; top:6px; bottom:6px; width:4px;
+      background:var(--bl-green); border-radius:4px;
+    }
+    .bl-southern-intro{font-size:13.5px; color:var(--bl-muted); margin:0 0 18px;}
     .bl-modal-overlay{
       display:none; position:fixed; inset:0; z-index:1000; background:rgba(11,30,26,.6);
       align-items:center; justify-content:center; padding:20px;
@@ -157,33 +166,6 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
     .bl-office p a{color:var(--bl-green); font-weight:600;}
     .bl-office-empty{font-size:13.5px; color:var(--bl-muted); line-height:1.6;}
     .bl-office-empty a{color:var(--bl-orange); font-weight:600;}
-    .bl-form-card{
-      background:linear-gradient(160deg, var(--bl-green-dark) 0%, var(--bl-green-darker) 100%);
-      border-radius:18px; padding:32px; color:#fff;
-    }
-    .bl-form-card h3{font-size:24px; margin:0 0 6px; font-weight:800;}
-    .bl-form-card h3 span{color:var(--bl-orange);}
-    .bl-form-card > p{margin:0 0 22px; font-size:13.5px; color:#cfe0d8;}
-    .bl-field-row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;}
-    .bl-field label{display:block; font-size:13px; margin-bottom:7px; color:#dcebe4;}
-    .bl-input-wrap{position:relative;}
-    .bl-input-wrap svg{position:absolute; left:14px; top:50%; transform:translateY(-50%); opacity:.8;}
-    .bl-field input,
-    .bl-field select,
-    .bl-field textarea{
-      width:100%; border:none; border-radius:8px; padding:12px 14px 12px 40px;
-      font-size:14px; background:#fff; color:var(--bl-text); outline:none;
-    }
-    .bl-field select{padding-left:40px; appearance:none; -webkit-appearance:none;}
-    .bl-field textarea{padding-left:40px; resize:vertical; min-height:96px;}
-    .bl-field.bl-full{margin-bottom:20px;}
-    .bl-submit{
-      width:100%; background:var(--bl-orange); color:#fff; border:none; border-radius:8px;
-      padding:15px; font-size:15.5px; font-weight:700; display:flex; align-items:center;
-      justify-content:center; gap:10px; transition:background .15s ease;
-    }
-    .bl-submit:hover{background:var(--bl-orange-dark);}
-    .bl-form-note{margin-top:14px; font-size:13px; color:#bcd7cb; text-align:center; min-height:18px;}
     .bl-feature-strip{
       display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:40px;
       padding-top:32px; border-top:1px solid var(--bl-border);
@@ -247,7 +229,6 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
       .bl-hero h1{font-size:36px;}
       .bl-hero-tag{display:none;}
       .bl-region-columns{grid-template-columns:repeat(2,1fr);}
-      .bl-field-row{grid-template-columns:1fr;}
       .bl-feature-strip{grid-template-columns:1fr;}
       .bl-map-grid{grid-template-columns:1fr;}
       .bl-footer-inner{flex-direction:column; text-align:center;}
@@ -353,74 +334,19 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
                   <button class="bl-chip" data-country="Cameroon">Cameroon</button><button class="bl-chip" data-country="Central African Republic">Central African Republic</button><button class="bl-chip" data-country="Chad">Chad</button><button class="bl-chip" data-country="Republic of the Congo">Republic of the Congo</button><button class="bl-chip" data-country="Equatorial Guinea">Equatorial Guinea</button><button class="bl-chip" data-country="Gabon">Gabon</button><button class="bl-chip" data-country="Sao Tome and Principe">Sao Tome and Principe</button>
                 </div>
               </div>
-              <div class="bl-region" data-region="Southern Africa (SADC)">
-                <h5>Southern Africa (SADC)</h5>
-                <div class="bl-chip-wrap">
-                  <button class="bl-chip" data-country="Angola">Angola</button><button class="bl-chip" data-country="Botswana">Botswana</button><button class="bl-chip" data-country="Comoros">Comoros</button><button class="bl-chip" data-country="Democratic Republic of the Congo">Democratic Republic of the Congo</button><button class="bl-chip" data-country="Eswatini (Swaziland)">Eswatini (Swaziland)</button><button class="bl-chip" data-country="Lesotho">Lesotho</button><button class="bl-chip" data-country="Madagascar">Madagascar</button><button class="bl-chip" data-country="Malawi">Malawi</button><button class="bl-chip" data-country="Mauritius">Mauritius</button><button class="bl-chip" data-country="Mozambique">Mozambique</button><button class="bl-chip" data-country="Namibia">Namibia</button><button class="bl-chip" data-country="Seychelles">Seychelles</button><button class="bl-chip" data-country="South Africa">South Africa</button><button class="bl-chip" data-country="Tanzania">Tanzania</button><button class="bl-chip" data-country="Zambia">Zambia</button><button class="bl-chip" data-country="Zimbabwe">Zimbabwe</button>
-                  <span class="bl-chip-toggle" role="button" tabindex="0" data-more="7">+7 more</span>
-                </div>
-              </div>
             </div>
           </div>
           <p class="bl-no-results" id="bl-no-results" style="display:none;">No countries match your search. Try a different spelling, or <a href="mailto:info@ballylife.com">email us directly</a>.</p>
         </div>
 
-        <div class="bl-form-card">
-          <h3>Send Us a <span>Message</span></h3>
-          <p>Fill in the form below and we'll get back to you as soon as possible.</p>
-
-          <form id="bl-contact-form">
-            <div class="bl-field-row">
-              <div class="bl-field">
-                <label for="bl-name">Full Name *</label>
-                <div class="bl-input-wrap">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f3d2e" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
-                  <input id="bl-name" name="name" type="text" placeholder="Your full name" required>
-                </div>
-              </div>
-              <div class="bl-field">
-                <label for="bl-email">Email Address *</label>
-                <div class="bl-input-wrap">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f3d2e" stroke-width="2"><path d="M3.5 6.5h17a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-17a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/><path d="M3 7l9 6 9-6"/></svg>
-                  <input id="bl-email" name="email" type="email" placeholder="you@example.com" required>
-                </div>
-              </div>
+        <div class="bl-southern-col">
+          <h2 class="bl-h2">Southern Africa <span>(SADC)</span></h2>
+          <p class="bl-southern-intro">Our home region and where Ballylife is most established.</p>
+          <div class="bl-region bl-expanded" data-region="Southern Africa (SADC)">
+            <div class="bl-chip-wrap">
+              <button class="bl-chip" data-country="Angola">Angola</button><button class="bl-chip" data-country="Botswana">Botswana</button><button class="bl-chip" data-country="Comoros">Comoros</button><button class="bl-chip" data-country="Democratic Republic of the Congo">Democratic Republic of the Congo</button><button class="bl-chip" data-country="Eswatini (Swaziland)">Eswatini (Swaziland)</button><button class="bl-chip" data-country="Lesotho">Lesotho</button><button class="bl-chip" data-country="Madagascar">Madagascar</button><button class="bl-chip" data-country="Malawi">Malawi</button><button class="bl-chip" data-country="Mauritius">Mauritius</button><button class="bl-chip" data-country="Mozambique">Mozambique</button><button class="bl-chip" data-country="Namibia">Namibia</button><button class="bl-chip" data-country="Seychelles">Seychelles</button><button class="bl-chip" data-country="South Africa">South Africa</button><button class="bl-chip" data-country="Tanzania">Tanzania</button><button class="bl-chip" data-country="Zambia">Zambia</button><button class="bl-chip" data-country="Zimbabwe">Zimbabwe</button>
             </div>
-            <div class="bl-field-row">
-              <div class="bl-field">
-                <label for="bl-phone">Phone Number *</label>
-                <div class="bl-input-wrap">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f3d2e" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6 6l1.1-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2z"/></svg>
-                  <input id="bl-phone" name="phone" type="tel" placeholder="+260 977 XXX XXX" required>
-                </div>
-              </div>
-              <div class="bl-field">
-                <label for="bl-subject">Subject</label>
-                <div class="bl-input-wrap">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f3d2e" stroke-width="2"><path d="M4 4h16v16H4z" opacity="0"/><path d="M3.5 6.5h17a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-17a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z"/><path d="M3 7l9 6 9-6"/></svg>
-                  <select id="bl-subject" name="subject">
-                    <option value="">Select subject</option>
-                    <option value="general">General Inquiry</option>
-                    <option value="partnership">Partnership</option>
-                    <option value="support">Support</option>
-                    <option value="media">Media / Press</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div class="bl-field bl-full">
-              <label for="bl-message">Your Message *</label>
-              <div class="bl-input-wrap">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0f3d2e" stroke-width="2" style="top:18px; transform:none;"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-                <textarea id="bl-message" name="message" placeholder="Type your message here..." required></textarea>
-              </div>
-            </div>
-            <button type="submit" class="bl-submit">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
-              Send Message
-            </button>
-            <div class="bl-form-note" id="bl-form-note"></div>
-          </form>
+          </div>
         </div>
       </div>
 
@@ -525,17 +451,6 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
 
   <script>
     (function(){
-      var form = document.getElementById('bl-contact-form');
-      var note = document.getElementById('bl-form-note');
-      if (form){
-        form.addEventListener('submit', function(e){
-          e.preventDefault();
-          note.textContent = 'Thanks! Your message has been sent - we will get back to you shortly.';
-          note.style.color = '#a9e6c4';
-          form.reset();
-        });
-      }
-
       var OFFICES = {
         "Zambia": [
           { label:"Head Office", address:"Plot 12, Cairo Road, Lusaka, Zambia", phone:"+260 211 123 456", email:"info@ballylife.com" }
