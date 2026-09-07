@@ -124,6 +124,8 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.match(/\/revenue-authorities\/[^/?]+$/)) return mktMock.authorityGet(path.split("/revenue-authorities/")[1].split("?")[0]);
   if (path.includes("/admin/tax-summary"))       return mktMock.adminTaxSummary();
   if (path.includes("/admin/stats"))             return mktMock.adminStats();
+  if (path.includes("/admin/orders") && path.includes("/refund") && method === "POST") return mktMock.adminRefundOrder(path.split("/admin/orders/")[1].split("/refund")[0], body);
+  if (path.includes("/admin/orders") && path.includes("/refunds")) return mktMock.adminOrderRefunds(path.split("/admin/orders/")[1].split("/refunds")[0]);
   if (path.includes("/admin/orders"))            return mktMock.orders();
   if (path.includes("/addresses"))               return mktMock.addresses();
   return { success: true, data: {} };
@@ -195,6 +197,8 @@ export const mktAdmin = {
   },
   customers: () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/customers"),
   reportUrl: (report: "orders" | "products" | "tax") => `${BASE}/api/marketplace/admin/reports/${report}.csv`,
+  refundOrder: (orderId: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string; message?: string }>(`/api/marketplace/admin/orders/${orderId}/refund`, { method: "POST", body: JSON.stringify(body) }),
+  orderRefunds: (orderId: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/orders/${orderId}/refunds`),
   allProducts: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: Record<string, unknown> }>(`/api/marketplace/admin/products?${new URLSearchParams(params)}`),
   updateProductPrice: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/products/${id}/price`, { method: "PATCH", body: JSON.stringify(body) }),
   suppliers: {

@@ -3,8 +3,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
-import { submitOrderPayment, getOrderTransactions } from "../services/mktPay";
-import { verifyItnSignature } from "../services/payfastProcessor";
+import { submitOrderPayment, getOrderTransactions, refundOrder } from "../services/mktPay";
+import { verifyItnSignature, confirmWithPayfast } from "../services/payfastProcessor";
 import { sendOrderConfirmationEmail } from "../services/emailService";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 
@@ -159,7 +159,13 @@ const mapOrder = (r: any) => ({
   paymentMethod: r.payment_method, shippingAddress: r.shipping_address, shippingStatus: r.shipping_status,
   trackingNumber: r.tracking_number, carrier: r.carrier, estimatedDelivery: r.estimated_delivery,
   couponCode: r.coupon_code, notes: r.notes, placedAt: r.placed_at, confirmedAt: r.confirmed_at,
-  shippedAt: r.shipped_at, deliveredAt: r.delivered_at, cancelledAt: r.cancelled_at,
+  shippedAt: r.shipped_at, deliveredAt: r.delivered_at, cancelledAt: r.cancelled_at, refundedAmount: Number(r.refunded_amount ?? 0),
+});
+
+const mapOrderRefund = (r: any) => ({
+  id: r.id, orderId: r.order_id, orderNumber: r.order_number, productId: r.product_id, productName: r.product_name,
+  quantity: r.quantity, amount: Number(r.amount), reason: r.reason, status: r.status,
+  processorRef: r.processor_ref, initiatedBy: r.initiated_by, createdAt: r.created_at,
 });
 
 const mapTaxRate = (r: any) => ({
@@ -469,12 +475,23 @@ router.post("/cart/:userId/coupon", requireAuth, requireSelf, async (req: Reques
 // source-IP allowlist against PayFast's published ranges (or the second
 // POST-back to their /eng/query/validate endpoint) isn't implemented
 // here yet; add one before relying on this for real payments.
+// Signature check is the first of PayFast's two recommended layers; the
+// server-to-server confirmWithPayfast round-trip below is the second —
+// together they mean a forged request can't be accepted just by
+// replicating the signature formula, it has to actually be echoed back
+// as valid by PayFast's own servers.
 router.post("/payfast/notify", async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as Record<string, string>;
     if (!verifyItnSignature(body)) {
       console.error("[payfast] ITN signature mismatch — rejecting", { m_payment_id: body?.m_payment_id });
       res.status(400).send("invalid signature");
+      return;
+    }
+    const rawBody = (req as Request & { rawBody?: string }).rawBody;
+    if (!rawBody || !(await confirmWithPayfast(rawBody))) {
+      console.error("[payfast] Validate callback did not confirm — rejecting", { m_payment_id: body?.m_payment_id });
+      res.status(400).send("not confirmed by payfast");
       return;
     }
     const processorRef = body.m_payment_id;
@@ -570,6 +587,113 @@ router.get("/orders/:id", requireAuth, async (req: Request, res: Response): Prom
     return;
   }
   res.json({ success: true, data: mapOrder(order) });
+});
+
+// Line-level (or, with no productId, whole-order) refund. Attempts an
+// automated refund against whichever processor actually handled the
+// order's payment (via mkt_pay_transactions) — for the manual placeholder
+// processor and for PayFast (no automated refund API wired up yet) this
+// will come back unsuccessful, which is expected and non-fatal: the
+// refund record is still created as 'pending' so admins can see it needs
+// a manual bank transfer, and the order/settlement bookkeeping updates
+// regardless of whether the processor-side refund itself succeeded.
+router.post("/admin/orders/:id/refund", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { productId, quantity, reason } = req.body;
+  const { rows: orderRows } = await pool!.query(`SELECT * FROM mkt_orders WHERE id::text = $1 OR order_number = $1`, [req.params.id]);
+  if (!orderRows.length) { res.status(404).json({ success: false, error: "Order not found" }); return; }
+  const order = orderRows[0];
+
+  let amount: number;
+  let refundQuantity: number | null = null;
+  if (productId) {
+    const items = (order.items as any[]) ?? [];
+    const item = items.find(i => i.productId === productId);
+    if (!item) { res.status(404).json({ success: false, error: "That product isn't part of this order" }); return; }
+    const qtyToRefund: number = quantity ? Math.min(Number(quantity), item.quantity) : item.quantity;
+    refundQuantity = qtyToRefund;
+    amount = +(Number(item.unitPrice) * qtyToRefund).toFixed(2);
+  } else {
+    amount = Number(order.total_amount) - Number(order.refunded_amount ?? 0);
+  }
+  if (amount <= 0) { res.status(400).json({ success: false, error: "Nothing left to refund on this order/item." }); return; }
+  if (Number(order.refunded_amount ?? 0) + amount > Number(order.total_amount) + 0.01) {
+    res.status(400).json({ success: false, error: "This refund would exceed the order's total — check what's already been refunded." });
+    return;
+  }
+
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Best-effort processor-side refund — see function comment above for
+    // why a failure here doesn't abort the whole operation.
+    const { rows: txRows } = await client.query(
+      `SELECT processor, processor_ref FROM mkt_pay_transactions WHERE order_id = $1 AND status = 'confirmed' ORDER BY created_at DESC LIMIT 1`,
+      [order.id]
+    );
+    let processorRefundStatus: "pending" | "processed" | "failed" = "pending";
+    let processorRefundRef: string | null = null;
+    if (txRows.length) {
+      const pr = await refundOrder(txRows[0].processor, txRows[0].processor_ref, amount);
+      processorRefundStatus = pr.success ? "processed" : "pending"; // "pending" (not "failed") since it just means: not automated, still needs a manual transfer
+      processorRefundRef = pr.refundRef ?? null;
+    }
+
+    const { rows: refundRows } = await client.query(
+      `INSERT INTO mkt_order_refunds (order_id, product_id, quantity, amount, reason, status, processor_ref, initiated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [order.id, productId ?? null, refundQuantity, amount, reason ?? null, processorRefundStatus, processorRefundRef, req.user!.userId]
+    );
+
+    const newRefundedTotal = +(Number(order.refunded_amount ?? 0) + amount).toFixed(2);
+    const fullyRefunded = newRefundedTotal >= Number(order.total_amount) - 0.01;
+    await client.query(
+      `UPDATE mkt_orders SET refunded_amount = $1, status = $2, payment_status = $3 WHERE id = $4`,
+      [newRefundedTotal, fullyRefunded ? "refunded" : "partially_refunded", fullyRefunded ? "refunded" : order.payment_status, order.id]
+    );
+
+    // A refunded line can't still be owed to the seller/supplier — flag
+    // its settlement so a payout isn't issued (or, if one already went
+    // out before the refund, so it's visibly flagged for manual chase-back
+    // rather than silently looking like a normal pending/paid line).
+    if (productId) {
+      await client.query(
+        `UPDATE mkt_order_line_settlements SET seller_payout_status = 'refunded',
+           supplier_payout_status = CASE WHEN supplier_payout_status != 'n/a' THEN 'refunded' ELSE supplier_payout_status END
+         WHERE order_id = $1 AND product_id = $2`,
+        [order.id, productId]
+      );
+    } else {
+      await client.query(
+        `UPDATE mkt_order_line_settlements SET seller_payout_status = 'refunded',
+           supplier_payout_status = CASE WHEN supplier_payout_status != 'n/a' THEN 'refunded' ELSE supplier_payout_status END
+         WHERE order_id = $1`,
+        [order.id]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.status(201).json({
+      success: true, data: mapOrderRefund(refundRows[0]),
+      message: processorRefundStatus === "processed" ? "Refunded automatically through the payment processor." : "Refund recorded — process the actual transfer through your payment processor's dashboard, since it isn't automated for this method yet.",
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[marketplace] Refund failed:", err);
+    res.status(500).json({ success: false, error: "Could not process this refund, please try again." });
+  } finally {
+    client.release();
+  }
+});
+
+router.get("/admin/orders/:id/refunds", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT r.*, o.order_number, p.name AS product_name FROM mkt_order_refunds r
+     JOIN mkt_orders o ON o.id = r.order_id LEFT JOIN mkt_products p ON p.id = r.product_id
+     WHERE r.order_id::text = $1 OR o.order_number = $1 ORDER BY r.created_at DESC`,
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows.map(mapOrderRefund) });
 });
 
 const CANCELLABLE_STATUSES = ["pending", "confirmed", "processing"];

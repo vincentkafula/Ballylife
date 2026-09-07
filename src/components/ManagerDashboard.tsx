@@ -264,28 +264,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
-            {tab === "orders" && (
-              <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">All Orders ({orders.length})</span></div>
-                <table className="w-full text-sm">
-                  <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-                    <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
-                    <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Date</th>
-                  </tr></thead>
-                  <tbody>
-                    {orders.slice(0, 50).map((o, i) => (
-                      <tr key={i} className="border-b border-gray-50 last:border-0">
-                        <td className="px-4 py-2.5 font-semibold text-gray-900">{String(o.orderNumber)}</td>
-                        <td className="px-4 py-2.5 text-gray-500">{String(o.customerName)}</td>
-                        <td className="px-4 py-2.5 font-bold text-gray-700">{fmtZAR(Number(o.totalAmount))}</td>
-                        <td className="px-4 py-2.5 capitalize text-gray-600">{String(o.status).replace("_", " ")}</td>
-                        <td className="px-4 py-2.5 text-gray-400">{new Date(String(o.placedAt)).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {tab === "orders" && <OrderMonitoring orders={orders} onChanged={load} />}
 
             {tab === "supplyChain" && <SupplyChainPanel />}
 
@@ -1776,6 +1755,88 @@ function SettlementsPayouts() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// Order list with a refund action per row — line-level (pick one item
+// from the order) or whole-order (no item selected). Attempts an
+// automated refund through whichever processor actually handled the
+// payment; for the manual/PayFast placeholder that comes back
+// unsuccessful, which is expected — the refund is still recorded so it's
+// visible as needing a manual transfer, and the order/settlement
+// bookkeeping updates either way.
+function OrderMonitoring({ orders, onChanged }: { orders: R[]; onChanged: () => void }) {
+  const [refundFor, setRefundFor] = useState<string | null>(null);
+  const [refundForm, setRefundForm] = useState<{ productId: string; reason: string }>({ productId: "", reason: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  const startRefund = (order: R) => {
+    setRefundFor(String(order.id));
+    setRefundForm({ productId: "", reason: "" });
+  };
+
+  const submitRefund = async (order: R) => {
+    setSubmitting(true);
+    const res = await mktAdmin.refundOrder(String(order.id), { productId: refundForm.productId || undefined, reason: refundForm.reason || undefined });
+    setSubmitting(false);
+    if (!res.success) toast.error(res.error ?? "Could not process refund.");
+    else toast.success(res.message ?? "Refund recorded.");
+    setRefundFor(null);
+    onChanged();
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">All Orders ({orders.length})</span></div>
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+          <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
+          <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Refunded</th>
+          <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Date</th><th className="px-4 py-2 font-medium">Action</th>
+        </tr></thead>
+        <tbody>
+          {orders.slice(0, 50).map((o, i) => {
+            const items = (o.items as R[]) ?? [];
+            const refundable = !["refunded", "cancelled", "payment_failed"].includes(String(o.status));
+            return (
+              <Fragment key={i}>
+                <tr className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(o.orderNumber)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(o.customerName)}</td>
+                  <td className="px-4 py-2.5 font-bold text-gray-700">{fmtZAR(Number(o.totalAmount))}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{Number(o.refundedAmount ?? 0) > 0 ? fmtZAR(Number(o.refundedAmount)) : "—"}</td>
+                  <td className="px-4 py-2.5 capitalize text-gray-600">{String(o.status).replace(/_/g, " ")}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{new Date(String(o.placedAt)).toLocaleDateString()}</td>
+                  <td className="px-4 py-2.5">
+                    {refundable && (
+                      <button onClick={() => (refundFor === o.id ? setRefundFor(null) : startRefund(o))} className="text-[11px] font-semibold text-amber-700 hover:underline">
+                        {refundFor === o.id ? "Cancel" : "Refund"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {refundFor === o.id && (
+                  <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
+                    <td colSpan={7} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select value={refundForm.productId} onChange={e => setRefundForm({ ...refundForm, productId: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs">
+                          <option value="">Whole order ({fmtZAR(Number(o.totalAmount) - Number(o.refundedAmount ?? 0))} remaining)</option>
+                          {items.map((it, idx) => <option key={idx} value={String(it.productId)}>{String(it.productName)} — {fmtZAR(Number(it.unitPrice) * Number(it.quantity))}</option>)}
+                        </select>
+                        <input placeholder="Reason (optional)" value={refundForm.reason} onChange={e => setRefundForm({ ...refundForm, reason: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs flex-1 min-w-[160px]" />
+                        <button onClick={() => submitRefund(o)} disabled={submitting} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#DC2626" }}>
+                          {submitting ? "Processing..." : "Issue refund"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

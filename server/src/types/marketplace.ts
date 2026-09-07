@@ -182,6 +182,22 @@ export interface Order {
   shippedAt: string | null;
   deliveredAt: string | null;
   cancelledAt: string | null;
+  refundedAmount?: number;
+}
+
+export interface OrderRefund {
+  id: string;
+  orderId: string;
+  orderNumber?: string;
+  productId: string | null;
+  productName?: string;
+  quantity: number | null;
+  amount: number;
+  reason: string | null;
+  status: "pending" | "processed" | "failed";
+  processorRef: string | null;
+  initiatedBy: string | null;
+  createdAt: string;
 }
 
 // ─── Review ───────────────────────────────────────────────────────────────────
@@ -447,8 +463,8 @@ export interface OrderLineSettlement {
   supplierCostCurrency: string | null;
   supplierCostAmountZar: number | null;
   sellerPayoutAmount: number;
-  supplierPayoutStatus: "pending" | "paid" | "n/a";
-  sellerPayoutStatus: "pending" | "paid";
+  supplierPayoutStatus: "pending" | "paid" | "n/a" | "refunded";
+  sellerPayoutStatus: "pending" | "paid" | "refunded";
   supplierPayoutReference: string | null;
   sellerPayoutReference: string | null;
   supplierPaidAt: string | null;

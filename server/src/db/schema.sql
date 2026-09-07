@@ -596,3 +596,25 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+
+-- Line-level (or whole-order, when product_id is NULL) refunds — the
+-- previous refund path only ever refunded an entire order even for a
+-- single bad item. Tracks the actual refund attempt against whichever
+-- payment processor handled the order (via mkt_pay_transactions), and
+-- mkt_orders.refunded_amount is the running total so a partially-
+-- refunded order can be told apart from a fully-refunded one.
+CREATE TABLE IF NOT EXISTS mkt_order_refunds (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id       UUID NOT NULL REFERENCES mkt_orders(id),
+  product_id     UUID REFERENCES mkt_products(id), -- NULL = whole-order refund
+  quantity       INTEGER,
+  amount         NUMERIC(12,2) NOT NULL,
+  reason         TEXT,
+  status         TEXT NOT NULL DEFAULT 'pending', -- pending | processed | failed
+  processor_ref  TEXT,
+  initiated_by   TEXT, -- admin user id
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_mkt_order_refunds_order ON mkt_order_refunds(order_id);
+
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS refunded_amount NUMERIC(12,2) NOT NULL DEFAULT 0;

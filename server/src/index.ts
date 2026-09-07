@@ -30,7 +30,14 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 app.use(helmet());
 app.use(cors({ origin: (origin, cb) => cb(null, isAllowedOrigin(origin)), credentials: true }));
 app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" })); // PayFast's ITN webhook posts form-urlencoded, not JSON
+// PayFast's ITN webhook posts form-urlencoded, not JSON, and its own
+// validate callback (payfastProcessor.confirmWithPayfast) needs the exact
+// raw body PayFast sent, not a reconstruction from the parsed object —
+// the verify callback stashes it on the request before parsing.
+app.use(express.urlencoded({
+  extended: true, limit: "2mb",
+  verify: (req, _res, buf) => { (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8"); },
+}));
 app.use(rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false }));
 // Auth endpoints get a tighter limit on top of the general one above —
 // 300/min was generous enough to make credential-stuffing/brute-force

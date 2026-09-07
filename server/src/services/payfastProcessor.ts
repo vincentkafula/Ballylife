@@ -29,9 +29,11 @@ import type { MktPayProcessor, ChargeRequest, SubmitResult, VerifyResult, Refund
  *     https://ballylife-backend-production.up.railway.app (PayFast needs
  *     a real internet-reachable notify_url — localhost won't work)
  *
- * Before taking real payments, also add PayFast's published IP ranges as
- * a second check alongside the signature check in payfastNotify — that
- * piece isn't done here yet (see the comment on that route).
+ * Before taking real payments, also consider adding PayFast's published
+ * IP ranges as a further check if you want a third layer — signature
+ * verification plus the server-to-server validate callback
+ * (confirmWithPayfast, used by the /payfast/notify route) already cover
+ * PayFast's two officially recommended checks.
  */
 
 const MERCHANT_ID = process.env.PAYFAST_MERCHANT_ID;
@@ -119,14 +121,31 @@ export function payfastRedirectUrl(): string {
 }
 
 // Used by the ITN webhook to confirm the notification actually came from
-// PayFast (matches what we'd have signed with the same passphrase).
-// PayFast's own second recommended check — validating the source IP
-// against their published range, and/or an extra POST-back to PayFast's
-// /eng/query/validate endpoint — is NOT implemented here yet. Add at
-// least one of those before relying on this for real payments; signature
-// matching alone is a reasonable first layer but not the full picture
-// PayFast's own integration guide recommends.
+// PayFast (matches what we'd have signed with the same passphrase). This
+// is the first of PayFast's two recommended checks — see
+// confirmWithPayfast below for the second, which the webhook also runs.
 export function verifyItnSignature(body: Record<string, string>): boolean {
   if (!body.signature) return false;
   return pfSignature(body) === body.signature;
+}
+
+// PayFast's second recommended check: post the ITN data straight back to
+// their own validate endpoint and confirm they echo "VALID". This is
+// what actually stops a forged request from someone who happened to
+// guess/leak the passphrase-derived signature format — the request has
+// to round-trip through PayFast's own servers, not just match a formula.
+// Runs after the signature check, not instead of it.
+export async function confirmWithPayfast(rawBody: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/eng/query/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: rawBody,
+    });
+    const text = await res.text();
+    return text.trim() === "VALID";
+  } catch (err) {
+    console.error("[payfast] Validate callback failed:", err);
+    return false;
+  }
 }

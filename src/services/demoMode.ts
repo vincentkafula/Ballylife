@@ -743,6 +743,8 @@ const MKT_FX_RATES: R[] = [
   { currency: "KRW", rateToZar: 0.0134, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: ago(4380*60) },
 ];
 
+const MKT_ORDER_REFUNDS: R[] = [];
+
 const MKT_SETTLEMENTS: R[] = [
   { id: "set-01", orderId: "ord-1001", orderNumber: "VNK-ORD-100003", productId: "p-imp-01", productName: "K-Beauty Snail Mucin Serum", sellerId: "sel-02", sellerName: "Fashion Hub", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", quantity: 3, grossAmount: 537, platformFeePct: 8, platformFeeAmount: 42.96, supplierCostAmount: 11.7, supplierCostCurrency: "USD", supplierCostAmountZar: 212.94, sellerPayoutAmount: 281.10, supplierPayoutStatus: "pending", sellerPayoutStatus: "pending", supplierPayoutReference: null, sellerPayoutReference: null, supplierPaidAt: null, sellerPaidAt: null, createdAt: ago(2880) },
   { id: "set-02", orderId: "ord-1005", orderNumber: "VNK-ORD-100007", productId: "p-imp-05", productName: "K-Beauty Sheet Mask Variety Pack (10)", sellerId: "sel-01", sellerName: "TechZone SA", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", quantity: 4, grossAmount: 996, platformFeePct: 8, platformFeeAmount: 79.68, supplierCostAmount: 24.8, supplierCostCurrency: "USD", supplierCostAmountZar: 451.36, sellerPayoutAmount: 464.96, supplierPayoutStatus: "paid", sellerPayoutStatus: "paid", supplierPayoutReference: "EFT-2026-0091", sellerPayoutReference: "EFT-2026-0092", supplierPaidAt: ago(1440), sellerPaidAt: ago(1440), createdAt: ago(20160) },
@@ -1233,4 +1235,16 @@ export const mktMock = {
     if (body.sellerPayoutReference !== undefined) s.sellerPayoutReference = body.sellerPayoutReference;
     return { success:true, data:s };
   },
+  adminRefundOrder: (orderId: string, body: R) => {
+    const order = MKT_ORDERS.find((o: R) => o.id === orderId || o.orderNumber === orderId) as R | undefined;
+    if (!order) return { success:false, error:"Order not found" };
+    const amount = body.productId ? 199 : Number(order.totalAmount) - Number(order.refundedAmount ?? 0);
+    if (amount <= 0) return { success:false, error:"Nothing left to refund on this order/item." };
+    const refund: R = { id:`ref-${uuid()}`, orderId, orderNumber:order.orderNumber, productId:body.productId ?? null, quantity:body.quantity ?? null, amount, reason:body.reason ?? null, status:"pending", processorRef:null, initiatedBy:"demo-admin", createdAt:new Date().toISOString() };
+    MKT_ORDER_REFUNDS.push(refund);
+    order.refundedAmount = Number(order.refundedAmount ?? 0) + amount;
+    order.status = order.refundedAmount >= Number(order.totalAmount) - 0.01 ? "refunded" : "partially_refunded";
+    return { success:true, data:refund, message:"Refund recorded — process the actual transfer through your payment processor's dashboard, since it isn't automated for this method yet." };
+  },
+  adminOrderRefunds: (orderId: string) => ({ success:true, data:MKT_ORDER_REFUNDS.filter(r => r.orderId === orderId || r.orderNumber === orderId) }),
 };
