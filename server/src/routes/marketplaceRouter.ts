@@ -8,6 +8,9 @@ import { verifyItnSignature, confirmWithPayfast } from "../services/payfastProce
 import { sendOrderConfirmationEmail } from "../services/emailService";
 import { parseCsv } from "../utils/csv";
 import { calculateVat, convertToZar, calculatePercentageDuty, calculateZmVehicleDuty, calculatePlatformFee, calculateSellerPayout, zmVehicleAgeBand, round2 } from "../utils/pricing";
+import { checkVehicleCompliance } from "../utils/compliance";
+import { SUPPLIER_ORDER_TRANSITIONS, CUSTOMS_RECORD_TRANSITIONS, canTransition, allowedNextStates } from "../utils/stateMachine";
+import { recalcCartTotals } from "../utils/cart";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
@@ -141,17 +144,7 @@ const ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY: Record<string, string> = { CN: "wh-o
 
 // Valid forward transitions for a supplier order's two-leg status machine —
 // used to reject an admin trying to skip steps or move backwards.
-const SUPPLIER_ORDER_TRANSITIONS: Record<string, string[]> = {
-  ordered_from_supplier: ["received_at_origin_hub"],
-  received_at_origin_hub: ["qc_passed_origin", "qc_failed_origin"],
-  qc_passed_origin: ["in_transit_to_destination"],
-  qc_failed_origin: [], // terminal — handled manually (refund/reorder) outside this state machine
-  in_transit_to_destination: ["received_at_destination_hub"],
-  received_at_destination_hub: ["customs_cleared"],
-  customs_cleared: ["shipped_to_customer"],
-  shipped_to_customer: ["delivered"],
-  delivered: [],
-};
+// Defined and tested in ../utils/stateMachine.ts (SUPPLIER_ORDER_TRANSITIONS), imported above.
 
 const mapOrder = (r: any) => ({
   id: r.id, orderNumber: r.order_number, userId: r.user_id, customerName: r.customer_name,
@@ -217,14 +210,8 @@ const mapSettlement = (r: any) => ({
 // workflow: computed in-system, funds handed to whichever accredited
 // courier/broker declares it, that declaration accepted, goods released.
 // "held" can be reached from prepaid/declared (customs queries/inspects)
-// and can resolve back to declared or forward to cleared.
-const CUSTOMS_RECORD_TRANSITIONS: Record<string, string[]> = {
-  duty_calculated: ["prepaid_to_agent"],
-  prepaid_to_agent: ["declared_to_customs", "held"],
-  declared_to_customs: ["cleared", "held"],
-  held: ["declared_to_customs", "cleared"],
-  cleared: [],
-};
+// and can resolve back to declared or forward to cleared. Defined and
+// tested in ../utils/stateMachine.ts (CUSTOMS_RECORD_TRANSITIONS), imported above.
 
 const mapReview = (r: any) => ({
   id: r.id, productId: r.product_id, userId: r.user_id, orderId: r.order_id, rating: r.rating,
@@ -244,18 +231,7 @@ const cartRowToApi = (r: any) => ({
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
-function recalcCartTotals(items: any[], coupon: any | null) {
-  const subtotal = +items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2);
-  let couponDiscount = 0;
-  if (coupon) {
-    if (coupon.type === "percentage") couponDiscount = Math.min(+(subtotal * Number(coupon.value) / 100).toFixed(2), coupon.max_discount_amount ? Number(coupon.max_discount_amount) : Infinity);
-    else if (coupon.type === "fixed_amount") couponDiscount = Math.min(Number(coupon.value), subtotal);
-  }
-  const shipping = subtotal > 500 || coupon?.type === "free_shipping" ? 0 : (items.length ? 99 : 0);
-  const tax = +(subtotal * 0.15).toFixed(2);
-  const total = +(subtotal + shipping + tax - couponDiscount).toFixed(2);
-  return { subtotal, shipping, tax, total, couponDiscount };
-}
+// recalcCartTotals is imported from ../utils/cart.ts (tested there).
 
 // ── CATEGORIES ────────────────────────────────────────────────────────────────
 router.get("/categories", async (_req: Request, res: Response): Promise<void> => {
@@ -835,18 +811,11 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
 
       // Vehicle compliance — checked against THIS order's actual delivery
       // country, since the same listing can be legal for one country and
-      // not another (Zambia allows used-vehicle imports; South Africa's
-      // ITAC does not, for commercial resale). Applies regardless of new/
-      // used: South Africa also requires an NRCS Letter of Authority
-      // (type-approval) on every vehicle, new or used, before it can be
-      // delivered there.
-      if (p?.category_id === "cat-07" && shippingAddress.country === "ZA") {
-        if (p.condition === "used") {
-          throw { code: "VEHICLE_COMPLIANCE", message: `"${item.productName}" can't be delivered to a South African address — South Africa (ITAC) restricts commercial resale of used vehicles to narrow personal exemptions only. This vehicle can still be ordered for delivery to Zambia.` };
-        }
-        if (!p.nrcs_approved) {
-          throw { code: "VEHICLE_COMPLIANCE", message: `"${item.productName}" doesn't yet have NRCS type-approval on file, which South Africa requires for every imported vehicle before it can be delivered. Contact support once approval is obtained.` };
-        }
+      // not another. Rule itself lives in ../utils/compliance.ts (tested
+      // there) — this just calls it and throws on a block.
+      const compliance = checkVehicleCompliance(p?.category_id, shippingAddress.country, p?.condition, Boolean(p?.nrcs_approved), item.productName);
+      if (compliance.blocked) {
+        throw { code: "VEHICLE_COMPLIANCE", message: compliance.reason };
       }
     }
     // 12-day buffer covers origin-hub QC + consolidated freight + customs +
@@ -2057,8 +2026,8 @@ router.patch("/admin/supplier-orders/:id/status", requireAuth, requireRole(...MA
   const { rows: existing } = await pool!.query(`SELECT status FROM mkt_supplier_orders WHERE id::text = $1`, [req.params.id]);
   if (!existing.length) { res.status(404).json({ success: false, error: "Supplier order not found" }); return; }
   const current = existing[0].status;
-  const allowed = SUPPLIER_ORDER_TRANSITIONS[current] ?? [];
-  if (!allowed.includes(status)) {
+  const allowed = allowedNextStates(SUPPLIER_ORDER_TRANSITIONS, current);
+  if (!canTransition(SUPPLIER_ORDER_TRANSITIONS, current, status)) {
     res.status(409).json({ success: false, error: `Cannot move from "${current}" to "${status}" — valid next step(s): ${allowed.join(", ") || "none (terminal state)"}` });
     return;
   }
@@ -2545,8 +2514,8 @@ router.patch("/admin/customs-records/:id", requireAuth, requireRole(...MANAGER_R
   if (notes !== undefined) { vals.push(notes); sets.push(`notes = $${vals.length}`); }
   if (status !== undefined) {
     const current = existing[0].status;
-    const allowed = CUSTOMS_RECORD_TRANSITIONS[current] ?? [];
-    if (!allowed.includes(status)) {
+    const allowed = allowedNextStates(CUSTOMS_RECORD_TRANSITIONS, current);
+    if (!canTransition(CUSTOMS_RECORD_TRANSITIONS, current, status)) {
       res.status(409).json({ success: false, error: `Cannot move from "${current}" to "${status}" — valid next step(s): ${allowed.join(", ") || "none (terminal state)"}` });
       return;
     }
