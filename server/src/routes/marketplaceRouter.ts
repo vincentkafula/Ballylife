@@ -6,6 +6,8 @@ import { requireAuth, requireRole, JWT_SECRET, JWT_EXPIRES } from "../middleware
 import { submitOrderPayment, getOrderTransactions, refundOrder } from "../services/mktPay";
 import { verifyItnSignature, confirmWithPayfast } from "../services/payfastProcessor";
 import { sendOrderConfirmationEmail } from "../services/emailService";
+import { parseCsv } from "../utils/csv";
+import { calculateVat, convertToZar, calculatePercentageDuty, calculateZmVehicleDuty, calculatePlatformFee, calculateSellerPayout, zmVehicleAgeBand, round2 } from "../utils/pricing";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
@@ -879,7 +881,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       ? await client.query(`SELECT * FROM mkt_vehicle_duty_zm`)
       : { rows: [] as any[] };
 
-    const taxAmount = +(cart.subtotal * vatRatePct / 100).toFixed(2);
+    const taxAmount = calculateVat(cart.subtotal, vatRatePct);
     // Import duty is never charged to the customer directly — it's a cost
     // Ballylife carries and settles at the border (see mkt_customs_records
     // once the shipment is batched). Computed here on the supplier cost
@@ -898,9 +900,8 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
         // and all hybrids/EVs fall through to the ordinary percentage
         // method below (ZRA's own ad valorem rule for those categories).
         const vd = f.vehicleDetails;
-        const ageYears = new Date().getFullYear() - Number(vd.year ?? new Date().getFullYear());
-        const ageBand = ageYears >= 5 ? "5_plus" : ageYears >= 2 ? "2_to_5" : null;
-        const match = ageBand && vd.fuelType !== "hybrid" && vd.fuelType !== "electric"
+        const ageBand = zmVehicleAgeBand(Number(vd.year ?? new Date().getFullYear()), vd.fuelType, new Date().getFullYear());
+        const match = ageBand
           ? vehicleDutyZmRows.find((r: any) => r.body_type === vd.bodyType && r.age_band === ageBand && Number(vd.engineCc) >= r.engine_cc_min && (r.engine_cc_max === null || Number(vd.engineCc) <= r.engine_cc_max))
           : null;
         if (match) {
@@ -911,7 +912,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
           // (flagged via console) rather than silently added unconverted.
           const zmwRate = fxByCurrency.get("ZMW");
           if (zmwRate) {
-            dutyAmount += (Number(match.duty_kwacha) + Number(match.carbon_surtax_kwacha)) * item.quantity * zmwRate;
+            dutyAmount += calculateZmVehicleDuty(Number(match.duty_kwacha), Number(match.carbon_surtax_kwacha), item.quantity, zmwRate);
           } else {
             console.error(`[orders] No ZMW FX rate on file — Zambia vehicle duty for order ${orderNumber} item ${item.productId} was skipped, not silently added unconverted. Add a ZMW rate under Payouts > Manage FX rates.`);
           }
@@ -922,13 +923,13 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       const rate = f.categoryId ? (dutyRateByCategory.get(f.categoryId) ?? defaultDutyRatePct) : defaultDutyRatePct;
       const costRate = f.costCurrency ? fxByCurrency.get(f.costCurrency) : undefined;
       if (costRate) {
-        dutyAmount += Number(f.costPrice) * costRate * item.quantity * (rate / 100);
+        dutyAmount += calculatePercentageDuty(Number(f.costPrice), item.quantity, costRate, rate);
       } else {
         console.error(`[orders] No FX rate on file for ${f.costCurrency} — duty for order ${orderNumber} item ${item.productId} was skipped, not silently computed in the wrong currency. Add a rate under Payouts > Manage FX rates.`);
       }
     }
-    dutyAmount = +dutyAmount.toFixed(2);
-    const totalAmount = +(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount).toFixed(2);
+    dutyAmount = round2(dutyAmount);
+    const totalAmount = round2(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount);
 
     const { rows } = await client.query(
       `INSERT INTO mkt_orders (order_number, user_id, customer_name, customer_email, items, subtotal, shipping_cost,
@@ -975,15 +976,15 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       if (!f) continue;
       const grossAmount = Number(item.unitPrice) * item.quantity;
       const platformFeePct = f.commissionPct;
-      const platformFeeAmount = +(grossAmount * platformFeePct / 100).toFixed(2);
+      const platformFeeAmount = calculatePlatformFee(grossAmount, platformFeePct);
       let supplierCostAmount: number | null = null, supplierCostCurrency: string | null = null, supplierCostAmountZar: number | null = null;
       if (f.fulfillmentType === "imported" && f.costPrice) {
-        supplierCostAmount = +(Number(f.costPrice) * item.quantity).toFixed(2);
+        supplierCostAmount = round2(Number(f.costPrice) * item.quantity);
         supplierCostCurrency = f.costCurrency;
-        const rate = f.costCurrency ? fxByCurrency.get(f.costCurrency) : undefined;
-        supplierCostAmountZar = rate ? +(supplierCostAmount * rate).toFixed(2) : null; // null if no FX rate on file yet — flagged for admin, not silently assumed
+        supplierCostAmountZar = convertToZar(supplierCostAmount, f.costCurrency, fxByCurrency); // null if no FX rate on file yet — flagged for admin, not silently assumed
+        if (supplierCostAmountZar !== null) supplierCostAmountZar = round2(supplierCostAmountZar);
       }
-      const sellerPayoutAmount = +(grossAmount - platformFeeAmount - (supplierCostAmountZar ?? 0)).toFixed(2);
+      const sellerPayoutAmount = calculateSellerPayout(grossAmount, platformFeeAmount, supplierCostAmountZar);
       await client.query(
         `INSERT INTO mkt_order_line_settlements (order_id, product_id, seller_id, supplier_id, quantity, gross_amount,
            platform_fee_pct, platform_fee_amount, supplier_cost_amount, supplier_cost_currency, supplier_cost_amount_zar,
@@ -1915,32 +1916,10 @@ router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES
 // commas/newlines) and doubled-quote escaping, which a naive split(",")
 // would break on. Not a full RFC 4180 implementation, but covers what a
 // spreadsheet export (Excel/Google Sheets/Numbers) actually produces.
-function parseCsv(text: string): Record<string, string>[] {
-  const rows: string[][] = [];
-  let row: string[] = [], field = "", inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i], next = text[i + 1];
-    if (inQuotes) {
-      if (c === '"' && next === '"') { field += '"'; i++; }
-      else if (c === '"') { inQuotes = false; }
-      else { field += c; }
-    } else {
-      if (c === '"') inQuotes = true;
-      else if (c === ",") { row.push(field); field = ""; }
-      else if (c === "\n" || c === "\r") {
-        if (c === "\r" && next === "\n") i++;
-        row.push(field); field = "";
-        if (row.length > 1 || row[0] !== "") rows.push(row);
-        row = [];
-      } else { field += c; }
-    }
-  }
-  if (field !== "" || row.length) { row.push(field); rows.push(row); }
-  if (!rows.length) return [];
-  const headers = rows[0].map(h => h.trim());
-  return rows.slice(1).filter(r => r.some(c => c.trim() !== "")).map(r => Object.fromEntries(headers.map((h, i) => [h, (r[i] ?? "").trim()])));
-}
-
+// Minimal but correct CSV parser — handles quoted fields (with embedded
+// commas/newlines) and doubled-quote escaping, which a naive split(",")
+// would break on. Not a full RFC 4180 implementation, but covers what a
+// spreadsheet export (Excel/Google Sheets/Numbers) actually produces.
 router.post("/admin/supplier-products/bulk-import", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { csv } = req.body;
   if (!csv || typeof csv !== "string") { res.status(400).json({ success: false, error: "csv (raw CSV text) is required" }); return; }
@@ -2526,12 +2505,11 @@ router.post("/admin/customs-records/generate", requireAuth, requireRole(...MANAG
 
   let declaredValue = 0, dutyAmount = 0;
   for (const line of lineRows) {
-    const fxRate = line.cost_currency ? fxByCurrency.get(line.cost_currency) : undefined;
-    if (!fxRate) {
+    const costZar = convertToZar(Number(line.cost_amount), line.cost_currency, fxByCurrency);
+    if (costZar === null) {
       console.error(`[customs] No FX rate on file for ${line.cost_currency} — a line was skipped generating the customs record for shipment ${shipmentId}, not silently added in the wrong currency.`);
       continue;
     }
-    const costZar = Number(line.cost_amount) * fxRate;
     declaredValue += costZar;
     const rate = line.category_id ? (dutyRateByCategory.get(line.category_id) ?? defaultDutyRatePct) : defaultDutyRatePct;
     dutyAmount += costZar * (rate / 100);
