@@ -736,6 +736,18 @@ const MKT_VEHICLE_DUTY_ZM: Record<string, unknown>[] = [
 
 const MKT_CUSTOMS_RECORDS: Record<string, unknown>[] = [];
 
+const MKT_FX_RATES: R[] = [
+  { currency: "USD", rateToZar: 18.20, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: ago(4380*60) },
+  { currency: "CNY", rateToZar: 2.52, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: ago(4380*60) },
+  { currency: "JPY", rateToZar: 0.122, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: ago(4380*60) },
+  { currency: "KRW", rateToZar: 0.0134, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: ago(4380*60) },
+];
+
+const MKT_SETTLEMENTS: R[] = [
+  { id: "set-01", orderId: "ord-1001", orderNumber: "VNK-ORD-100003", productId: "p-imp-01", productName: "K-Beauty Snail Mucin Serum", sellerId: "sel-02", sellerName: "Fashion Hub", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", quantity: 3, grossAmount: 537, platformFeePct: 8, platformFeeAmount: 42.96, supplierCostAmount: 11.7, supplierCostCurrency: "USD", supplierCostAmountZar: 212.94, sellerPayoutAmount: 281.10, supplierPayoutStatus: "pending", sellerPayoutStatus: "pending", supplierPayoutReference: null, sellerPayoutReference: null, supplierPaidAt: null, sellerPaidAt: null, createdAt: ago(2880) },
+  { id: "set-02", orderId: "ord-1005", orderNumber: "VNK-ORD-100007", productId: "p-imp-05", productName: "K-Beauty Sheet Mask Variety Pack (10)", sellerId: "sel-01", sellerName: "TechZone SA", supplierId: "sup-kr-01", supplierName: "Seoul Beauty Export Group", quantity: 4, grossAmount: 996, platformFeePct: 8, platformFeeAmount: 79.68, supplierCostAmount: 24.8, supplierCostCurrency: "USD", supplierCostAmountZar: 451.36, sellerPayoutAmount: 464.96, supplierPayoutStatus: "paid", sellerPayoutStatus: "paid", supplierPayoutReference: "EFT-2026-0091", sellerPayoutReference: "EFT-2026-0092", supplierPaidAt: ago(1440), sellerPaidAt: ago(1440), createdAt: ago(20160) },
+];
+
 const MKT_REVENUE_AUTHORITIES: R[] = [
   { id: "auth-za-sars", name: "South African Revenue Service (SARS)", country: "ZA", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", userId: null, createdAt: ago(4380*60) },
   { id: "auth-zm-zra", name: "Zambia Revenue Authority (ZRA)", country: "ZM", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", userId: null, createdAt: ago(4380*60) },
@@ -1189,5 +1201,36 @@ export const mktMock = {
     if (body.carbonSurtaxKwacha !== undefined) row.carbonSurtaxKwacha = Number(body.carbonSurtaxKwacha);
     if (body.notes !== undefined) row.notes = body.notes;
     return { success:true, data:row };
+  },
+  adminFxRates: () => ({ success:true, data:MKT_FX_RATES }),
+  adminCreateFxRate: (body: R) => {
+    if (!body.currency || body.rateToZar === undefined) return { success:false, error:"currency and rateToZar are required" };
+    let r = MKT_FX_RATES.find(x => x.currency === body.currency);
+    if (!r) { r = { currency: body.currency }; MKT_FX_RATES.push(r); }
+    r.rateToZar = Number(body.rateToZar); r.notes = body.notes ?? null; r.updatedAt = new Date().toISOString();
+    return { success:true, data:r };
+  },
+  adminSettlements: (qs: Record<string,string>) => {
+    let list = [...MKT_SETTLEMENTS];
+    if (qs.sellerId) list = list.filter(s => s.sellerId === qs.sellerId);
+    if (qs.supplierId) list = list.filter(s => s.supplierId === qs.supplierId);
+    if (qs.supplierPayoutStatus) list = list.filter(s => s.supplierPayoutStatus === qs.supplierPayoutStatus);
+    if (qs.sellerPayoutStatus) list = list.filter(s => s.sellerPayoutStatus === qs.sellerPayoutStatus);
+    const totals = list.reduce((acc, r) => {
+      acc.platformFeeTotal += Number(r.platformFeeAmount);
+      if (r.sellerPayoutStatus === "pending") acc.sellerOwedTotal += Number(r.sellerPayoutAmount);
+      if (r.supplierPayoutStatus === "pending") acc.supplierOwedTotal += Number(r.supplierCostAmountZar ?? 0);
+      return acc;
+    }, { platformFeeTotal:0, sellerOwedTotal:0, supplierOwedTotal:0 });
+    return { success:true, data:list, meta:{ total:list.length, totals } };
+  },
+  adminUpdateSettlement: (id: string, body: R) => {
+    const s = MKT_SETTLEMENTS.find(x => x.id === id);
+    if (!s) return { success:false, error:"Settlement not found" };
+    if (body.supplierPayoutStatus !== undefined) { s.supplierPayoutStatus = body.supplierPayoutStatus; if (body.supplierPayoutStatus === "paid") s.supplierPaidAt = new Date().toISOString(); }
+    if (body.sellerPayoutStatus !== undefined) { s.sellerPayoutStatus = body.sellerPayoutStatus; if (body.sellerPayoutStatus === "paid") s.sellerPaidAt = new Date().toISOString(); }
+    if (body.supplierPayoutReference !== undefined) s.supplierPayoutReference = body.supplierPayoutReference;
+    if (body.sellerPayoutReference !== undefined) s.sellerPayoutReference = body.sellerPayoutReference;
+    return { success:true, data:s };
   },
 };

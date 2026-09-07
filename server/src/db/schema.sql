@@ -530,3 +530,55 @@ CREATE TABLE IF NOT EXISTS mkt_vehicle_duty_zm (
   notes             TEXT,
   UNIQUE (body_type, engine_cc_min, engine_cc_max, age_band)
 );
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Settlement ledger — the four-way split every order actually implies:
+-- supplier gets their price, seller gets their margin, Ballylife keeps a
+-- platform fee (seller.commission_pct, already existed but was previously
+-- only displayed, never applied), and the tax/duty side is already
+-- tracked separately (mkt_orders.tax_amount / duty_amount,
+-- mkt_customs_records). This computes what's owed to whom per order line
+-- — it does NOT move money; marking something "paid" here just records
+-- that Ballylife settled it through whatever real payment channel
+-- (bank transfer, etc.) it actually used.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Admin-maintained conversion rates so a supplier's cost (quoted in USD/
+-- CNY/JPY/KRW) can be expressed in ZAR for settlement math — illustrative
+-- rates only; a real payout run should use the rate on the actual day of
+-- payment, not a static table like this one.
+CREATE TABLE IF NOT EXISTS mkt_fx_rates (
+  currency      TEXT PRIMARY KEY, -- USD | CNY | JPY | KRW
+  rate_to_zar   NUMERIC(10,4) NOT NULL, -- 1 unit of currency = this many ZAR
+  notes         TEXT,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per order line (a single order can span multiple sellers and
+-- multiple suppliers, since mkt_orders.items is a mixed cart) — computed
+-- at order-placement time alongside tax/duty, in POST /orders.
+CREATE TABLE IF NOT EXISTS mkt_order_line_settlements (
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id                 UUID NOT NULL REFERENCES mkt_orders(id),
+  product_id               UUID NOT NULL REFERENCES mkt_products(id),
+  seller_id                TEXT NOT NULL REFERENCES mkt_sellers(id),
+  supplier_id              TEXT REFERENCES mkt_suppliers(id), -- NULL for a locally-sourced line
+  quantity                 INTEGER NOT NULL,
+  gross_amount             NUMERIC(12,2) NOT NULL, -- price * quantity, ZAR, excludes tax/duty/shipping
+  platform_fee_pct         NUMERIC(4,1) NOT NULL,  -- seller.commission_pct at order time
+  platform_fee_amount      NUMERIC(12,2) NOT NULL,
+  supplier_cost_amount     NUMERIC(12,2), -- in supplier_cost_currency, NULL for a local line
+  supplier_cost_currency   TEXT,
+  supplier_cost_amount_zar NUMERIC(12,2), -- converted via mkt_fx_rates at order time
+  seller_payout_amount     NUMERIC(12,2) NOT NULL, -- gross - platform fee - supplier cost (ZAR)
+  supplier_payout_status   TEXT NOT NULL DEFAULT 'pending', -- pending | paid | n/a (n/a for local lines)
+  seller_payout_status     TEXT NOT NULL DEFAULT 'pending', -- pending | paid
+  supplier_payout_reference TEXT,
+  seller_payout_reference  TEXT,
+  supplier_paid_at         TIMESTAMPTZ,
+  seller_paid_at           TIMESTAMPTZ,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_mkt_settlements_order    ON mkt_order_line_settlements(order_id);
+CREATE INDEX IF NOT EXISTS idx_mkt_settlements_seller   ON mkt_order_line_settlements(seller_id);
+CREATE INDEX IF NOT EXISTS idx_mkt_settlements_supplier ON mkt_order_line_settlements(supplier_id);

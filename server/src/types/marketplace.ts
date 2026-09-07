@@ -420,3 +420,38 @@ export interface RevenueAuthority {
   userId?: string | null;
   createdAt: string;
 }
+
+// ─── Settlement ledger (platform fee + supplier/seller payouts) ──────────────
+export interface FxRate {
+  currency: string;
+  rateToZar: number;
+  notes: string | null;
+  updatedAt: string;
+}
+
+export interface OrderLineSettlement {
+  id: string;
+  orderId: string;
+  orderNumber?: string;
+  productId: string;
+  productName?: string;
+  sellerId: string;
+  sellerName?: string;
+  supplierId: string | null;
+  supplierName?: string;
+  quantity: number;
+  grossAmount: number;
+  platformFeePct: number;
+  platformFeeAmount: number;
+  supplierCostAmount: number | null;
+  supplierCostCurrency: string | null;
+  supplierCostAmountZar: number | null;
+  sellerPayoutAmount: number;
+  supplierPayoutStatus: "pending" | "paid" | "n/a";
+  sellerPayoutStatus: "pending" | "paid";
+  supplierPayoutReference: string | null;
+  sellerPayoutReference: string | null;
+  supplierPaidAt: string | null;
+  sellerPaidAt: string | null;
+  createdAt: string;
+}

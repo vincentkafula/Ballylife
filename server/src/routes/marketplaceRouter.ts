@@ -190,6 +190,19 @@ const mapVehicleDutyZm = (r: any) => ({
   ageBand: r.age_band, dutyKwacha: Number(r.duty_kwacha), carbonSurtaxKwacha: Number(r.carbon_surtax_kwacha), notes: r.notes,
 });
 
+const mapFxRate = (r: any) => ({ currency: r.currency, rateToZar: Number(r.rate_to_zar), notes: r.notes, updatedAt: r.updated_at });
+
+const mapSettlement = (r: any) => ({
+  id: r.id, orderId: r.order_id, orderNumber: r.order_number, productId: r.product_id, productName: r.product_name,
+  sellerId: r.seller_id, sellerName: r.seller_name, supplierId: r.supplier_id, supplierName: r.supplier_name,
+  quantity: r.quantity, grossAmount: Number(r.gross_amount), platformFeePct: Number(r.platform_fee_pct), platformFeeAmount: Number(r.platform_fee_amount),
+  supplierCostAmount: r.supplier_cost_amount !== null ? Number(r.supplier_cost_amount) : null, supplierCostCurrency: r.supplier_cost_currency,
+  supplierCostAmountZar: r.supplier_cost_amount_zar !== null ? Number(r.supplier_cost_amount_zar) : null,
+  sellerPayoutAmount: Number(r.seller_payout_amount), supplierPayoutStatus: r.supplier_payout_status, sellerPayoutStatus: r.seller_payout_status,
+  supplierPayoutReference: r.supplier_payout_reference, sellerPayoutReference: r.seller_payout_reference,
+  supplierPaidAt: r.supplier_paid_at, sellerPaidAt: r.seller_paid_at, createdAt: r.created_at,
+});
+
 // Valid forward transitions for a customs record — mirrors the real
 // workflow: computed in-system, funds handed to whichever accredited
 // courier/broker declares it, that declaration accepted, goods released.
@@ -610,22 +623,24 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     // an order with any supplier-sourced line needs the supplier's lead
     // time plus international shipping/customs, not the same 5-day promise)
     // and, further down, to open the two-leg supplier-order records.
-    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null; vehicleDetails: any; condition: string | null; nrcsApproved: boolean }>();
+    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null; vehicleDetails: any; condition: string | null; nrcsApproved: boolean; costCurrency: string | null; commissionPct: number }>();
     let maxLeadTimeDays = 0;
     for (const item of items) {
       const { rows: prodRows } = await client.query(
-        `SELECT p.fulfillment_type, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.origin_country, sup.lead_time_days
+        `SELECT p.fulfillment_type, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.currency AS cost_currency, sp.origin_country, sup.lead_time_days, s.commission_pct
          FROM mkt_products p
          LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
          LEFT JOIN mkt_suppliers sup ON sup.id = sp.supplier_id
+         JOIN mkt_sellers s ON s.id = p.seller_id
          WHERE p.id::text = $1`, [item.productId]
       );
       const p = prodRows[0];
       itemFulfillment.set(item.productId, {
         fulfillmentType: p?.fulfillment_type ?? "local", supplierProductId: p?.supplier_product_id ?? null,
-        supplierId: p?.supplier_id ?? null, costPrice: p?.cost_price ?? null, originCountry: p?.origin_country ?? null,
+        supplierId: p?.supplier_id ?? null, costPrice: p?.cost_price ?? null, costCurrency: p?.cost_currency ?? null, originCountry: p?.origin_country ?? null,
         leadTimeDays: p?.lead_time_days ?? null, categoryId: p?.category_id ?? null,
         vehicleDetails: p?.vehicle_details ?? null, condition: p?.condition ?? null, nrcsApproved: p?.nrcs_approved ?? false,
+        commissionPct: p?.commission_pct !== undefined && p?.commission_pct !== null ? Number(p.commission_pct) : 8,
       });
       if (p?.fulfillment_type === "imported" && p?.lead_time_days) maxLeadTimeDays = Math.max(maxLeadTimeDays, Number(p.lead_time_days));
 
@@ -737,6 +752,40 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ordered_from_supplier')`,
         [order.id, item.productId, p.supplierId, p.supplierProductId, item.sellerId, item.quantity,
          Number(p.costPrice) * item.quantity, originWarehouseId, destinationWarehouseId]
+      );
+    }
+
+    // Settlement — the four-way split: platform fee (seller's commission
+    // rate, already existed but was display-only until now), what the
+    // supplier is owed (imported lines only, converted to ZAR via
+    // mkt_fx_rates), and what's left for the seller. Tax/duty are already
+    // tracked separately on the order and in mkt_customs_records — this
+    // is purely the payout side. One row per line, since a single order
+    // can span multiple sellers and suppliers.
+    const { rows: fxRows } = await client.query(`SELECT * FROM mkt_fx_rates`);
+    const fxByCurrency = new Map(fxRows.map((r: any) => [r.currency, Number(r.rate_to_zar)]));
+    for (const item of items) {
+      const f = itemFulfillment.get(item.productId);
+      if (!f) continue;
+      const grossAmount = Number(item.unitPrice) * item.quantity;
+      const platformFeePct = f.commissionPct;
+      const platformFeeAmount = +(grossAmount * platformFeePct / 100).toFixed(2);
+      let supplierCostAmount: number | null = null, supplierCostCurrency: string | null = null, supplierCostAmountZar: number | null = null;
+      if (f.fulfillmentType === "imported" && f.costPrice) {
+        supplierCostAmount = +(Number(f.costPrice) * item.quantity).toFixed(2);
+        supplierCostCurrency = f.costCurrency;
+        const rate = f.costCurrency ? fxByCurrency.get(f.costCurrency) : undefined;
+        supplierCostAmountZar = rate ? +(supplierCostAmount * rate).toFixed(2) : null; // null if no FX rate on file yet — flagged for admin, not silently assumed
+      }
+      const sellerPayoutAmount = +(grossAmount - platformFeeAmount - (supplierCostAmountZar ?? 0)).toFixed(2);
+      await client.query(
+        `INSERT INTO mkt_order_line_settlements (order_id, product_id, seller_id, supplier_id, quantity, gross_amount,
+           platform_fee_pct, platform_fee_amount, supplier_cost_amount, supplier_cost_currency, supplier_cost_amount_zar,
+           seller_payout_amount, supplier_payout_status, seller_payout_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending')`,
+        [order.id, item.productId, item.sellerId, f.supplierId, item.quantity, grossAmount,
+         platformFeePct, platformFeeAmount, supplierCostAmount, supplierCostCurrency, supplierCostAmountZar,
+         sellerPayoutAmount, f.fulfillmentType === "imported" ? "pending" : "n/a"]
       );
     }
 
@@ -1979,6 +2028,76 @@ router.patch("/admin/vehicle-duty-zm/:id", requireAuth, requireRole(...MANAGER_R
   const { rows } = await pool!.query(`UPDATE mkt_vehicle_duty_zm SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
   if (!rows.length) { res.status(404).json({ success: false, error: "Rate not found" }); return; }
   res.json({ success: true, data: mapVehicleDutyZm(rows[0]) });
+});
+
+// ── ADMIN: FX RATES & SETTLEMENTS (platform fee + supplier/seller payouts) ──
+router.get("/admin/fx-rates", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_fx_rates ORDER BY currency`);
+  res.json({ success: true, data: rows.map(mapFxRate) });
+});
+
+router.post("/admin/fx-rates", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { currency, rateToZar, notes } = req.body;
+  if (!currency || rateToZar === undefined) { res.status(400).json({ success: false, error: "currency and rateToZar are required" }); return; }
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_fx_rates (currency, rate_to_zar, notes) VALUES ($1,$2,$3)
+     ON CONFLICT (currency) DO UPDATE SET rate_to_zar = $2, notes = $3, updated_at = now() RETURNING *`,
+    [currency, rateToZar, notes ?? null]
+  );
+  res.status(201).json({ success: true, data: mapFxRate(rows[0]) });
+});
+
+// Every order line's platform fee / supplier / seller split, filterable
+// by seller, supplier, or payout status — the actual "who's owed what"
+// view. Marking something paid here only records that Ballylife settled
+// it through whatever real channel it used; no money moves through this
+// endpoint itself.
+router.get("/admin/settlements", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { sellerId, supplierId, supplierPayoutStatus, sellerPayoutStatus } = req.query as Record<string, string>;
+  const where: string[] = []; const params: unknown[] = [];
+  const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
+  if (sellerId) where.push(`s.seller_id = ${p(sellerId)}`);
+  if (supplierId) where.push(`s.supplier_id = ${p(supplierId)}`);
+  if (supplierPayoutStatus) where.push(`s.supplier_payout_status = ${p(supplierPayoutStatus)}`);
+  if (sellerPayoutStatus) where.push(`s.seller_payout_status = ${p(sellerPayoutStatus)}`);
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const { rows } = await pool!.query(
+    `SELECT s.*, o.order_number, p.name AS product_name, sel.store_name AS seller_name, sup.name AS supplier_name
+     FROM mkt_order_line_settlements s
+     JOIN mkt_orders o ON o.id = s.order_id
+     JOIN mkt_products p ON p.id = s.product_id
+     JOIN mkt_sellers sel ON sel.id = s.seller_id
+     LEFT JOIN mkt_suppliers sup ON sup.id = s.supplier_id
+     ${whereClause} ORDER BY s.created_at DESC LIMIT 300`,
+    params
+  );
+  const totals = rows.reduce((acc: any, r: any) => {
+    acc.platformFeeTotal += Number(r.platform_fee_amount);
+    if (r.seller_payout_status === "pending") acc.sellerOwedTotal += Number(r.seller_payout_amount);
+    if (r.supplier_payout_status === "pending") acc.supplierOwedTotal += Number(r.supplier_cost_amount_zar ?? 0);
+    return acc;
+  }, { platformFeeTotal: 0, sellerOwedTotal: 0, supplierOwedTotal: 0 });
+  res.json({ success: true, data: rows.map(mapSettlement), meta: { total: rows.length, totals } });
+});
+
+router.patch("/admin/settlements/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { supplierPayoutStatus, sellerPayoutStatus, supplierPayoutReference, sellerPayoutReference } = req.body;
+  const sets: string[] = []; const vals: unknown[] = [];
+  if (supplierPayoutStatus !== undefined) {
+    vals.push(supplierPayoutStatus); sets.push(`supplier_payout_status = $${vals.length}`);
+    if (supplierPayoutStatus === "paid") sets.push(`supplier_paid_at = now()`);
+  }
+  if (sellerPayoutStatus !== undefined) {
+    vals.push(sellerPayoutStatus); sets.push(`seller_payout_status = $${vals.length}`);
+    if (sellerPayoutStatus === "paid") sets.push(`seller_paid_at = now()`);
+  }
+  if (supplierPayoutReference !== undefined) { vals.push(supplierPayoutReference); sets.push(`supplier_payout_reference = $${vals.length}`); }
+  if (sellerPayoutReference !== undefined) { vals.push(sellerPayoutReference); sets.push(`seller_payout_reference = $${vals.length}`); }
+  if (!sets.length) { res.status(400).json({ success: false, error: "No fields to update" }); return; }
+  vals.push(req.params.id);
+  const { rows } = await pool!.query(`UPDATE mkt_order_line_settlements SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Settlement not found" }); return; }
+  res.json({ success: true, data: mapSettlement(rows[0]) });
 });
 
 // ── ADMIN: REVENUE AUTHORITIES ───────────────────────────────────────────────

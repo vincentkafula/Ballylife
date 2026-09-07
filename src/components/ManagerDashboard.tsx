@@ -307,8 +307,9 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                   ))}
                 </div>
                 <TaxRevenueSummary />
+                <SettlementsPayouts />
                 <RevenueAuthorityManagement />
-                <p className="text-[11px] text-gray-400 mt-3">Payout scheduling and chargebacks aren't wired up in this demo. Tax/duty figures below are calculated and tracked — see the note there on what still requires your own SARS/ZRA filing.</p>
+                <p className="text-[11px] text-gray-400 mt-3">Chargebacks aren't wired up in this demo. Marking a payout "paid" below records that it was settled through whatever real channel you used — no money moves through this system itself.</p>
               </div>
             )}
 
@@ -1612,6 +1613,166 @@ function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: 
               </tr>
             ))}
             {!rates.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No rates yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// The payout side of the four-way split: platform fee (already applied
+// via each order's settlement rows, computed from the seller's own
+// commission rate), what's owed to each supplier (converted to ZAR via
+// mkt_fx_rates), and what's owed to each seller. Marking something paid
+// records that it was settled through whatever real channel was used —
+// it doesn't move money itself.
+function SettlementsPayouts() {
+  const [settlements, setSettlements] = useState<R[]>([]);
+  const [totals, setTotals] = useState({ platformFeeTotal: 0, sellerOwedTotal: 0, supplierOwedTotal: 0 });
+  const [fxRates, setFxRates] = useState<R[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<{ supplierPayoutStatus?: string; sellerPayoutStatus?: string }>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [showFx, setShowFx] = useState(false);
+  const [fxEdit, setFxEdit] = useState<Record<string, string>>({});
+  const [refEdit, setRefEdit] = useState<{ id: string; field: "supplier" | "seller"; value: string } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params: Record<string, string> = {};
+    if (filter.supplierPayoutStatus) params.supplierPayoutStatus = filter.supplierPayoutStatus;
+    if (filter.sellerPayoutStatus) params.sellerPayoutStatus = filter.sellerPayoutStatus;
+    const [setRes, fxRes] = await Promise.allSettled([mktAdmin.settlements.list(params), mktAdmin.fxRates.list()]);
+    if (setRes.status === "fulfilled") { setSettlements(setRes.value.data as R[]); setTotals(setRes.value.meta.totals); }
+    if (fxRes.status === "fulfilled") setFxRates(fxRes.value.data as R[]);
+    setLoading(false);
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const markPaid = async (id: string, side: "supplier" | "seller") => {
+    setBusyId(id);
+    const body = side === "supplier" ? { supplierPayoutStatus: "paid" } : { sellerPayoutStatus: "paid" };
+    const res = await mktAdmin.settlements.update(id, body);
+    setBusyId(null);
+    if (!res.success) toast.error(res.error ?? "Could not update payout status.");
+    load();
+  };
+
+  const saveReference = async () => {
+    if (!refEdit) return;
+    const body = refEdit.field === "supplier" ? { supplierPayoutReference: refEdit.value } : { sellerPayoutReference: refEdit.value };
+    const res = await mktAdmin.settlements.update(refEdit.id, body);
+    if (!res.success) toast.error(res.error ?? "Could not save reference.");
+    setRefEdit(null);
+    load();
+  };
+
+  const saveFxRate = async (currency: string) => {
+    const val = fxEdit[currency];
+    if (!val) return;
+    const res = await mktAdmin.fxRates.create({ currency, rateToZar: Number(val) });
+    if (!res.success) toast.error(res.error ?? "Could not save rate.");
+    load();
+  };
+
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-bold text-gray-900">Payouts — Supplier / Seller Settlement</span>
+        <button onClick={() => setShowFx(v => !v)} className="text-xs font-semibold text-amber-700 hover:underline">{showFx ? "Hide FX rates" : "Manage FX rates"}</button>
+      </div>
+
+      {showFx && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+          <p className="text-xs text-gray-400 mb-2">Used to convert a supplier's cost (quoted in their currency) into ZAR for the settlement below. Illustrative — verify against a live rate before an actual payout run.</p>
+          <div className="grid sm:grid-cols-4 gap-2">
+            {fxRates.map((r, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-gray-600 w-10">{String(r.currency)}</span>
+                <input type="number" step="0.0001" placeholder={String(r.rateToZar)} value={fxEdit[String(r.currency)] ?? ""} onChange={e => setFxEdit({ ...fxEdit, [String(r.currency)]: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
+                <button onClick={() => saveFxRate(String(r.currency))} className="text-[10px] font-semibold px-1.5 py-1 rounded text-white" style={{ background: "#B8862E" }}>Save</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid sm:grid-cols-3 gap-3 mb-4">
+        <StatCard label="Platform fee earned" value={fmtZAR(totals.platformFeeTotal)} icon={<DollarSign className="w-4 h-4" />} accent="#059669" />
+        <StatCard label="Owed to sellers (pending)" value={fmtZAR(totals.sellerOwedTotal)} icon={<Users className="w-4 h-4" />} accent="#2563EB" />
+        <StatCard label="Owed to suppliers (pending, ZAR-equiv)" value={fmtZAR(totals.supplierOwedTotal)} icon={<Globe2 className="w-4 h-4" />} accent="#B8862E" />
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        {[{ key: "sellerPayoutStatus", val: "pending", label: "Sellers owed" }, { key: "supplierPayoutStatus", val: "pending", label: "Suppliers owed" }, { key: "", val: "", label: "All" }].map(f => (
+          <button key={f.label} onClick={() => setFilter(f.key ? { [f.key]: f.val } : {})}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg border"
+            style={{ background: (f.key && (filter as R)[f.key] === f.val) || (!f.key && !filter.sellerPayoutStatus && !filter.supplierPayoutStatus) ? "#14110D" : "white", color: (f.key && (filter as R)[f.key] === f.val) || (!f.key && !filter.sellerPayoutStatus && !filter.supplierPayoutStatus) ? "white" : "#374151", borderColor: "#E5E7EB" }}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
+            <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Supplier</th>
+            <th className="px-4 py-2 font-medium">Platform fee</th><th className="px-4 py-2 font-medium">Seller payout</th>
+            <th className="px-4 py-2 font-medium">Supplier payout</th>
+          </tr></thead>
+          <tbody>
+            {settlements.map((s, i) => (
+              <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.orderNumber)}</td>
+                <td className="px-4 py-2.5 text-gray-600">{String(s.productName)}</td>
+                <td className="px-4 py-2.5 text-gray-500">{String(s.sellerName)}</td>
+                <td className="px-4 py-2.5 text-gray-500">{s.supplierName ? String(s.supplierName) : "—"}</td>
+                <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(s.platformFeeAmount))} <span className="text-[10px] text-gray-400">({String(s.platformFeePct)}%)</span></td>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-gray-700 font-medium">{fmtZAR(Number(s.sellerPayoutAmount))}</span>
+                    {s.sellerPayoutStatus === "paid" ? (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.sellerPayoutReference ? ` · ${String(s.sellerPayoutReference)}` : ""}</span>
+                    ) : (
+                      <button onClick={() => markPaid(String(s.id), "seller")} disabled={busyId === s.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
+                    )}
+                    {refEdit?.id === s.id && refEdit.field === "seller" ? (
+                      <span className="flex items-center gap-1">
+                        <input value={refEdit.value} onChange={e => setRefEdit({ ...refEdit, value: e.target.value })} placeholder="Ref" className="border border-gray-200 rounded px-1 py-0.5 text-[10px] w-16" />
+                        <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => setRefEdit({ id: String(s.id), field: "seller", value: String(s.sellerPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-2.5">
+                  {s.supplierPayoutStatus === "n/a" ? <span className="text-xs text-gray-300">— (local)</span> : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-700 font-medium">{s.supplierCostAmountZar !== null ? fmtZAR(Number(s.supplierCostAmountZar)) : "No FX rate"}</span>
+                      {s.supplierPayoutStatus === "paid" ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.supplierPayoutReference ? ` · ${String(s.supplierPayoutReference)}` : ""}</span>
+                      ) : (
+                        <button onClick={() => markPaid(String(s.id), "supplier")} disabled={busyId === s.id || s.supplierCostAmountZar === null} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
+                      )}
+                      {refEdit?.id === s.id && refEdit.field === "supplier" ? (
+                        <span className="flex items-center gap-1">
+                          <input value={refEdit.value} onChange={e => setRefEdit({ ...refEdit, value: e.target.value })} placeholder="Ref" className="border border-gray-200 rounded px-1 py-0.5 text-[10px] w-16" />
+                          <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setRefEdit({ id: String(s.id), field: "supplier", value: String(s.supplierPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
+                      )}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!settlements.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">No settlements match this filter.</td></tr>}
           </tbody>
         </table>
       </div>

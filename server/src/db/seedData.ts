@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority, VehicleDutyZm } from "../types/marketplace";
+import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority, VehicleDutyZm, FxRate } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const future = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
@@ -242,4 +242,14 @@ export const VEHICLE_PARTS_SUPPLIER_PRODUCTS: SupplierProduct[] = [
   { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-08", name: "Engine Oil Filter (Universal)", description: "Spin-on engine oil filter, fits most 1.3L-2.0L Japanese-brand engines.", costPrice: 2.8, currency: "USD", retailPrice: 129, compareAtPrice: null, moq: 50, images: ["#4b5563"], emoji: "🛢️", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(80), updatedAt: ago(3) },
   { id: randomUUID(), supplierId: "sup-cn-01", categoryId: "cat-08", name: "Hydraulic Floor Jack (2 Ton)", description: "Low-profile hydraulic trolley jack, 2 ton capacity, for home or workshop use.", costPrice: 28, currency: "USD", retailPrice: 999, compareAtPrice: 1199, moq: 10, images: ["#6b7280"], emoji: "🔧", originCountry: "CN", status: "active", importCount: 0, createdAt: ago(70), updatedAt: ago(2) },
   { id: randomUUID(), supplierId: "sup-jp-01", categoryId: "cat-08", name: "Wiper Blade Set (Pair)", description: "All-weather silicone wiper blade set, universal fitting kit included.", costPrice: 3.6, currency: "USD", retailPrice: 179, compareAtPrice: null, moq: 40, images: ["#9ca3af"], emoji: "🌧️", originCountry: "JP", status: "active", importCount: 0, createdAt: ago(60), updatedAt: ago(1) },
+];
+
+// ─── FX rates for settlement conversion ────────────────────────────────────────
+// Illustrative — a real payout run should use the rate on the actual day
+// of payment, not this static table. Update via the admin UI as needed.
+export const FX_RATES: FxRate[] = [
+  { currency: "USD", rateToZar: 18.20, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
+  { currency: "CNY", rateToZar: 2.52,  notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
+  { currency: "JPY", rateToZar: 0.122, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
+  { currency: "KRW", rateToZar: 0.0134, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
 ];

@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -39,6 +39,7 @@ export async function migrate(): Promise<void> {
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
+    await seedFxRates();
     return;
   }
 
@@ -118,6 +119,7 @@ export async function migrate(): Promise<void> {
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
+  await seedFxRates();
 }
 
 /**
@@ -569,4 +571,26 @@ async function seedVehiclePartsCategoryAndListings(): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Seeds starting FX rates used to convert a supplier's cost (quoted in
+ * USD/CNY/JPY/KRW) into ZAR for settlement math. Gated on the table being
+ * empty. Illustrative only — see the schema.sql comment.
+ */
+async function seedFxRates(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_fx_rates");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] FX rates already seeded — skipping.");
+    return;
+  }
+
+  console.log("[db] Seeding FX rates...");
+  for (const r of FX_RATES) {
+    await pool!.query(
+      `INSERT INTO mkt_fx_rates (currency, rate_to_zar, notes, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (currency) DO NOTHING`,
+      [r.currency, r.rateToZar, r.notes, r.updatedAt]
+    );
+  }
+  console.log(`[db] Seeded ${FX_RATES.length} FX rates.`);
 }

@@ -104,6 +104,10 @@ function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
   if (path.includes("/admin/vehicle-duty-zm") && method === "POST")  return mktMock.adminCreateVehicleDutyZm(body);
   if (path.includes("/admin/vehicle-duty-zm") && method === "PATCH") return mktMock.adminUpdateVehicleDutyZm(path.split("/admin/vehicle-duty-zm/")[1], body);
   if (path.includes("/admin/vehicle-duty-zm"))   return mktMock.adminVehicleDutyZm();
+  if (path.includes("/admin/fx-rates") && method === "POST") return mktMock.adminCreateFxRate(body);
+  if (path.includes("/admin/fx-rates"))          return mktMock.adminFxRates();
+  if (path.includes("/admin/settlements") && method === "PATCH") return mktMock.adminUpdateSettlement(path.split("/admin/settlements/")[1], body);
+  if (path.includes("/admin/settlements"))       return mktMock.adminSettlements(qs);
   if (path.includes("/admin/customs-records/generate")) return mktMock.adminGenerateCustomsRecord(body);
   if (path.includes("/admin/customs-records") && method === "PATCH") return mktMock.adminUpdateCustomsRecord(path.split("/admin/customs-records/")[1], body);
   if (path.includes("/admin/customs-records"))   return mktMock.adminCustomsRecords();
@@ -230,6 +234,14 @@ export const mktAdmin = {
     list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/vehicle-duty-zm"),
     create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/vehicle-duty-zm", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/vehicle-duty-zm/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  },
+  fxRates: {
+    list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/fx-rates"),
+    create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/fx-rates", { method: "POST", body: JSON.stringify(body) }),
+  },
+  settlements: {
+    list:   (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { total: number; totals: { platformFeeTotal: number; sellerOwedTotal: number; supplierOwedTotal: number } } }>(`/api/marketplace/admin/settlements?${new URLSearchParams(params)}`),
+    update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/settlements/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   },
   customsRecords: {
     list:     (status?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/customs-records${status ? `?status=${status}` : ""}`),
