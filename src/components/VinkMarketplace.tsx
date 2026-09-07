@@ -670,15 +670,39 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
   const [sort, setSort]         = useState("popular");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
+  // Vehicle-specific filters — only shown/applied when browsing the
+  // Vehicles category itself (not its Parts & Equipment subcategory,
+  // where body type/mileage etc. don't mean anything).
+  const [vCondition, setVCondition] = useState("");
+  const [vBodyType, setVBodyType] = useState("");
+  const [vFuelType, setVFuelType] = useState("");
+  const [vTransmission, setVTransmission] = useState("");
+  const [vMinYear, setVMinYear] = useState("");
+  const [vMaxYear, setVMaxYear] = useState("");
+  const [vMaxMileage, setVMaxMileage] = useState("");
+  const activeCategory = categories.find(c => String(c.id) === activeCat);
+  const isVehicleCategory = activeCategory?.slug === "vehicles";
+
   useEffect(() => { if (initialSearch) setSearch(initialSearch); }, [initialSearch]);
+  useEffect(() => { if (!isVehicleCategory) { setVCondition(""); setVBodyType(""); setVFuelType(""); setVTransmission(""); setVMinYear(""); setVMaxYear(""); setVMaxMileage(""); } }, [isVehicleCategory]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await mktProducts.list({ category: activeCat, search, sort, limit: "78" });
+      const params: Record<string, string> = { category: activeCat, search, sort, limit: "78" };
+      if (isVehicleCategory) {
+        if (vCondition) params.condition = vCondition;
+        if (vBodyType) params.bodyType = vBodyType;
+        if (vFuelType) params.fuelType = vFuelType;
+        if (vTransmission) params.transmission = vTransmission;
+        if (vMinYear) params.minYear = vMinYear;
+        if (vMaxYear) params.maxYear = vMaxYear;
+        if (vMaxMileage) params.maxMileage = vMaxMileage;
+      }
+      const res = await mktProducts.list(params);
       setProducts(res.data as R[]);
     } finally { setLoading(false); }
-  }, [activeCat, search, sort]);
+  }, [activeCat, search, sort, isVehicleCategory, vCondition, vBodyType, vFuelType, vTransmission, vMinYear, vMaxYear, vMaxMileage]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -698,6 +722,8 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
           <option value="price_asc">Price ↑</option>
           <option value="price_desc">Price ↓</option>
           <option value="newest">Newest</option>
+          {isVehicleCategory && <option value="year_desc">Newest Model Year</option>}
+          {isVehicleCategory && <option value="mileage_asc">Lowest Mileage</option>}
         </select>
         {/* View toggle */}
         <div className="flex border border-gray-200 rounded-xl overflow-hidden">
@@ -725,6 +751,44 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
           </button>
         ))}
       </div>
+
+      {/* Vehicle-specific filters — only when browsing the Vehicles category */}
+      {isVehicleCategory && (
+        <div className="flex items-center gap-2 px-4 py-2.5 overflow-x-auto scrollbar-none border-b border-gray-50 bg-white flex-shrink-0 flex-wrap">
+          <select value={vCondition} onChange={e => setVCondition(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white">
+            <option value="">Any condition</option>
+            <option value="new">New</option>
+            <option value="used">Used</option>
+          </select>
+          <select value={vBodyType} onChange={e => setVBodyType(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white">
+            <option value="">Any body type</option>
+            {["sedan", "hatchback", "station_wagon", "suv", "pickup_single_cab", "pickup_double_cab", "panel_van"].map(b => (
+              <option key={b} value={b}>{b.replace(/_/g, " ")}</option>
+            ))}
+          </select>
+          <select value={vFuelType} onChange={e => setVFuelType(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white">
+            <option value="">Any fuel type</option>
+            <option value="petrol">Petrol</option>
+            <option value="diesel">Diesel</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="electric">Electric</option>
+          </select>
+          <select value={vTransmission} onChange={e => setVTransmission(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white">
+            <option value="">Any transmission</option>
+            <option value="automatic">Automatic</option>
+            <option value="manual">Manual</option>
+          </select>
+          <input type="number" placeholder="Year from" value={vMinYear} onChange={e => setVMinYear(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white w-24" />
+          <input type="number" placeholder="Year to" value={vMaxYear} onChange={e => setVMaxYear(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white w-24" />
+          <input type="number" placeholder="Max mileage (km)" value={vMaxMileage} onChange={e => setVMaxMileage(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none bg-white w-36" />
+          {(vCondition || vBodyType || vFuelType || vTransmission || vMinYear || vMaxYear || vMaxMileage) && (
+            <button onClick={() => { setVCondition(""); setVBodyType(""); setVFuelType(""); setVTransmission(""); setVMinYear(""); setVMaxYear(""); setVMaxMileage(""); }}
+              className="text-xs font-semibold text-gray-500 hover:text-gray-800 hover:underline">
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Products */}
       <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
