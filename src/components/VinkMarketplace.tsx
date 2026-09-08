@@ -56,6 +56,7 @@ const HumanRightsPage = lazy(() => import("./HumanRightsPage").then(m => ({ defa
 const DisclosurePage = lazy(() => import("./DisclosurePage").then(m => ({ default: m.DisclosurePage })));
 const SpeakUpPage = lazy(() => import("./SpeakUpPage").then(m => ({ default: m.SpeakUpPage })));
 const AdvertisingPage = lazy(() => import("./AdvertisingPage").then(m => ({ default: m.AdvertisingPage })));
+const CreditRewardsPage = lazy(() => import("./CreditRewardsPage").then(m => ({ default: m.CreditRewardsPage })));
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
@@ -66,7 +67,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1676,10 +1677,11 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   };
 
   // "Track Order", "Contact Us", "Platform Terms", "Human Rights
-  // Statement", "Responsible Disclosure Policy", "Speak Up Process" and
-  // "Code of Advertising Practice" are wired to actual destinations;
-  // every other footer link stays a structural placeholder (dispatches
-  // the existing fallback event) until it has somewhere real to go.
+  // Statement", "Responsible Disclosure Policy", "Speak Up Process",
+  // "Code of Advertising Practice" and "Ballylife.credit Terms" are
+  // wired to actual destinations; every other footer link stays a
+  // structural placeholder (dispatches the existing fallback event)
+  // until it has somewhere real to go.
   const handleFooterLink = (label: string) => {
     if (label === "Track Order") { setView("trackOrder"); return; }
     if (label === "Contact Us") { setView("contactPage"); return; }
@@ -1688,6 +1690,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     if (label === "Responsible Disclosure Policy") { setView("disclosurePage"); return; }
     if (label === "Speak Up Process") { setView("speakUpPage"); return; }
     if (label === "Code of Advertising Practice") { setView("advertisingPage"); return; }
+    if (label === "Ballylife.credit Terms") { setView("creditRewardsPage"); return; }
     window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
   };
 
@@ -1976,7 +1979,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           {view === "trackOrder" && (
             <OrderTracking onBack={() => setView("home")} />
           )}
-          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage") && (
+          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage" || view === "creditRewardsPage") && (
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading...</div>}>
               {view === "contactPage" && <ContactPage onBack={() => setView("home")} />}
               {view === "termsPage" && <TermsPage onBack={() => setView("home")} />}
@@ -1984,6 +1987,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               {view === "disclosurePage" && <DisclosurePage onBack={() => setView("home")} />}
               {view === "speakUpPage" && <SpeakUpPage onBack={() => setView("home")} />}
               {view === "advertisingPage" && <AdvertisingPage onBack={() => setView("home")} />}
+              {view === "creditRewardsPage" && <CreditRewardsPage onBack={() => setView("home")} />}
             </Suspense>
           )}
           {view === "admin" && authUser && role === "manager" && (
