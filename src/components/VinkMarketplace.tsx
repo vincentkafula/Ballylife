@@ -59,6 +59,7 @@ const AdvertisingPage = lazy(() => import("./AdvertisingPage").then(m => ({ defa
 const CreditRewardsPage = lazy(() => import("./CreditRewardsPage").then(m => ({ default: m.CreditRewardsPage })));
 const BusinessTermsPage = lazy(() => import("./BusinessTermsPage").then(m => ({ default: m.BusinessTermsPage })));
 const PrivacyPolicyPage = lazy(() => import("./PrivacyPolicyPage").then(m => ({ default: m.PrivacyPolicyPage })));
+const ReturnsPolicyPage = lazy(() => import("./ReturnsPolicyPage").then(m => ({ default: m.ReturnsPolicyPage })));
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
@@ -69,7 +70,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1681,10 +1682,10 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   // "Track Order", "Contact Us", "Platform Terms", "Human Rights
   // Statement", "Responsible Disclosure Policy", "Speak Up Process",
   // "Code of Advertising Practice", "Ballylife.credit Terms",
-  // "Ballylife for Business Terms" and "Privacy Policy" are wired to
-  // actual destinations; every other footer link stays a structural
-  // placeholder (dispatches the existing fallback event) until it has
-  // somewhere real to go.
+  // "Ballylife for Business Terms", "Privacy Policy" and "Returns
+  // Policy" are wired to actual destinations; every other footer link
+  // stays a structural placeholder (dispatches the existing fallback
+  // event) until it has somewhere real to go.
   const handleFooterLink = (label: string) => {
     if (label === "Track Order") { setView("trackOrder"); return; }
     if (label === "Contact Us") { setView("contactPage"); return; }
@@ -1696,6 +1697,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     if (label === "Ballylife.credit Terms") { setView("creditRewardsPage"); return; }
     if (label === "Ballylife for Business Terms") { setView("businessTermsPage"); return; }
     if (label === "Privacy Policy") { setView("privacyPolicyPage"); return; }
+    if (label === "Returns Policy") { setView("returnsPolicyPage"); return; }
     window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
   };
 
@@ -1984,7 +1986,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           {view === "trackOrder" && (
             <OrderTracking onBack={() => setView("home")} />
           )}
-          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage" || view === "creditRewardsPage" || view === "businessTermsPage" || view === "privacyPolicyPage") && (
+          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage" || view === "creditRewardsPage" || view === "businessTermsPage" || view === "privacyPolicyPage" || view === "returnsPolicyPage") && (
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading...</div>}>
               {view === "contactPage" && <ContactPage onBack={() => setView("home")} />}
               {view === "termsPage" && <TermsPage onBack={() => setView("home")} />}
@@ -1995,6 +1997,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               {view === "creditRewardsPage" && <CreditRewardsPage onBack={() => setView("home")} />}
               {view === "businessTermsPage" && <BusinessTermsPage onBack={() => setView("home")} />}
               {view === "privacyPolicyPage" && <PrivacyPolicyPage onBack={() => setView("home")} />}
+              {view === "returnsPolicyPage" && <ReturnsPolicyPage onBack={() => setView("home")} />}
             </Suspense>
           )}
           {view === "admin" && authUser && role === "manager" && (
