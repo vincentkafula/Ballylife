@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment, type ReactNode, type CSSProperties } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment, lazy, Suspense, type ReactNode, type CSSProperties } from "react";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
@@ -46,10 +46,15 @@ function getProductIllustration(p: Record<string, unknown>): (() => ReactNode) |
 }
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { OrderTracking } from "./OrderTracking";
-import { ContactPage } from "./ContactPage";
-import { TermsPage } from "./TermsPage";
-import { HumanRightsPage } from "./HumanRightsPage";
-import { DisclosurePage } from "./DisclosurePage";
+// These five are static content pages (legal/policy text with large
+// embedded HTML) reachable only from footer links most shoppers never
+// click -- lazy-loaded so their weight sits in its own chunk instead of
+// the main bundle everyone downloads just to browse the storefront.
+const ContactPage = lazy(() => import("./ContactPage").then(m => ({ default: m.ContactPage })));
+const TermsPage = lazy(() => import("./TermsPage").then(m => ({ default: m.TermsPage })));
+const HumanRightsPage = lazy(() => import("./HumanRightsPage").then(m => ({ default: m.HumanRightsPage })));
+const DisclosurePage = lazy(() => import("./DisclosurePage").then(m => ({ default: m.DisclosurePage })));
+const SpeakUpPage = lazy(() => import("./SpeakUpPage").then(m => ({ default: m.SpeakUpPage })));
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
@@ -60,7 +65,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1670,15 +1675,17 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   };
 
   // "Track Order", "Contact Us", "Platform Terms", "Human Rights
-  // Statement" and "Responsible Disclosure Policy" are wired to actual
-  // destinations; every other footer link stays a structural placeholder
-  // (dispatches the existing fallback event) until it has somewhere real to go.
+  // Statement", "Responsible Disclosure Policy" and "Speak Up Process"
+  // are wired to actual destinations; every other footer link stays a
+  // structural placeholder (dispatches the existing fallback event)
+  // until it has somewhere real to go.
   const handleFooterLink = (label: string) => {
     if (label === "Track Order") { setView("trackOrder"); return; }
     if (label === "Contact Us") { setView("contactPage"); return; }
     if (label === "Platform Terms") { setView("termsPage"); return; }
     if (label === "Human Rights Statement") { setView("humanRightsPage"); return; }
     if (label === "Responsible Disclosure Policy") { setView("disclosurePage"); return; }
+    if (label === "Speak Up Process") { setView("speakUpPage"); return; }
     window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
   };
 
@@ -1967,17 +1974,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           {view === "trackOrder" && (
             <OrderTracking onBack={() => setView("home")} />
           )}
-          {view === "contactPage" && (
-            <ContactPage onBack={() => setView("home")} />
-          )}
-          {view === "termsPage" && (
-            <TermsPage onBack={() => setView("home")} />
-          )}
-          {view === "humanRightsPage" && (
-            <HumanRightsPage onBack={() => setView("home")} />
-          )}
-          {view === "disclosurePage" && (
-            <DisclosurePage onBack={() => setView("home")} />
+          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage") && (
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading...</div>}>
+              {view === "contactPage" && <ContactPage onBack={() => setView("home")} />}
+              {view === "termsPage" && <TermsPage onBack={() => setView("home")} />}
+              {view === "humanRightsPage" && <HumanRightsPage onBack={() => setView("home")} />}
+              {view === "disclosurePage" && <DisclosurePage onBack={() => setView("home")} />}
+              {view === "speakUpPage" && <SpeakUpPage onBack={() => setView("home")} />}
+            </Suspense>
           )}
           {view === "admin" && authUser && role === "manager" && (
             <ManagerDashboard user={authUser} onSignOut={handleSignOut} />
