@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { PolicyPageFrame } from "./PolicyPageFrame";
 
 // Rendered via an iframe's srcDoc for the same reason as ContactPage.tsx:
 // this page's own <script> (scroll-spy nav highlighting, reading-progress
@@ -761,20 +761,5 @@ const TERMS_PAGE_HTML = String.raw`<!DOCTYPE html>
 </html>`;
 
 export function TermsPage({ onBack }: { onBack: () => void }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <div className="px-4 py-2.5 border-b border-gray-100 bg-white shrink-0">
-        <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-800">&larr; Back to shopping</button>
-      </div>
-      <iframe
-        ref={iframeRef}
-        title="Ballylife Platform Terms"
-        srcDoc={TERMS_PAGE_HTML}
-        className="flex-1 w-full border-0"
-        style={{ minHeight: 0 }}
-      />
-    </div>
-  );
+  return <PolicyPageFrame title="Ballylife Platform Terms" srcDoc={TERMS_PAGE_HTML} onBack={onBack} />;
 }
