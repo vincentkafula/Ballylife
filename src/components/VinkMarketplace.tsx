@@ -159,88 +159,55 @@ function Stars({ rating, size = 13 }: { rating: number; size?: number }) {
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 // ─── Promo banner (full-width grid interstitial) ───────────────────────────
+// Height halved from the original 2164:726 aspect ratio to 2164:363 (width
+// unchanged) -- every internal size below was retuned by hand rather than
+// left to scale automatically, since CSS resolves margin/padding percentages
+// against the container's WIDTH even for vertical spacing, so simply halving
+// the box height would have made the old paddings/gaps overflow it.
 function PromoBanner({ onShop }: { onShop: () => void }) {
-  const PICKS = [
-    { emoji: "👟", bg: "#e8e8e8" },
-    { emoji: "⌚", bg: "#1c1c1e" },
-    { emoji: "🧴", bg: "#f5e6c8" },
-  ];
   return (
-    <div className="col-span-full relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(120deg,#0B1A3D 0%,#132A5C 100%)", aspectRatio: "2164 / 726", containerType: "inline-size" } as CSSProperties}>
+    <div className="col-span-full relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(135deg,#0B1A3D 0%,#16336B 55%,#0B1A3D 100%)", aspectRatio: "2164 / 363", containerType: "inline-size" } as CSSProperties}>
       {/* Repeated ghost "B" logo pattern */}
-      <div className="absolute inset-0 flex items-center justify-end opacity-[0.08] pointer-events-none select-none overflow-hidden">
-        {Array.from({ length: 7 }).map((_, i) => (
-          <span key={i} className="font-serif text-white shrink-0" style={{ fontSize: "22cqw", fontWeight: 700, lineHeight: 1, marginLeft: "-3cqw" }}>B</span>
+      <div className="absolute inset-0 flex items-center justify-end opacity-[0.07] pointer-events-none select-none overflow-hidden">
+        {Array.from({ length: 9 }).map((_, i) => (
+          <span key={i} className="font-serif text-white shrink-0" style={{ fontSize: "14cqw", fontWeight: 700, lineHeight: 1, marginLeft: "-2.2cqw" }}>B</span>
         ))}
       </div>
+      {/* Subtle gold accent glow, bottom-left */}
+      <div className="absolute -bottom-1/2 -left-[5%] rounded-full pointer-events-none" style={{ width: "22cqw", height: "22cqw", background: "radial-gradient(circle, rgba(212,165,74,0.20), transparent 70%)" }} />
 
-      <div className="relative h-full flex items-center gap-[3%] px-[3%]">
+      <div className="relative h-full flex items-center gap-[2.5%] px-[3%]">
         {/* Logo mark */}
-        <div className="hidden sm:flex flex-col items-start shrink-0" style={{ maxWidth: "20%" }}>
-          <div className="flex items-center gap-2">
-            <img src={ballylifeLogo} alt="" className="shrink-0" style={{ height: "9cqw", width: "auto", filter: "brightness(0) invert(1)" }} />
-          </div>
+        <div className="hidden sm:flex flex-col items-start shrink-0" style={{ maxWidth: "14%" }}>
+          <img src={ballylifeLogo} alt="" className="shrink-0" style={{ height: "7cqw", width: "auto", filter: "brightness(0) invert(1)" }} />
         </div>
 
         {/* Headline */}
-        <div className="flex-1 min-w-0">
-          <h3 className="font-serif text-white leading-tight mb-[1.5%]" style={{ fontWeight: 700, fontSize: "clamp(16px, 4.2cqw, 44px)" }}>
-            Live bold.<br />Shop Ballylife<br />in minutes.
-          </h3>
-          <p className="mb-[3%] leading-snug" style={{ color: "rgba(255,255,255,0.85)", fontSize: "clamp(10px, 1.5cqw, 16px)", maxWidth: "26ch" }}>
-            Need it now? Forgot something? We've got it! We'll be there in minutes.
-          </p>
-          <button onClick={onShop} className="rounded-full font-black tracking-wide transition-transform hover:scale-[1.03]"
-            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D", padding: "clamp(6px,1.2cqw,14px) clamp(16px,3cqw,32px)", fontSize: "clamp(10px,1.5cqw,16px)" }}>
+        <div className="flex-1 min-w-0 flex items-center gap-[3%]">
+          <div className="min-w-0">
+            <h3 className="font-serif text-white leading-none whitespace-nowrap" style={{ fontWeight: 700, fontSize: "clamp(13px, 3.4cqw, 30px)" }}>
+              Live bold. Shop Ballylife in minutes.
+            </h3>
+            <p className="mt-[0.8%] leading-snug truncate" style={{ color: "rgba(255,255,255,0.78)", fontSize: "clamp(8px, 1.15cqw, 13px)", maxWidth: "44ch" }}>
+              Need it now? Forgot something? We've got it! We'll be there in minutes.
+            </p>
+          </div>
+          <button onClick={onShop} className="shrink-0 rounded-full font-black tracking-wide transition-transform hover:scale-[1.03] whitespace-nowrap"
+            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D", padding: "clamp(4px,1cqw,11px) clamp(12px,2.4cqw,26px)", fontSize: "clamp(8px,1.15cqw,13px)" }}>
             SHOP NOW
           </button>
         </div>
 
-        {/* Phone mockup */}
-        <div className="hidden md:flex items-center justify-center shrink-0 h-full" style={{ width: "26%" }}>
-          <div className="relative bg-black rounded-[14%] p-[3%]" style={{ width: "62%", aspectRatio: "9 / 18.5", boxShadow: "0 10px 40px rgba(0,0,0,0.4)" }}>
-            <div className="w-full h-full rounded-[10%] overflow-hidden flex flex-col" style={{ background: "#0B1A3D" }}>
-              {/* Status bar */}
-              <div className="flex items-center justify-between px-[8%] pt-[6%] text-white" style={{ fontSize: "clamp(6px,0.8cqw,9px)" }}>
-                <span>09:48</span>
-                <span>📶 📡 🔋</span>
-              </div>
-              <div className="px-[8%] pt-[6%] flex items-center gap-1">
-                <ChevronRight className="w-3 h-3 rotate-180 text-white" />
-              </div>
-              <div className="px-[8%] pt-[3%] flex items-center gap-1.5">
-                <img src={ballylifeLogo} alt="" style={{ height: "3.5cqw", width: "auto", filter: "brightness(0) invert(1)" }} />
-              </div>
-              <p className="px-[8%] pt-[4%] text-white font-serif leading-tight" style={{ fontSize: "clamp(7px,1.1cqw,13px)", fontWeight: 700 }}>
-                Ballylife products delivered in minutes
-              </p>
-              <div className="px-[8%] pt-[4%]">
-                <span className="inline-block rounded-full font-bold" style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D", fontSize: "clamp(5px,0.7cqw,8px)", padding: "1.5% 4%" }}>
-                  Delivery: 60 mins
-                </span>
-              </div>
-              <div className="flex-1 bg-white mt-[4%] rounded-t-2xl px-[6%] pt-[5%] flex flex-col">
-                <div className="flex items-center justify-between mb-[4%]">
-                  <span className="font-black text-gray-900" style={{ fontSize: "clamp(6px,1cqw,11px)" }}>BallylifeNOW</span>
-                  <span className="text-[6px] font-bold text-gray-400" style={{ fontSize: "clamp(4px,0.6cqw,7px)" }}>BALLYLIFE now</span>
-                </div>
-                <div className="bg-gray-100 rounded-full px-[5%] py-[2.5%] mb-[4%] flex items-center gap-1">
-                  <Search className="text-gray-400" style={{ width: "2.2cqw", height: "2.2cqw" }} />
-                  <span className="text-gray-400" style={{ fontSize: "clamp(4px,0.7cqw,8px)" }}>Search Ballylife</span>
-                </div>
-                <div className="flex items-center gap-1 mb-[3%]">
-                  <Tag style={{ width: "2cqw", height: "2cqw" }} className="text-gray-900" />
-                  <span className="font-bold text-gray-900" style={{ fontSize: "clamp(5px,0.85cqw,9px)" }}>Last minute picks</span>
-                </div>
-                <div className="flex gap-[4%]">
-                  {PICKS.map((pk, i) => (
-                    <div key={i} className="flex-1 rounded-lg flex items-center justify-center" style={{ background: pk.bg, aspectRatio: "1/1", fontSize: "clamp(8px,1.6cqw,18px)" }}>
-                      {pk.emoji}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+        {/* Compact delivery-time badge, replaces the old full phone mockup
+            which no longer fits the halved height without either
+            overflowing or shrinking down to illegibility. */}
+        <div className="hidden lg:flex items-center gap-[1.2%] shrink-0 rounded-full" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", padding: "1.4% 3%" }}>
+          <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: "3.6cqw", height: "3.6cqw", background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0B1A3D" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: "2cqw", height: "2cqw" }}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></svg>
+          </span>
+          <div className="leading-none">
+            <div className="text-white font-black" style={{ fontSize: "clamp(9px,1.3cqw,14px)" }}>60 mins</div>
+            <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "clamp(6px,0.85cqw,9px)" }}>avg. delivery</div>
           </div>
         </div>
       </div>
