@@ -549,37 +549,37 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
       {recentProducts.length > 0 && (
         <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl" style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 45%,#E8D9B5 100%)" }}>
           {/* Decorative blobs */}
-          <div className="absolute -top-16 -right-10 w-72 h-72 rounded-full opacity-40 pointer-events-none" style={{ background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
-          <div className="absolute -bottom-24 right-24 w-96 h-96 rounded-full opacity-30 pointer-events-none" style={{ background: "radial-gradient(circle,#B8862E 0%,transparent 70%)" }} />
+          <div className="absolute -top-12 -right-8 w-56 h-56 rounded-full opacity-40 pointer-events-none" style={{ background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
+          <div className="absolute -bottom-20 right-16 w-72 h-72 rounded-full opacity-30 pointer-events-none" style={{ background: "radial-gradient(circle,#B8862E 0%,transparent 70%)" }} />
 
-          <div className="relative flex flex-col sm:flex-row items-center gap-6 sm:gap-10 p-6 sm:p-10">
+          <div className="relative flex flex-col sm:flex-row items-center gap-4 sm:gap-7 p-4 sm:p-7">
             {/* Buttons */}
-            <div className="absolute top-5 right-5 sm:top-8 sm:right-8 flex items-center gap-2 z-10">
-              <button onClick={onCategory} className="flex items-center gap-1 text-xs sm:text-sm font-bold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-white transition-transform hover:scale-[1.03]"
+            <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-2 z-10">
+              <button onClick={onCategory} className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-white transition-transform hover:scale-[1.03]"
                 style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-                View More <ChevronRight className="w-3.5 h-3.5" />
+                View More <ChevronRight className="w-3 h-3" />
               </button>
-              <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }} className="text-xs sm:text-sm font-bold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-white text-gray-700 border border-gray-200 hover:border-gray-300 transition-colors">
+              <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }} className="text-[11px] sm:text-xs font-bold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-white text-gray-700 border border-gray-200 hover:border-gray-300 transition-colors">
                 Clear All
               </button>
             </div>
 
             {/* Single most-recent product */}
-            <div className="shrink-0 mt-10 sm:mt-0" style={{ width: 220 }}>
+            <div className="shrink-0 mt-7 sm:mt-0" style={{ width: 165 }}>
               <ProductCard p={recentProducts[0]} onView={() => onProduct(recentProducts[0])} onCart={() => onCart(recentProducts[0])}
                 wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(recentProducts[0].id))} />
             </div>
 
             {/* Headline */}
             <div className="flex-1 text-center sm:text-left">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold mb-3" style={{ background: "rgba(184,134,46,0.12)", color: "#8C6420" }}>
-                <Clock className="w-3 h-3" /> JUST FOR YOU
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold mb-2" style={{ background: "rgba(184,134,46,0.12)", color: "#8C6420" }}>
+                <Clock className="w-2.5 h-2.5" /> JUST FOR YOU
               </span>
-              <h3 className="font-serif leading-tight mb-3" style={{ fontWeight: 700, fontSize: "clamp(24px,4vw,40px)" }}>
+              <h3 className="font-serif leading-tight mb-2" style={{ fontWeight: 700, fontSize: "clamp(18px,3vw,30px)" }}>
                 <span className="text-gray-900">Pick Up Where</span><br />
                 <span style={{ background: "linear-gradient(135deg,#D4A54A,#8C6420)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>You Left Off</span>
               </h3>
-              <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto sm:mx-0">
+              <p className="text-xs sm:text-sm text-gray-600 max-w-md mx-auto sm:mx-0">
                 Good taste doesn't need reminding — but here it is anyway. Still there. Still yours if you want it.
               </p>
             </div>
