@@ -144,6 +144,17 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
     .bl-office p a{color:var(--bl-green); font-weight:600;}
     .bl-office-empty{font-size:13.5px; color:var(--bl-muted); line-height:1.6;}
     .bl-office-empty a{color:var(--bl-orange); font-weight:600;}
+    .bl-soon-badge{
+      display:inline-flex; align-items:center; gap:5px; font-family:'JetBrains Mono', monospace;
+      font-size:10.5px; font-weight:700; letter-spacing:0.04em; color:var(--bl-orange);
+      background:rgba(245,130,31,0.1); padding:4px 10px; border-radius:999px; margin-bottom:10px;
+    }
+    .bl-soon-badge::before{content:""; width:6px; height:6px; border-radius:50%; background:var(--bl-orange); display:inline-block;}
+    .bl-city-tags{display:flex; flex-wrap:wrap; gap:7px; margin:12px 0 16px;}
+    .bl-city-tag{
+      font-size:12.5px; font-weight:600; color:var(--bl-green); background:var(--bl-cream);
+      border:1px solid var(--bl-border); padding:5px 12px; border-radius:8px;
+    }
     .bl-feature-strip{
       display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:40px;
       padding-top:32px; border-top:1px solid var(--bl-border);
@@ -485,6 +496,62 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
         ]
       };
 
+      // Major cities per country, shown for the ~49 countries where
+      // Ballylife doesn't have a dedicated office yet -- we're still
+      // building this platform out, so this is framed as "coming soon"
+      // rather than a dead end, with a sense of where we're headed next.
+      var CITIES = {
+        "Algeria": ["Algiers", "Oran", "Constantine", "Annaba"],
+        "Libya": ["Tripoli", "Benghazi", "Misrata"],
+        "Morocco": ["Casablanca", "Rabat", "Marrakesh", "Fez"],
+        "Sudan": ["Khartoum", "Omdurman", "Port Sudan"],
+        "Tunisia": ["Tunis", "Sfax", "Sousse"],
+        "Western Sahara": ["Laayoune", "Dakhla"],
+        "Benin": ["Cotonou", "Porto-Novo", "Parakou"],
+        "Burkina Faso": ["Ouagadougou", "Bobo-Dioulasso"],
+        "Cabo Verde": ["Praia", "Mindelo"],
+        "Cote d'Ivoire": ["Abidjan", "Yamoussoukro", "Bouake"],
+        "Gambia": ["Banjul", "Serekunda"],
+        "Guinea": ["Conakry", "Nzerekore", "Kankan"],
+        "Guinea-Bissau": ["Bissau", "Bafata"],
+        "Liberia": ["Monrovia", "Gbarnga"],
+        "Mali": ["Bamako", "Sikasso", "Mopti"],
+        "Mauritania": ["Nouakchott", "Nouadhibou"],
+        "Niger": ["Niamey", "Zinder", "Maradi"],
+        "Senegal": ["Dakar", "Touba", "Thies"],
+        "Sierra Leone": ["Freetown", "Bo", "Kenema"],
+        "Togo": ["Lome", "Sokode"],
+        "Burundi": ["Bujumbura", "Gitega"],
+        "Djibouti": ["Djibouti City", "Ali Sabieh"],
+        "Eritrea": ["Asmara", "Keren", "Massawa"],
+        "Ethiopia": ["Addis Ababa", "Dire Dawa", "Bahir Dar", "Mekelle"],
+        "Rwanda": ["Kigali", "Butare", "Gisenyi"],
+        "Somalia": ["Mogadishu", "Hargeisa", "Kismayo"],
+        "South Sudan": ["Juba", "Wau", "Malakal"],
+        "Uganda": ["Kampala", "Gulu", "Mbarara"],
+        "Cameroon": ["Douala", "Yaounde", "Garoua", "Bamenda"],
+        "Central African Republic": ["Bangui", "Bimbo"],
+        "Chad": ["N'Djamena", "Moundou", "Sarh"],
+        "Republic of the Congo": ["Brazzaville", "Pointe-Noire"],
+        "Equatorial Guinea": ["Malabo", "Bata"],
+        "Gabon": ["Libreville", "Port-Gentil"],
+        "Sao Tome and Principe": ["Sao Tome", "Santo Antonio"],
+        "Angola": ["Luanda", "Huambo", "Lobito", "Benguela"],
+        "Botswana": ["Gaborone", "Francistown", "Maun"],
+        "Comoros": ["Moroni", "Mutsamudu"],
+        "Democratic Republic of the Congo": ["Kinshasa", "Lubumbashi", "Goma", "Kisangani"],
+        "Eswatini (Swaziland)": ["Mbabane", "Manzini"],
+        "Lesotho": ["Maseru", "Teyateyaneng"],
+        "Madagascar": ["Antananarivo", "Toamasina", "Mahajanga"],
+        "Malawi": ["Lilongwe", "Blantyre", "Mzuzu"],
+        "Mauritius": ["Port Louis", "Beau Bassin-Rose Hill"],
+        "Mozambique": ["Maputo", "Beira", "Nampula"],
+        "Namibia": ["Windhoek", "Walvis Bay", "Swakopmund"],
+        "Seychelles": ["Victoria"],
+        "Tanzania": ["Dar es Salaam", "Dodoma", "Arusha", "Mwanza"],
+        "Zimbabwe": ["Harare", "Bulawayo", "Mutare"]
+      };
+
       var overlay   = document.getElementById('bl-modal-overlay');
       var titleEl   = document.getElementById('bl-modal-title');
       var subEl     = document.getElementById('bl-modal-sub');
@@ -516,13 +583,22 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
               '</div>';
           }).join('');
         } else {
-          subEl.textContent = 'No dedicated office yet';
+          var cities = CITIES[country];
+          subEl.textContent = cities ? 'Opening soon' : 'No dedicated office yet';
           bodyEl.innerHTML =
-            '<p class="bl-office-empty">' +
-              'We do not have a dedicated Ballylife office in <strong>' + country + '</strong> yet, ' +
-              'but we work with partners across the region. Reach our head office in Lusaka, Zambia, ' +
-              'and our team will connect you with the right contact for ' + country + ':' +
-            '</p>' +
+            (cities
+              ? '<span class="bl-soon-badge">OFFICE OPENING SOON</span>' +
+                '<p class="bl-office-empty">' +
+                  'We are still building Ballylife out, and <strong>' + country + '</strong> is on our roadmap. ' +
+                  'Here is where we are planning to open first:' +
+                '</p>' +
+                '<div class="bl-city-tags">' + cities.map(function(c){ return '<span class="bl-city-tag">' + c + '</span>'; }).join('') + '</div>'
+              : '<p class="bl-office-empty">' +
+                  'We do not have a dedicated Ballylife office in <strong>' + country + '</strong> yet, ' +
+                  'but we work with partners across the region.' +
+                '</p>'
+            ) +
+            '<p class="bl-office-empty" style="margin-top:2px;">In the meantime, reach our head office in Lusaka, Zambia, and our team will connect you with the right contact for ' + country + ':</p>' +
             '<div class="bl-office" style="border-top:1px solid var(--bl-border); margin-top:14px;">' +
               '<div class="bl-icon-badge">' + iconSvg() + '</div>' +
               '<div>' +
