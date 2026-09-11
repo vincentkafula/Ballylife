@@ -609,9 +609,25 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
       {sellers.length > 0 && (
         <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl p-6 sm:p-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-10"
           style={{ background: "linear-gradient(135deg,#14110D 0%,#211C16 55%,#14110D 100%)" }}>
-          {/* Decorative blobs, matching the scale of the other two hero banners */}
-          <div className="absolute -top-20 -left-16 w-80 h-80 rounded-full opacity-25 pointer-events-none" style={{ background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
-          <div className="absolute -bottom-28 right-10 w-96 h-96 rounded-full opacity-20 pointer-events-none" style={{ background: "radial-gradient(circle,#B8862E 0%,transparent 70%)" }} />
+          {/* Scattered shield-checkmark watermark -- a genuinely different
+              texture from the two-blob glow used on "Pick Up Where You
+              Left Off" above, and thematically tied to "verified" rather
+              than reusing the same decorative trick with new colors. */}
+          <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-[0.06]">
+            {Array.from({ length: 18 }).map((_, i) => {
+              const row = Math.floor(i / 6);
+              const col = i % 6;
+              return (
+                <svg key={i} width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#D4A54A" strokeWidth="1.6"
+                  style={{ position: "absolute", top: `${row * 42 - 10}%`, left: `${col * 19 + (row % 2 === 0 ? 0 : 9)}%`, transform: `rotate(${(i % 5) * 7 - 14}deg)` }}>
+                  <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
+                  <path d="M9 12l2 2 4-4" />
+                </svg>
+              );
+            })}
+          </div>
+          {/* One asymmetric accent glow, not a matching pair */}
+          <div className="absolute -bottom-24 -right-16 rounded-full opacity-20 pointer-events-none" style={{ width: 320, height: 320, background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
 
           <div className="relative shrink-0 text-center sm:text-left">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold mb-3" style={{ background: "rgba(212,165,74,0.15)", color: "#D4A54A" }}>
