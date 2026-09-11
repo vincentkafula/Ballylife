@@ -185,11 +185,14 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
         {/* Headline */}
         <div className="flex-1 min-w-0 flex items-center gap-[3%]">
           <div className="min-w-0">
+            <span className="hidden xl:inline-flex items-center gap-1 rounded-full font-bold mb-[0.6%]" style={{ background: "rgba(212,165,74,0.18)", color: "#F0C878", fontSize: "clamp(6px,0.85cqw,10px)", padding: "0.6% 2%" }}>
+              LIMITED-TIME
+            </span>
             <h3 className="font-serif text-white leading-none whitespace-nowrap" style={{ fontWeight: 700, fontSize: "clamp(13px, 3.4cqw, 30px)" }}>
               Live bold. Shop Ballylife in minutes.
             </h3>
             <p className="mt-[0.8%] leading-snug truncate" style={{ color: "rgba(255,255,255,0.78)", fontSize: "clamp(8px, 1.15cqw, 13px)", maxWidth: "44ch" }}>
-              Need it now? Forgot something? We've got it! We'll be there in minutes.
+              Ran out? Ran late? Ran out of excuses. We'll have it at your door before the kettle boils.
             </p>
           </div>
           <button onClick={onShop} className="shrink-0 rounded-full font-black tracking-wide transition-transform hover:scale-[1.03] whitespace-nowrap"
@@ -561,12 +564,15 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
             {/* Headline */}
             <div className="flex-1 text-center sm:text-left">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold mb-3" style={{ background: "rgba(184,134,46,0.12)", color: "#8C6420" }}>
+                <Clock className="w-3 h-3" /> JUST FOR YOU
+              </span>
               <h3 className="font-serif leading-tight mb-3" style={{ fontWeight: 700, fontSize: "clamp(24px,4vw,40px)" }}>
                 <span className="text-gray-900">Pick Up Where</span><br />
                 <span style={{ background: "linear-gradient(135deg,#D4A54A,#8C6420)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>You Left Off</span>
               </h3>
               <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto sm:mx-0">
-                See the items you viewed recently and pick up right where you left off.
+                Good taste doesn't need reminding — but here it is anyway. Still there. Still yours if you want it.
               </p>
             </div>
           </div>
@@ -616,7 +622,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
               <span style={{ background: "linear-gradient(135deg,#D4A54A,#F0C878)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>trusted sellers</span>
             </h3>
             <p className="text-sm sm:text-base max-w-md mx-auto sm:mx-0" style={{ color: "rgba(255,255,255,0.65)" }}>
-              Every seller on Ballylife is verified before they list.
+              No guesswork, no gambles. Every seller on Ballylife is verified before they ever list a thing.
             </p>
           </div>
           <div className="relative flex items-center gap-2.5 flex-wrap justify-center sm:justify-end">
