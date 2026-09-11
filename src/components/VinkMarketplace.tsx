@@ -67,6 +67,7 @@ import { SupplierDashboard } from "./SupplierDashboard";
 import { AuthorityDashboard } from "./AuthorityDashboard";
 import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
+import { ProductPhotoGallery } from "./ProductPhotoGallery";
 import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
@@ -890,6 +891,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
   const [reviewBody, setReviewBody] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [show3D, setShow3D] = useState(false);
 
   const submitReview = async () => {
     if (!authUser) { onRequireAuth(); return; }
@@ -906,6 +908,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
 
   useEffect(() => {
     setLoading(true);
+    setShow3D(false);
     mktProducts.get(productId)
       .then(res => { setData(res.data as typeof data); setLoading(false); addRecentlyViewed(productId); })
       .catch(() => setLoading(false));
@@ -935,15 +938,36 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
       <div className="grid xl:grid-cols-2">
         {/* Image */}
         <div>
-          <Product3DViewer
-            emoji={p.emoji as string}
-            colorA={imgs?.[0] ?? "#B8862E"}
-            colorB={imgs?.[1] ?? "#0F3D24"}
-            brand={(p.brand as string) ?? ""}
-            name={p.name as string}
-            discount={discount}
-            illustration={getProductIllustration(p)}
-          />
+          {show3D ? (
+            <div>
+              <div className="flex items-center justify-between px-3 pt-2">
+                <button onClick={() => setShow3D(false)} className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900">
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to photos
+                </button>
+              </div>
+              <Product3DViewer
+                key={productId}
+                emoji={p.emoji as string}
+                colorA={imgs?.[0] ?? "#B8862E"}
+                colorB={imgs?.[1] ?? "#0F3D24"}
+                brand={(p.brand as string) ?? ""}
+                name={p.name as string}
+                discount={discount}
+                illustration={getProductIllustration(p)}
+              />
+            </div>
+          ) : (
+            <ProductPhotoGallery
+              key={productId}
+              emoji={p.emoji as string}
+              colorA={imgs?.[0] ?? "#B8862E"}
+              colorB={imgs?.[1] ?? "#0F3D24"}
+              name={p.name as string}
+              discount={discount}
+              illustration={getProductIllustration(p)}
+              onOpen3DView={() => setShow3D(true)}
+            />
+          )}
           {p.isFlashDeal && (
             <div className="mx-4 my-3 flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
               <Zap className="w-4 h-4 text-red-500 flex-shrink-0" />
