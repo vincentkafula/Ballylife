@@ -167,14 +167,22 @@ function Stars({ rating, size = 13 }: { rating: number; size?: number }) {
 function PromoBanner({ onShop }: { onShop: () => void }) {
   return (
     <div className="col-span-full relative overflow-hidden rounded-2xl" style={{ background: "linear-gradient(135deg,#0B1A3D 0%,#16336B 55%,#0B1A3D 100%)", aspectRatio: "2164 / 363", containerType: "inline-size" } as CSSProperties}>
-      {/* Repeated ghost "B" logo pattern */}
-      <div className="absolute inset-0 flex items-center justify-end opacity-[0.07] pointer-events-none select-none overflow-hidden">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <span key={i} className="font-serif text-white shrink-0" style={{ fontSize: "14cqw", fontWeight: 700, lineHeight: 1, marginLeft: "-2.2cqw" }}>B</span>
+      {/* Diagonal motion lines -- suggests speed, fitting the delivery
+          theme, and replaces the old repeated ghost "B" pattern which
+          read as clutter ("BBBB") rather than texture. */}
+      <div className="absolute inset-0 pointer-events-none select-none overflow-hidden opacity-[0.08]">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} style={{
+            position: "absolute", top: `${i * 22 - 15}%`, left: `${i * 14}%`,
+            width: "70%", height: "3px", background: "linear-gradient(90deg, transparent, #FF7A50, transparent)",
+            transform: "rotate(-18deg)",
+          }} />
         ))}
       </div>
-      {/* Subtle gold accent glow, bottom-left */}
-      <div className="absolute -bottom-1/2 -left-[5%] rounded-full pointer-events-none" style={{ width: "22cqw", height: "22cqw", background: "radial-gradient(circle, rgba(212,165,74,0.20), transparent 70%)" }} />
+      {/* Coral accent glow, bottom-left -- distinct from the gold used on
+          the other two banners, so all three read as their own thing
+          rather than the same palette reskinned. */}
+      <div className="absolute -bottom-1/2 -left-[5%] rounded-full pointer-events-none" style={{ width: "24cqw", height: "24cqw", background: "radial-gradient(circle, rgba(255,122,80,0.22), transparent 70%)" }} />
 
       <div className="relative h-full flex items-center gap-[2.5%] px-[3%]">
         {/* Logo mark */}
@@ -185,7 +193,7 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
         {/* Headline */}
         <div className="flex-1 min-w-0 flex items-center gap-[3%]">
           <div className="min-w-0">
-            <span className="hidden xl:inline-flex items-center gap-1 rounded-full font-bold mb-[0.6%]" style={{ background: "rgba(212,165,74,0.18)", color: "#F0C878", fontSize: "clamp(6px,0.85cqw,10px)", padding: "0.6% 2%" }}>
+            <span className="hidden xl:inline-flex items-center gap-1 rounded-full font-bold mb-[0.6%]" style={{ background: "rgba(255,122,80,0.18)", color: "#FF9D75", fontSize: "clamp(6px,0.85cqw,10px)", padding: "0.6% 2%" }}>
               LIMITED-TIME
             </span>
             <h3 className="font-serif text-white leading-none whitespace-nowrap" style={{ fontWeight: 700, fontSize: "clamp(13px, 3.4cqw, 30px)" }}>
@@ -196,7 +204,7 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
             </p>
           </div>
           <button onClick={onShop} className="shrink-0 rounded-full font-black tracking-wide transition-transform hover:scale-[1.03] whitespace-nowrap"
-            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)", color: "#0B1A3D", padding: "clamp(4px,1cqw,11px) clamp(12px,2.4cqw,26px)", fontSize: "clamp(8px,1.15cqw,13px)" }}>
+            style={{ background: "linear-gradient(135deg,#FF8C5A,#E8562E)", color: "#0B1A3D", padding: "clamp(4px,1cqw,11px) clamp(12px,2.4cqw,26px)", fontSize: "clamp(8px,1.15cqw,13px)" }}>
             SHOP NOW
           </button>
         </div>
@@ -205,7 +213,7 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
             which no longer fits the halved height without either
             overflowing or shrinking down to illegibility. */}
         <div className="hidden lg:flex items-center gap-[1.2%] shrink-0 rounded-full" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.16)", padding: "1.4% 3%" }}>
-          <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: "3.6cqw", height: "3.6cqw", background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+          <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: "3.6cqw", height: "3.6cqw", background: "linear-gradient(135deg,#FF8C5A,#E8562E)" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="#0B1A3D" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: "2cqw", height: "2cqw" }}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></svg>
           </span>
           <div className="leading-none">
