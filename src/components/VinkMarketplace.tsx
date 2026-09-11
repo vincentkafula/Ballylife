@@ -601,15 +601,27 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
       {/* ── Trusted sellers ── */}
       {sellers.length > 0 && (
-        <div className="mx-3 sm:mx-4 mb-3 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-          style={{ background: "linear-gradient(120deg,#14110D 0%,#211C16 100%)" }}>
-          <div>
-            <p className="font-serif text-xl text-white mb-1" style={{ fontWeight: 600 }}>Shop from trusted sellers</p>
-            <p className="text-xs" style={{ color: "#D4A54A" }}>Every seller on Ballylife is verified before they list.</p>
+        <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl p-6 sm:p-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-10"
+          style={{ background: "linear-gradient(135deg,#14110D 0%,#211C16 55%,#14110D 100%)" }}>
+          {/* Decorative blobs, matching the scale of the other two hero banners */}
+          <div className="absolute -top-20 -left-16 w-80 h-80 rounded-full opacity-25 pointer-events-none" style={{ background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
+          <div className="absolute -bottom-28 right-10 w-96 h-96 rounded-full opacity-20 pointer-events-none" style={{ background: "radial-gradient(circle,#B8862E 0%,transparent 70%)" }} />
+
+          <div className="relative shrink-0 text-center sm:text-left">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold mb-3" style={{ background: "rgba(212,165,74,0.15)", color: "#D4A54A" }}>
+              <Shield className="w-3 h-3" /> VERIFIED MARKETPLACE
+            </span>
+            <h3 className="font-serif leading-tight mb-3" style={{ fontWeight: 700, fontSize: "clamp(24px,4vw,40px)" }}>
+              <span className="text-white">Shop from</span><br />
+              <span style={{ background: "linear-gradient(135deg,#D4A54A,#F0C878)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>trusted sellers</span>
+            </h3>
+            <p className="text-sm sm:text-base max-w-md mx-auto sm:mx-0" style={{ color: "rgba(255,255,255,0.65)" }}>
+              Every seller on Ballylife is verified before they list.
+            </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex items-center gap-2.5 flex-wrap justify-center sm:justify-end">
             {sellers.map((s) => (
-              <button key={s} onClick={onCategory} className="px-4 py-2 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-colors whitespace-nowrap">
+              <button key={s} onClick={onCategory} className="px-5 py-3 rounded-xl text-sm font-bold bg-white/10 text-white hover:bg-white/20 hover:scale-[1.03] transition-all whitespace-nowrap border border-white/10">
                 {s}
               </button>
             ))}
