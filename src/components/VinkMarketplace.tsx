@@ -1721,6 +1721,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   // footer link in the "Terms and Policies" column now has a real
   // destination.
   const handleFooterLink = (label: string) => {
+    if (label === "My Account") { gateOrPrompt("account"); return; }
     if (label === "Track Order") { setView("trackOrder"); return; }
     if (label === "Contact Us") { setView("contactPage"); return; }
     if (label === "Platform Terms") { setView("termsPage"); return; }
