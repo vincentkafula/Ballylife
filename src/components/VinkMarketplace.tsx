@@ -1296,6 +1296,7 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
   const [selAddr, setSelAddr] = useState(0);
   const [shipping, setShipping] = useState("standard");
   const [payment, setPayment] = useState("card");
+  const [bnplProvider, setBnplProvider] = useState<"payflex" | "payjustnow">("payflex");
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
   const STEPS: CheckoutStep[] = ["address","shipping","payment","confirmation"];
@@ -1306,7 +1307,8 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
     setPlaceError(null);
     try {
       const { mktOrders: api } = await import("../services/marketplaceApi");
-      const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod: payment });
+      const paymentMethod = payment === "bnpl" ? `bnpl_${bnplProvider}` : payment;
+      const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod });
       if ((res as { success: boolean }).success) {
         // If PayFast (or any future redirect-based processor) is
         // configured, the order exists but payment isn't done yet — send
@@ -1440,6 +1442,48 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
                     className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-emerald-400" />
                 </div>
               ))}
+            </div>
+          )}
+          {payment === "bnpl" && (
+            <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-2">In partnership with</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { id: "payflex" as const, label: "PayFlex", tagline: "Pay in 4, interest-free" },
+                    { id: "payjustnow" as const, label: "PayJustNow", tagline: "Pay in 3, interest-free" },
+                  ]).map(p => (
+                    <button key={p.id} onClick={() => setBnplProvider(p.id)}
+                      className={`text-left p-3 rounded-xl border transition-all ${bnplProvider === p.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
+                      <p className="text-sm font-bold text-gray-900">{p.label}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{p.tagline}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const total = Number(cart?.total ?? 0);
+                const installments = bnplProvider === "payflex" ? 4 : 3;
+                const perInstalment = total / installments;
+                const providerLabel = bnplProvider === "payflex" ? "PayFlex" : "PayJustNow";
+                return (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 mb-2">Your payment plan</p>
+                    <div className="rounded-xl border border-gray-100 overflow-hidden">
+                      {Array.from({ length: installments }).map((_, i) => (
+                        <div key={i} className="flex items-center justify-between px-3.5 py-2.5 text-sm border-b border-gray-50 last:border-0">
+                          <span className="text-gray-500">{i === 0 ? "Due today" : `Payment ${i + 1} of ${installments}`}</span>
+                          <span className="font-bold text-gray-900">{fmtZAR(perInstalment)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-2">
+                      No interest or fees when paid on time. {providerLabel} runs its own quick eligibility check and credit assessment once you place your order — approval isn't guaranteed.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           )}
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
