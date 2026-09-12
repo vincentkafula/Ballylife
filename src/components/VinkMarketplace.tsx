@@ -2008,7 +2008,11 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             />
           )}
           {view === "account" && authUser && role === "customer" && (
-            <CustomerDashboard user={authUser} onProduct={id => { setSelProductId(id); setView("product"); }} onSignOut={handleSignOut} />
+            <CustomerDashboard user={authUser} onProduct={id => { setSelProductId(id); setView("product"); }} onSignOut={handleSignOut}
+              onWishlist={() => setView("wishlist")}
+              onContact={() => handleFooterLink("Contact Us")}
+              onBallylifeMore={() => handleFooterLink("BallylifeMORE Terms")}
+            />
           )}
           {view === "seller" && authUser && authSeller && role === "seller" && (
             <SellerDashboard user={authUser} seller={authSeller} onSignOut={handleSignOut} />

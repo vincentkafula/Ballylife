@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Package, Heart, MapPin, CreditCard, RotateCcw, Bell, Star, MessageSquare,
   Shield, BarChart3, Plus, Trash2, Loader2, CheckCircle, Truck, Clock, XCircle,
-  ChevronRight, Award,
+  ChevronRight, Award, User, ExternalLink,
 } from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import {
@@ -11,7 +11,7 @@ import {
 import { formatZAR, useCurrency } from "../services/currencyStore";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "orders" | "addresses" | "payment" | "returns" | "notifications" | "security" | "analytics";
+type Tab = "overview" | "orders" | "addresses" | "payment" | "returns" | "notifications" | "security" | "analytics" | "profile";
 
 const fmtZAR = formatZAR; // now converts + formats in the shopper's local currency
 const PIE_COLORS = ["#B8862E", "#D4A54A", "#10B981", "#34A853", "#EF4444", "#F59E0B"];
@@ -54,9 +54,15 @@ interface Props {
   user: MktAuthUser;
   onProduct: (id: string) => void;
   onSignOut: () => void;
+  /** Wishlist and Support/Contact live as separate top-level views in the
+   *  parent app rather than dashboard tabs, so the hub's "My Lists" and
+   *  "Support" cards need the parent to switch views on their behalf. */
+  onWishlist: () => void;
+  onContact: () => void;
+  onBallylifeMore: () => void;
 }
 
-export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
+export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onContact, onBallylifeMore }: Props) {
   useCurrency(); // subscribes this tree to live currency/rate updates
   const [tab, setTab] = useState<Tab>("overview");
   const [stats, setStats] = useState<R | null>(null);
@@ -95,6 +101,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
   const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Overview", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "orders", label: "Orders", icon: <Package className="w-4 h-4" /> },
+    { id: "profile", label: "Profile", icon: <User className="w-4 h-4" /> },
     { id: "addresses", label: "Address Book", icon: <MapPin className="w-4 h-4" /> },
     { id: "payment", label: "Payment Methods", icon: <CreditCard className="w-4 h-4" /> },
     { id: "returns", label: "Returns & Refunds", icon: <RotateCcw className="w-4 h-4" /> },
@@ -132,6 +139,30 @@ export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
                     <Award className="w-4 h-4" style={{ color: "#D4A54A" }} />
                     <span className="text-sm font-bold text-[#B75C00]">{String(stats?.rewardPoints ?? 0)} reward points</span>
                   </div>
+                </div>
+
+                {/* Hub -- quick entry points into the rest of the dashboard,
+                    plus the two things that live outside it (wishlist and
+                    support) and the BallylifeMORE terms page. */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+                  {[
+                    { label: "Orders", sub: "Track, return, or buy again", icon: <Package className="w-5 h-5" />, accent: "#B8862E", onClick: () => setTab("orders") },
+                    { label: "Payments & Credit", sub: "Cards and payment methods", icon: <CreditCard className="w-5 h-5" />, accent: "#3B82F6", onClick: () => setTab("payment") },
+                    { label: "Ballylife+", sub: "Learn about membership perks", icon: <Star className="w-5 h-5" />, accent: "#D4A54A", onClick: onBallylifeMore, external: true },
+                    { label: "Profile", sub: "Your personal details", icon: <User className="w-5 h-5" />, accent: "#8B5CF6", onClick: () => setTab("profile") },
+                    { label: "My Lists", sub: "Saved items and wishlists", icon: <Heart className="w-5 h-5" />, accent: "#EF4444", onClick: onWishlist },
+                    { label: "Support", sub: "Get help or contact us", icon: <MessageSquare className="w-5 h-5" />, accent: "#10B981", onClick: onContact },
+                  ].map(card => (
+                    <button key={card.label} onClick={card.onClick}
+                      className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-3 text-left hover:border-gray-200 hover:shadow-sm transition-all">
+                      <span className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: `${card.accent}15`, color: card.accent }}>{card.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-900">{card.label}</p>
+                        <p className="text-[11px] text-gray-500 truncate">{card.sub}</p>
+                      </div>
+                      {card.external ? <ExternalLink className="w-4 h-4 text-gray-300 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
@@ -186,6 +217,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut }: Props) {
 
             {tab === "addresses" && <AddressBook userId={user.id} addresses={addresses} onChanged={load} />}
             {tab === "payment" && <PaymentMethodsPanel />}
+            {tab === "profile" && <ProfilePanel user={user} membership={String(stats?.membership ?? "Standard")} rewardPoints={Number(stats?.rewardPoints ?? 0)} />}
 
             {tab === "returns" && (
               <div className="bg-white rounded-xl border border-gray-100 p-5">
@@ -417,6 +449,36 @@ function PaymentMethodsPanel() {
           <Plus className="w-3.5 h-3.5" /> Add card
         </button>
       </div>
+    </div>
+  );
+}
+
+// Read-only by design: there's no backend endpoint yet for a customer to
+// update their own name/email, so this shows real account data rather
+// than a form that would silently fail to save anything.
+function ProfilePanel({ user, membership, rewardPoints }: { user: MktAuthUser; membership: string; rewardPoints: number }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5 max-w-md">
+      <p className="text-sm font-bold text-gray-900 mb-4">Profile</p>
+      <div className="space-y-3">
+        <div>
+          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Full name</p>
+          <p className="text-sm text-gray-800">{user.name}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Username</p>
+          <p className="text-sm text-gray-800">{user.username}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Email</p>
+          <p className="text-sm text-gray-800">{user.email}</p>
+        </div>
+        <div>
+          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Membership</p>
+          <p className="text-sm text-gray-800">{membership} Member &middot; {rewardPoints} reward points</p>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-400 mt-5">Need to change your name or email? Reach out through Support and our team will help.</p>
     </div>
   );
 }
