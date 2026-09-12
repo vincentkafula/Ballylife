@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef, Fragment, lazy, Suspense, type ReactNode, type CSSProperties } from "react";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
   Package, Truck, CheckCircle, Tag, TrendingUp, BarChart3,
   Settings, Menu, Clock, Shield, Zap, RotateCcw, Loader2,
   Home, Filter, MapPin, ChevronDown, User, LogOut, ShoppingBag,
-  Snowflake, Leaf, Box, VolumeX,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
@@ -395,13 +395,8 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
 // stays crisp at any size and matches the rest of the storefront's
 // styling, the same approach used for every other banner on this page.
 interface AdSlide {
-  brand: string;
-  tagline: string;
-  headline: string;
-  subhead: string;
-  features: { icon: ReactNode; title: string; desc: string }[];
-  badges: string[];
-  ctaLabel: string;
+  image: string;
+  alt: string;
   onCta: () => void;
 }
 
@@ -425,13 +420,12 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
 
   if (isAdSlide && adSlide) {
     return (
-      <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px]"
+      <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px] bg-white"
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
         onTouchStart={() => setPaused(true)}
-        onTouchEnd={() => setPaused(false)}
-        style={{ background: "linear-gradient(135deg,#FFFFFF 0%,#F0F3FA 100%)", border: "1px solid #D6DEEF" }}>
-        <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-blue-700">Sponsored</div>
+        onTouchEnd={() => setPaused(false)}>
+        <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded bg-black/40">Sponsored</div>
 
         {totalSlides > 1 && (
           <>
@@ -444,41 +438,15 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
           </>
         )}
 
-        <div className="relative h-full min-h-[300px] sm:min-h-[360px] flex flex-col justify-between px-6 sm:px-9 py-5 cursor-pointer" onClick={adSlide.onCta}>
-          <div>
-            <p className="text-[13px] sm:text-base font-black tracking-wide" style={{ color: "#1428A0" }}>{adSlide.brand}</p>
-            <p className="text-[9px] sm:text-[11px] font-medium text-gray-500 mb-2">{adSlide.tagline}</p>
-            <p className="text-lg sm:text-2xl font-black text-gray-900 leading-tight mb-1">{adSlide.headline}</p>
-            <p className="text-[10px] sm:text-xs text-gray-500 mb-3">{adSlide.subhead}</p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-              {adSlide.features.slice(0, 4).map((f, i) => (
-                <div key={i} className="flex items-start gap-1.5">
-                  <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "#1428A0" }}>{f.icon}</span>
-                  <div className="min-w-0">
-                    <p className="text-[9px] sm:text-[10px] font-bold text-gray-900 leading-tight truncate">{f.title}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-3 pt-3 border-t border-blue-100">
-            <div className="flex items-center gap-2 flex-wrap">
-              {adSlide.badges.slice(0, 3).map(b => (
-                <span key={b} className="text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#EEF1FB", color: "#1428A0" }}>{b}</span>
-              ))}
-            </div>
-            <button onClick={e => { e.stopPropagation(); adSlide.onCta(); }}
-              className="shrink-0 text-white text-xs font-bold px-4 py-2 rounded-full hover:opacity-90 transition-opacity" style={{ background: "#1428A0" }}>
-              {adSlide.ctaLabel}
-            </button>
-          </div>
-        </div>
+        <button onClick={adSlide.onCta} className="block w-full h-full min-h-[300px] sm:min-h-[360px] cursor-pointer" aria-label={adSlide.alt}>
+          <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover" />
+        </button>
 
         {totalSlides > 1 && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
             {Array.from({ length: totalSlides }).map((_, i) => (
               <button key={i} onClick={() => go(i)} className="h-1.5 rounded-full transition-all"
-                style={{ width: index === i ? 16 : 6, background: index === i ? "#1428A0" : "rgba(20,40,160,0.25)" }} aria-label={`Slide ${i + 1}`} />
+                style={{ width: index === i ? 16 : 6, background: index === i ? "#1428A0" : "rgba(255,255,255,0.6)" }} aria-label={`Slide ${i + 1}`} />
             ))}
           </div>
         )}
@@ -600,18 +568,8 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             onView={onProduct}
             onCart={onCart}
             adSlide={{
-              brand: "SAMSUNG",
-              tagline: "Smarter Living, Better Life",
-              headline: "Premium Refrigeration for Your Home",
-              subhead: "More space. More freshness. More for your family.",
-              features: [
-                { icon: <Snowflake className="w-3 h-3 text-white" />, title: "Twin Cooling Plus", desc: "Keeps food fresh for longer" },
-                { icon: <Leaf className="w-3 h-3 text-white" />, title: "Energy Efficient", desc: "Lower power consumption" },
-                { icon: <Box className="w-3 h-3 text-white" />, title: "Large Storage Capacity", desc: "More space for groceries" },
-                { icon: <VolumeX className="w-3 h-3 text-white" />, title: "Less Noise", desc: "A quieter home" },
-              ],
-              badges: ["FRESHER FOOD", "LOWER ENERGY BILLS", "LONG LASTING"],
-              ctaLabel: "Shop Now",
+              image: samsungFridgeAd,
+              alt: "Samsung Fridge - Premium Refrigeration for Your Home. Shop now.",
               onCta: onCategory,
             }}
           />
