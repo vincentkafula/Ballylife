@@ -6,6 +6,7 @@ import {
   Package, Truck, CheckCircle, Tag, TrendingUp, BarChart3,
   Settings, Menu, Clock, Shield, Zap, RotateCcw, Loader2,
   Home, Filter, MapPin, ChevronDown, User, LogOut, ShoppingBag,
+  Snowflake, Leaf, Box, VolumeX,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
@@ -389,23 +390,106 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
   );
 }
 
-function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void }) {
+// A single sponsored/promotional slide, distinct from the regular
+// product slides -- built as real markup (not an embedded image) so it
+// stays crisp at any size and matches the rest of the storefront's
+// styling, the same approach used for every other banner on this page.
+interface AdSlide {
+  brand: string;
+  tagline: string;
+  headline: string;
+  subhead: string;
+  features: { icon: ReactNode; title: string; desc: string }[];
+  badges: string[];
+  ctaLabel: string;
+  onCta: () => void;
+}
+
+function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void; adSlide?: AdSlide }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  const items = products.slice(0, 6);
+  // Room is left for one ad slide up front, so the total stays at 6
+  // slides either way (1 ad + 5 products, or 6 products if no ad is set).
+  const items = products.slice(0, adSlide ? 5 : 6);
+  const totalSlides = items.length + (adSlide ? 1 : 0);
+  const isAdSlide = Boolean(adSlide) && index === 0;
 
   useEffect(() => {
-    if (paused || items.length < 2) return;
-    const id = setInterval(() => setIndex(i => (i + 1) % items.length), 5000);
+    if (paused || totalSlides < 2) return;
+    const id = setInterval(() => setIndex(i => (i + 1) % totalSlides), 5000);
     return () => clearInterval(id);
-  }, [items.length, paused]);
+  }, [totalSlides, paused]);
 
-  if (items.length === 0) return null;
-  const p = items[index];
+  if (totalSlides === 0) return null;
+  const go = (i: number) => setIndex((i + totalSlides) % totalSlides);
+
+  if (isAdSlide && adSlide) {
+    return (
+      <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px]"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onTouchStart={() => setPaused(true)}
+        onTouchEnd={() => setPaused(false)}
+        style={{ background: "linear-gradient(135deg,#FFFFFF 0%,#F0F3FA 100%)", border: "1px solid #D6DEEF" }}>
+        <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-blue-700">Sponsored</div>
+
+        {totalSlides > 1 && (
+          <>
+            <button onClick={() => go(index - 1)} className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors" aria-label="Previous slide">
+              <ChevronRight className="w-3.5 h-3.5 rotate-180 text-blue-700" />
+            </button>
+            <button onClick={() => go(index + 1)} className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors" aria-label="Next slide">
+              <ChevronRight className="w-3.5 h-3.5 text-blue-700" />
+            </button>
+          </>
+        )}
+
+        <div className="relative h-full min-h-[300px] sm:min-h-[360px] flex flex-col justify-between px-6 sm:px-9 py-5 cursor-pointer" onClick={adSlide.onCta}>
+          <div>
+            <p className="text-[13px] sm:text-base font-black tracking-wide" style={{ color: "#1428A0" }}>{adSlide.brand}</p>
+            <p className="text-[9px] sm:text-[11px] font-medium text-gray-500 mb-2">{adSlide.tagline}</p>
+            <p className="text-lg sm:text-2xl font-black text-gray-900 leading-tight mb-1">{adSlide.headline}</p>
+            <p className="text-[10px] sm:text-xs text-gray-500 mb-3">{adSlide.subhead}</p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              {adSlide.features.slice(0, 4).map((f, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <span className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: "#1428A0" }}>{f.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-[9px] sm:text-[10px] font-bold text-gray-900 leading-tight truncate">{f.title}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-blue-100">
+            <div className="flex items-center gap-2 flex-wrap">
+              {adSlide.badges.slice(0, 3).map(b => (
+                <span key={b} className="text-[8px] sm:text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#EEF1FB", color: "#1428A0" }}>{b}</span>
+              ))}
+            </div>
+            <button onClick={e => { e.stopPropagation(); adSlide.onCta(); }}
+              className="shrink-0 text-white text-xs font-bold px-4 py-2 rounded-full hover:opacity-90 transition-opacity" style={{ background: "#1428A0" }}>
+              {adSlide.ctaLabel}
+            </button>
+          </div>
+        </div>
+
+        {totalSlides > 1 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+            {Array.from({ length: totalSlides }).map((_, i) => (
+              <button key={i} onClick={() => go(i)} className="h-1.5 rounded-full transition-all"
+                style={{ width: index === i ? 16 : 6, background: index === i ? "#1428A0" : "rgba(20,40,160,0.25)" }} aria-label={`Slide ${i + 1}`} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const p = items[adSlide ? index - 1 : index];
   const discount = p.compareAtPrice
     ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
   const imgs = p.images as string[];
-  const go = (i: number) => setIndex((i + items.length) % items.length);
 
   return (
     <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px]"
@@ -416,7 +500,7 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
       style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 100%)", border: "1px solid #E8D9B5" }}>
       <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Featured today</div>
 
-      {items.length > 1 && (
+      {totalSlides > 1 && (
         <>
           <button
             onClick={() => go(index - 1)}
@@ -464,9 +548,9 @@ function HeroProductSlider({ products, onView, onCart }: { products: R[]; onView
         </div>
       </div>
 
-      {items.length > 1 && (
+      {totalSlides > 1 && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-          {items.map((_, i) => (
+          {Array.from({ length: totalSlides }).map((_, i) => (
             <button
               key={i}
               onClick={() => go(i)}
@@ -515,6 +599,21 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             products={featured.length ? featured : products}
             onView={onProduct}
             onCart={onCart}
+            adSlide={{
+              brand: "SAMSUNG",
+              tagline: "Smarter Living, Better Life",
+              headline: "Premium Refrigeration for Your Home",
+              subhead: "More space. More freshness. More for your family.",
+              features: [
+                { icon: <Snowflake className="w-3 h-3 text-white" />, title: "Twin Cooling Plus", desc: "Keeps food fresh for longer" },
+                { icon: <Leaf className="w-3 h-3 text-white" />, title: "Energy Efficient", desc: "Lower power consumption" },
+                { icon: <Box className="w-3 h-3 text-white" />, title: "Large Storage Capacity", desc: "More space for groceries" },
+                { icon: <VolumeX className="w-3 h-3 text-white" />, title: "Less Noise", desc: "A quieter home" },
+              ],
+              badges: ["FRESHER FOOD", "LOWER ENERGY BILLS", "LONG LASTING"],
+              ctaLabel: "Shop Now",
+              onCta: onCategory,
+            }}
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:w-56 flex-shrink-0">
