@@ -20,7 +20,7 @@ const COLS = [
   },
   {
     title: "Company",
-    links: ["About Us", "Careers", "Sell on Ballylife", "Deliver for Ballylife", "Press & News", "Competitions", "Ballylife for Business", "Ballylife Home Loan Hub", "Ballylife.credit"],
+    links: ["About Us", "Careers", "Sell on Ballylife", "Deliver for Ballylife", "Press & News", "Competitions", "Ballylife for Business", "Ballylife.credit"],
   },
   {
     title: "Terms and Policies",

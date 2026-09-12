@@ -61,6 +61,7 @@ const BusinessTermsPage = lazy(() => import("./BusinessTermsPage").then(m => ({ 
 const PrivacyPolicyPage = lazy(() => import("./PrivacyPolicyPage").then(m => ({ default: m.PrivacyPolicyPage })));
 const ReturnsPolicyPage = lazy(() => import("./ReturnsPolicyPage").then(m => ({ default: m.ReturnsPolicyPage })));
 const BallylifeMorePage = lazy(() => import("./BallylifeMorePage").then(m => ({ default: m.BallylifeMorePage })));
+const AboutUsPage = lazy(() => import("./AboutUsPage").then(m => ({ default: m.AboutUsPage })));
 import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
@@ -72,7 +73,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1610,6 +1611,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const [authSupplier, setAuthSupplier] = useState<Record<string, unknown> | null>(null);
   const [authAuthority, setAuthAuthority] = useState<Record<string, unknown> | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<"signin" | "seller">(initialAction === "sell" ? "seller" : "signin");
   const [navSearch, setNavSearch] = useState("");
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [navSuggests, setNavSuggests] = useState<R[]>([]);
@@ -1720,10 +1722,32 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   // and "BallylifeMORE Terms" are wired to actual destinations -- every
   // footer link in the "Terms and Policies" column now has a real
   // destination.
+  // Every footer link now goes somewhere real. Where a dedicated page or
+  // feature doesn't exist yet (careers, press, pickup points, etc.), it
+  // routes to the closest genuinely-existing destination -- Contact Us as
+  // the general catch-all for "get in touch about this" -- rather than a
+  // dead link, and duplicate labels (e.g. "Returns" appears in both the
+  // Account and Help columns) always resolve to the same destination.
   const handleFooterLink = (label: string) => {
-    if (label === "My Account") { gateOrPrompt("account"); return; }
+    // Account
+    if (label === "My Account" || label === "Invoices" || label === "Coupons" || label === "Personal Details") { gateOrPrompt("account"); return; }
     if (label === "Track Order") { setView("trackOrder"); return; }
-    if (label === "Contact Us") { setView("contactPage"); return; }
+    if (label === "Ballylife") { setView("ballylifeMorePage"); return; }
+    if (label === "Returns") { setView("returnsPolicyPage"); return; }
+
+    // Help
+    if (label === "Contact Us" || label === "Help Centre" || label === "Submit an Idea" || label === "Suggest a Product"
+      || label === "Ballylife Pickup Points" || label === "Log Intellectual Property Complaint") { setView("contactPage"); return; }
+    if (label === "Shipping & Delivery") { setView("termsPage"); return; }
+
+    // Company
+    if (label === "About Us" || label === "Press & News") { setView("aboutUsPage"); return; }
+    if (label === "Careers" || label === "Deliver for Ballylife" || label === "Competitions") { setView("contactPage"); return; }
+    if (label === "Sell on Ballylife") { setAuthModalTab("seller"); setShowAuthModal(true); return; }
+    if (label === "Ballylife for Business") { setView("businessTermsPage"); return; }
+    if (label === "Ballylife.credit") { setView("creditRewardsPage"); return; }
+
+    // Terms and Policies
     if (label === "Platform Terms") { setView("termsPage"); return; }
     if (label === "Human Rights Statement") { setView("humanRightsPage"); return; }
     if (label === "Responsible Disclosure Policy") { setView("disclosurePage"); return; }
@@ -1734,7 +1758,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     if (label === "Privacy Policy") { setView("privacyPolicyPage"); return; }
     if (label === "Returns Policy") { setView("returnsPolicyPage"); return; }
     if (label === "BallylifeMORE Terms") { setView("ballylifeMorePage"); return; }
-    window.dispatchEvent(new CustomEvent("ballylife:footer-link", { detail: { label } }));
+
+    // Shop, and the category strip -- no dedicated landing page exists per
+    // deal type or per category yet (most of the 24 category names don't
+    // correspond to a real seeded category), so these open the storefront
+    // to browse rather than doing nothing.
+    setView("catalog");
   };
 
   const gateOrPrompt = (dest: View) => {
@@ -2026,7 +2055,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           {view === "trackOrder" && (
             <OrderTracking onBack={() => setView("home")} />
           )}
-          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage" || view === "creditRewardsPage" || view === "businessTermsPage" || view === "privacyPolicyPage" || view === "returnsPolicyPage" || view === "ballylifeMorePage") && (
+          {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage" || view === "creditRewardsPage" || view === "businessTermsPage" || view === "privacyPolicyPage" || view === "returnsPolicyPage" || view === "ballylifeMorePage" || view === "aboutUsPage") && (
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading...</div>}>
               {view === "contactPage" && <ContactPage onBack={() => setView("home")} />}
               {view === "termsPage" && <TermsPage onBack={() => setView("home")} />}
@@ -2039,6 +2068,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               {view === "privacyPolicyPage" && <PrivacyPolicyPage onBack={() => setView("home")} />}
               {view === "returnsPolicyPage" && <ReturnsPolicyPage onBack={() => setView("home")} />}
               {view === "ballylifeMorePage" && <BallylifeMorePage onBack={() => setView("home")} />}
+              {view === "aboutUsPage" && <AboutUsPage onBack={() => setView("home")} onContact={() => setView("contactPage")} />}
             </Suspense>
           )}
           {view === "admin" && authUser && role === "manager" && (
@@ -2046,7 +2076,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
       </div>
 
-      {showAuthModal && <MarketplaceAuthModal onClose={() => setShowAuthModal(false)} onAuthenticated={handleAuthenticated} initialTab={initialAction === "sell" ? "seller" : "signin"} />}
+      {showAuthModal && <MarketplaceAuthModal onClose={() => setShowAuthModal(false)} onAuthenticated={handleAuthenticated} initialTab={authModalTab} />}
     </div>
   );
 }
