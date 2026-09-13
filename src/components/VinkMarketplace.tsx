@@ -420,7 +420,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
 
   if (isAdSlide && adSlide) {
     return (
-      <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px] bg-white"
+      <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px] bg-white"
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
         onTouchStart={() => setPaused(true)}
@@ -438,7 +438,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
           </>
         )}
 
-        <button onClick={adSlide.onCta} className="block w-full h-full min-h-[300px] sm:min-h-[360px] cursor-pointer" aria-label={adSlide.alt}>
+        <button onClick={adSlide.onCta} className="block w-full h-full cursor-pointer" aria-label={adSlide.alt}>
           <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover" />
         </button>
 
@@ -460,7 +460,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
   const imgs = p.images as string[];
 
   return (
-    <div className="flex-1 relative overflow-hidden rounded-sm min-h-[300px] sm:min-h-[360px]"
+    <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onTouchStart={() => setPaused(true)}
@@ -487,7 +487,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
         </>
       )}
 
-      <div className="relative h-full flex items-center justify-between gap-4 px-8 sm:px-12 py-6 min-h-[300px] sm:min-h-[360px] cursor-pointer" onClick={() => onView(p)}>
+      <div className="relative h-full flex items-center justify-between gap-4 px-8 sm:px-12 py-6 cursor-pointer" onClick={() => onView(p)}>
         <div className="min-w-0 flex-1">
           {discount > 0 && (
             <span className="inline-block bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm mb-1.5">-{discount}% OFF</span>
@@ -562,7 +562,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
       {/* ── Hero: sliding featured product + benefit cards ── */}
       <div className="flex flex-col sm:flex-row gap-3 m-3 sm:m-4">
-        <div className="flex-1 min-h-[300px] sm:min-h-[360px]">
+        <div className="flex-1 h-[300px] sm:h-[360px]">
           <HeroProductSlider
             products={featured.length ? featured : products}
             onView={onProduct}
