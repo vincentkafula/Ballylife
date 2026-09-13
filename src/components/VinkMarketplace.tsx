@@ -439,7 +439,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
         )}
 
         <button onClick={adSlide.onCta} className="block w-full h-full cursor-pointer" aria-label={adSlide.alt}>
-          <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover" />
+          <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover object-top" />
         </button>
 
         {totalSlides > 1 && (
