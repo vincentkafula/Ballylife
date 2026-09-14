@@ -403,13 +403,6 @@ interface AdSlide {
   image: string;
   alt: string;
   onCta: () => void;
-  brand: string;
-  headline: string;
-  headlineAccent: string;
-  subhead: string;
-  features: string[];
-  ctaLabel: string;
-  accent: string;
 }
 
 function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void; adSlides?: AdSlide[] }) {
@@ -432,58 +425,33 @@ function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { produc
 
   if (adSlide) {
     return (
-      <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px]"
-        style={{ containerType: "inline-size" } as CSSProperties}
+      <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px] bg-white"
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
         onTouchStart={() => setPaused(true)}
         onTouchEnd={() => setPaused(false)}>
-        {/* Full-bleed product photo, always rendered at the slide's full
-            size regardless of the text overlay -- the text sits on a
-            gradient scrim on top rather than splitting the box into two
-            divs, so there's no flex-sizing edge case that can squeeze
-            the image away. */}
-        <img src={adSlide.image} alt={adSlide.alt} className="absolute inset-0 w-full h-full object-cover" />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, #111318 0%, #111318 38%, rgba(17,19,24,0.82) 52%, rgba(17,19,24,0.15) 70%, transparent 85%)" }} />
-
         <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded bg-black/40">Sponsored</div>
 
         {totalSlides > 1 && (
           <>
             <button onClick={() => go(index - 1)} className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors" aria-label="Previous slide">
-              <ChevronRight className="w-3.5 h-3.5 rotate-180 text-gray-800" />
+              <ChevronRight className="w-3.5 h-3.5 rotate-180 text-blue-700" />
             </button>
             <button onClick={() => go(index + 1)} className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors" aria-label="Next slide">
-              <ChevronRight className="w-3.5 h-3.5 text-gray-800" />
+              <ChevronRight className="w-3.5 h-3.5 text-blue-700" />
             </button>
           </>
         )}
 
-        {/* Real text overlay -- brand, headline, subhead, features and
-            CTA are actual DOM text (not baked into the image), so they
-            stay crisp at any size, are readable by screen readers, and
-            are indexable. */}
-        <button onClick={adSlide.onCta} className="absolute inset-y-0 left-0 z-[1] w-[58%] sm:w-[46%] h-full flex flex-col justify-center px-4 sm:px-7 text-left cursor-pointer">
-          <p className="text-[10px] sm:text-xs font-black tracking-widest uppercase mb-1.5" style={{ color: adSlide.accent }}>{adSlide.brand}</p>
-          <h3 className="font-serif font-bold leading-[1.08] text-white" style={{ fontSize: "clamp(15px, 3.6cqw, 26px)" }}>
-            {adSlide.headline}<br /><span style={{ color: adSlide.accent }}>{adSlide.headlineAccent}</span>
-          </h3>
-          <p className="hidden sm:block mt-2 text-[12px] leading-snug" style={{ color: "rgba(255,255,255,0.68)" }}>{adSlide.subhead}</p>
-          <div className="hidden sm:flex items-center gap-2 mt-2.5 flex-wrap">
-            {adSlide.features.map(f => (
-              <span key={f} className="text-[9.5px] font-semibold px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)" }}>{f}</span>
-            ))}
-          </div>
-          <span className="inline-flex items-center gap-1 mt-3 sm:mt-4 w-fit text-white text-[11px] sm:text-xs font-bold px-3.5 sm:px-4 py-2 rounded-full transition-transform hover:scale-[1.03] shadow-lg" style={{ background: adSlide.accent }}>
-            {adSlide.ctaLabel} <ChevronRight className="w-3 h-3" />
-          </span>
+        <button onClick={adSlide.onCta} className="block w-full h-full cursor-pointer" aria-label={adSlide.alt}>
+          <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover" />
         </button>
 
         {totalSlides > 1 && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
             {Array.from({ length: totalSlides }).map((_, i) => (
               <button key={i} onClick={() => go(i)} className="h-1.5 rounded-full transition-all"
-                style={{ width: index === i ? 16 : 6, background: index === i ? adSlide.accent : "rgba(255,255,255,0.4)" }} aria-label={`Slide ${i + 1}`} />
+                style={{ width: index === i ? 16 : 6, background: index === i ? "#1428A0" : "rgba(255,255,255,0.6)" }} aria-label={`Slide ${i + 1}`} />
             ))}
           </div>
         )}
@@ -609,73 +577,31 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
                 image: samsungFridgeAd,
                 alt: "Samsung Fridge - Premium Refrigeration for Your Home",
                 onCta: onCategory,
-                brand: "Samsung",
-                headline: "More Space.",
-                headlineAccent: "More Freshness.",
-                subhead: "Keep your food fresh, your family healthy with Samsung Refrigerators.",
-                features: ["Twin Cooling Plus", "Energy Efficient", "Smart Features"],
-                ctaLabel: "Explore Samsung Fridges",
-                accent: "#3B82F6",
               },
               {
                 image: nikeAirMaxAd,
                 alt: "Nike Air Max - More Air. More Comfort. More You.",
                 onCta: onCategory,
-                brand: "Nike",
-                headline: "Air",
-                headlineAccent: "Max.",
-                subhead: "Iconic style. Unmatched comfort. The Air Max keeps you moving in every step.",
-                features: ["Max Air Cushioning", "Lightweight", "Durable"],
-                ctaLabel: "Shop Air Max",
-                accent: "#E4241C",
               },
               {
                 image: iphone16ProAd,
                 alt: "Apple iPhone 16 Pro - Pro. Beyond.",
                 onCta: onCategory,
-                brand: "Apple",
-                headline: "iPhone 16 Pro.",
-                headlineAccent: "Pro. Beyond.",
-                subhead: "Bigger dreams. Brighter possibilities. Built for what's next.",
-                features: ["Pro Camera", "A18 Pro Chip", "All-Day Battery"],
-                ctaLabel: "Learn More",
-                accent: "#D4AF7A",
               },
               {
                 image: macbookPro2025Ad,
                 alt: "Apple MacBook Pro 2025 - More Power. More Possibilities.",
                 onCta: onCategory,
-                brand: "Apple",
-                headline: "MacBook Pro",
-                headlineAccent: "2025.",
-                subhead: "The next generation MacBook Pro -- M5 chips, Liquid Retina XDR, all-day battery.",
-                features: ["M5 Chip", "Liquid Retina XDR", "Thunderbolt 5"],
-                ctaLabel: "Shop MacBook Pro 2025",
-                accent: "#8B5CF6",
               },
               {
                 image: samsungTvAd,
                 alt: "Samsung TVs - Bigger Screen. Brighter Moments.",
                 onCta: onCategory,
-                brand: "Samsung",
-                headline: "Bigger Screen.",
-                headlineAccent: "Brighter Moments.",
-                subhead: "Stunning picture. Immersive sound. The ultimate TV experience.",
-                features: ["4K UHD", "Dolby Atmos", "Slim Design"],
-                ctaLabel: "Explore Samsung TVs",
-                accent: "#3B82F6",
               },
               {
                 image: businessBoardroomAd,
                 alt: "Ballylife for Business - Great Ideas. Stronger Together.",
                 onCta: () => onFooterLink("Ballylife for Business"),
-                brand: "Ballylife for Business",
-                headline: "Great Ideas.",
-                headlineAccent: "Stronger Together.",
-                subhead: "Volume buying and rebates that scale with your business.",
-                features: ["8 Rebate Tiers", "Priority Support"],
-                ctaLabel: "Learn More",
-                accent: "#D4A54A",
               },
             ]}
           />
