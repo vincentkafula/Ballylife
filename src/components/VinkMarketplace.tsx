@@ -5,6 +5,7 @@ import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
 import iphone16ProAd from "../imports/iphone16pro-ad.jpg";
 import macbookPro2025Ad from "../imports/macbookpro2025-ad.jpg";
 import samsungTvAd from "../imports/samsung-tv-ad.jpg";
+import businessBoardroomAd from "../imports/business-boardroom-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
@@ -596,6 +597,11 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
                 image: samsungTvAd,
                 alt: "Samsung TVs - Bigger Screen. Brighter Moments. Explore Samsung TVs.",
                 onCta: onCategory,
+              },
+              {
+                image: businessBoardroomAd,
+                alt: "Ballylife for Business - Great Ideas. Stronger Together.",
+                onCta: () => onFooterLink("Ballylife for Business"),
               },
             ]}
           />
