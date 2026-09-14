@@ -432,12 +432,20 @@ function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { produc
 
   if (adSlide) {
     return (
-      <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px] flex"
-        style={{ background: "#111318", containerType: "inline-size" } as CSSProperties}
+      <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px]"
+        style={{ containerType: "inline-size" } as CSSProperties}
         onMouseEnter={() => setPaused(true)}
         onMouseLeave={() => setPaused(false)}
         onTouchStart={() => setPaused(true)}
         onTouchEnd={() => setPaused(false)}>
+        {/* Full-bleed product photo, always rendered at the slide's full
+            size regardless of the text overlay -- the text sits on a
+            gradient scrim on top rather than splitting the box into two
+            divs, so there's no flex-sizing edge case that can squeeze
+            the image away. */}
+        <img src={adSlide.image} alt={adSlide.alt} className="absolute inset-0 w-full h-full object-cover" />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, #111318 0%, #111318 38%, rgba(17,19,24,0.82) 52%, rgba(17,19,24,0.15) 70%, transparent 85%)" }} />
+
         <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded bg-black/40">Sponsored</div>
 
         {totalSlides > 1 && (
@@ -451,30 +459,25 @@ function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { produc
           </>
         )}
 
-        {/* Real text panel -- brand, headline, subhead, features and CTA
-            are actual DOM text (not baked into the image), so they stay
-            crisp at any size, are readable by screen readers, and are
-            indexable. The product photo sits beside it, cropped to
-            exclude whatever baked-in text the original ad creative had. */}
-        <button onClick={adSlide.onCta} className="relative z-[1] shrink-0 w-[46%] sm:w-[40%] h-full flex flex-col justify-center px-4 sm:px-7 text-left cursor-pointer">
+        {/* Real text overlay -- brand, headline, subhead, features and
+            CTA are actual DOM text (not baked into the image), so they
+            stay crisp at any size, are readable by screen readers, and
+            are indexable. */}
+        <button onClick={adSlide.onCta} className="absolute inset-y-0 left-0 z-[1] w-[58%] sm:w-[46%] h-full flex flex-col justify-center px-4 sm:px-7 text-left cursor-pointer">
           <p className="text-[10px] sm:text-xs font-black tracking-widest uppercase mb-1.5" style={{ color: adSlide.accent }}>{adSlide.brand}</p>
           <h3 className="font-serif font-bold leading-[1.08] text-white" style={{ fontSize: "clamp(15px, 3.6cqw, 26px)" }}>
             {adSlide.headline}<br /><span style={{ color: adSlide.accent }}>{adSlide.headlineAccent}</span>
           </h3>
-          <p className="hidden sm:block mt-2 text-[12px] leading-snug" style={{ color: "rgba(255,255,255,0.6)" }}>{adSlide.subhead}</p>
+          <p className="hidden sm:block mt-2 text-[12px] leading-snug" style={{ color: "rgba(255,255,255,0.68)" }}>{adSlide.subhead}</p>
           <div className="hidden sm:flex items-center gap-2 mt-2.5 flex-wrap">
             {adSlide.features.map(f => (
-              <span key={f} className="text-[9.5px] font-semibold px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.75)" }}>{f}</span>
+              <span key={f} className="text-[9.5px] font-semibold px-2 py-1 rounded-full" style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.8)" }}>{f}</span>
             ))}
           </div>
-          <span className="inline-flex items-center gap-1 mt-3 sm:mt-4 w-fit text-white text-[11px] sm:text-xs font-bold px-3.5 sm:px-4 py-2 rounded-full transition-transform hover:scale-[1.03]" style={{ background: adSlide.accent }}>
+          <span className="inline-flex items-center gap-1 mt-3 sm:mt-4 w-fit text-white text-[11px] sm:text-xs font-bold px-3.5 sm:px-4 py-2 rounded-full transition-transform hover:scale-[1.03] shadow-lg" style={{ background: adSlide.accent }}>
             {adSlide.ctaLabel} <ChevronRight className="w-3 h-3" />
           </span>
         </button>
-        <div className="relative flex-1 h-full min-w-0">
-          <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover" />
-          <div className="absolute inset-y-0 left-0 w-10 sm:w-16" style={{ background: "linear-gradient(90deg, #111318, transparent)" }} />
-        </div>
 
         {totalSlides > 1 && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
