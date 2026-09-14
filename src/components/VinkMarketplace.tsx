@@ -4,6 +4,7 @@ import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
 import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
 import iphone16ProAd from "../imports/iphone16pro-ad.jpg";
 import macbookPro2025Ad from "../imports/macbookpro2025-ad.jpg";
+import samsungTvAd from "../imports/samsung-tv-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
@@ -589,6 +590,11 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
               {
                 image: macbookPro2025Ad,
                 alt: "Apple MacBook Pro 2025 - More Power. More Possibilities. Shop MacBook Pro 2025.",
+                onCta: onCategory,
+              },
+              {
+                image: samsungTvAd,
+                alt: "Samsung TVs - Bigger Screen. Brighter Moments. Explore Samsung TVs.",
                 onCta: onCategory,
               },
             ]}
