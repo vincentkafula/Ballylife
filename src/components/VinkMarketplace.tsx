@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, Fragment, lazy, Suspense, type ReactNode, type CSSProperties } from "react";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
+import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
@@ -400,14 +401,14 @@ interface AdSlide {
   onCta: () => void;
 }
 
-function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void; adSlide?: AdSlide }) {
+function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void; adSlides?: AdSlide[] }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  // Room is left for one ad slide up front, so the total stays at 6
-  // slides either way (1 ad + 5 products, or 6 products if no ad is set).
-  const items = products.slice(0, adSlide ? 5 : 6);
-  const totalSlides = items.length + (adSlide ? 1 : 0);
-  const isAdSlide = Boolean(adSlide) && index === 0;
+  // Room is left for the ad slides up front, so the total stays at 6
+  // slides either way (N ads + (6-N) products, or 6 products if no ads).
+  const items = products.slice(0, Math.max(0, 6 - adSlides.length));
+  const totalSlides = items.length + adSlides.length;
+  const adSlide = index < adSlides.length ? adSlides[index] : undefined;
 
   useEffect(() => {
     if (paused || totalSlides < 2) return;
@@ -418,7 +419,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
   if (totalSlides === 0) return null;
   const go = (i: number) => setIndex((i + totalSlides) % totalSlides);
 
-  if (isAdSlide && adSlide) {
+  if (adSlide) {
     return (
       <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px] bg-white"
         onMouseEnter={() => setPaused(true)}
@@ -454,7 +455,7 @@ function HeroProductSlider({ products, onView, onCart, adSlide }: { products: R[
     );
   }
 
-  const p = items[adSlide ? index - 1 : index];
+  const p = items[index - adSlides.length];
   const discount = p.compareAtPrice
     ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
   const imgs = p.images as string[];
@@ -567,11 +568,18 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             products={featured.length ? featured : products}
             onView={onProduct}
             onCart={onCart}
-            adSlide={{
-              image: samsungFridgeAd,
-              alt: "Samsung Fridge - Premium Refrigeration for Your Home. Shop now.",
-              onCta: onCategory,
-            }}
+            adSlides={[
+              {
+                image: samsungFridgeAd,
+                alt: "Samsung Fridge - Premium Refrigeration for Your Home. Shop now.",
+                onCta: onCategory,
+              },
+              {
+                image: nikeAirMaxAd,
+                alt: "Nike Air Max - More Air. More Comfort. More You. Shop Air Max.",
+                onCta: onCategory,
+              },
+            ]}
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:w-56 flex-shrink-0">
