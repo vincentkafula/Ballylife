@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -9,6 +10,41 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['favicon.png', 'apple-touch-icon.png'],
+        manifest: {
+          name: 'Ballylife',
+          short_name: 'Ballylife',
+          description: "Ballylife — Zambia's largest online shopping.",
+          theme_color: '#14110D',
+          background_color: '#14110D',
+          display: 'standalone',
+          orientation: 'portrait',
+          start_url: '/',
+          scope: '/',
+          icons: [
+            { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+            { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+            { src: '/maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
+        },
+        workbox: {
+          // Never cache API calls -- prices, stock, and order state must
+          // always come from the network, not a stale service-worker cache.
+          navigateFallbackDenylist: [/^\/api\//],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              },
+            },
+          ],
+        },
+      }),
     ],
     resolve: {
       alias: {
