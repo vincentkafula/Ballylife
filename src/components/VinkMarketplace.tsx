@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, Fragment, lazy, Suspense, typ
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
 import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
+import iphone16ProAd from "../imports/iphone16pro-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
@@ -577,6 +578,11 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
               {
                 image: nikeAirMaxAd,
                 alt: "Nike Air Max - More Air. More Comfort. More You. Shop Air Max.",
+                onCta: onCategory,
+              },
+              {
+                image: iphone16ProAd,
+                alt: "Apple iPhone 16 Pro - Pro. Beyond. Bigger dreams, brighter possibilities. Learn more.",
                 onCta: onCategory,
               },
             ]}
