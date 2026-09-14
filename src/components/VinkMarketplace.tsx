@@ -3,6 +3,7 @@ import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
 import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
 import iphone16ProAd from "../imports/iphone16pro-ad.jpg";
+import macbookPro2025Ad from "../imports/macbookpro2025-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
@@ -583,6 +584,11 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
               {
                 image: iphone16ProAd,
                 alt: "Apple iPhone 16 Pro - Pro. Beyond. Bigger dreams, brighter possibilities. Learn more.",
+                onCta: onCategory,
+              },
+              {
+                image: macbookPro2025Ad,
+                alt: "Apple MacBook Pro 2025 - More Power. More Possibilities. Shop MacBook Pro 2025.",
                 onCta: onCategory,
               },
             ]}
