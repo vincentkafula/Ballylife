@@ -14,9 +14,11 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.png', 'apple-touch-icon.png'],
         manifest: {
+          id: '/',
           name: 'Ballylife',
           short_name: 'Ballylife',
           description: "Ballylife — Zambia's largest online shopping.",
+          categories: ['shopping'],
           theme_color: '#14110D',
           background_color: '#14110D',
           display: 'standalone',
