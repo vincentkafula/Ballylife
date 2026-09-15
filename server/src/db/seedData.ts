@@ -431,3 +431,78 @@ export const CSV_CATEGORY_MAP: Record<string, { id: string; icon: string; seller
   "Grocery & Food":           { id: "cat-csv-grocery",           icon: "🛒", sellerId: "sel-06", sellerName: "BookWorld" },
   "Industrial & Business":    { id: "cat-csv-industrial",        icon: "🏭", sellerId: "sel-06", sellerName: "BookWorld" },
 };
+
+// ─── Advanced product description generator ────────────────────────────────
+// Every bulk-generated and CSV-imported product started with a single
+// generic sentence. This builds a genuinely richer, structured
+// description from data already on the row -- name, brand, category,
+// color, size/variant -- keyed by seller theme (the same 6-way grouping
+// already used to assign sellers to both catalogs) rather than needing
+// separate hand-authored copy for all ~47 fine-grained categories.
+const SELLER_THEME_BENEFITS: Record<string, string[]> = {
+  "sel-01": [ // TechZone -- electronics, computing, gaming, connectivity
+    "Engineered for reliable everyday performance, it delivers the speed and responsiveness modern use demands.",
+    "Thoughtful design meets practical functionality, so it fits easily into your existing setup.",
+    "Built with quality components chosen for long-term durability, not just first impressions.",
+    "Straightforward setup and intuitive controls mean you're up and running in minutes.",
+  ],
+  "sel-02": [ // Fashion Hub -- clothing, shoes, bags, jewellery
+    "Crafted for comfort and everyday style, it pairs versatility with a look that fits effortlessly into any wardrobe.",
+    "Quality materials and considered construction help it hold its shape and color wear after wear.",
+    "A wardrobe piece that moves easily from everyday wear to something a little dressier.",
+    "Designed with real-world wear in mind, not just how it looks on a hanger.",
+  ],
+  "sel-03": [ // HomeStyle -- kitchen, furniture, decor, DIY, garden
+    "Built to make everyday living easier, it combines practicality with a look that fits naturally into your home.",
+    "Durable construction means it stands up to daily use while keeping its good looks.",
+    "Thoughtfully designed to sit comfortably alongside the rest of your home decor.",
+    "A dependable addition that earns its place through genuine everyday usefulness.",
+  ],
+  "sel-04": [ // SportsPro -- sports, fitness, automotive, travel, safety, agriculture
+    "Built for performance, it supports an active routine with construction made to last.",
+    "Designed to keep up with regular, real-world use rather than the occasional outing.",
+    "Lightweight where it counts, tough where it matters.",
+    "A dependable choice for anyone who takes what they do seriously.",
+  ],
+  "sel-05": [ // BeautyBar -- beauty, health, baby, pets
+    "Made with care, it's suited to becoming a genuine part of your everyday routine.",
+    "Gentle, consistent, and dependable enough for regular use.",
+    "Thoughtfully put together to deliver results you can actually notice.",
+    "A trusted addition to your everyday essentials.",
+  ],
+  "sel-06": [ // BookWorld -- books, office, school, toys, grocery, industrial
+    "A practical, well-made addition to your everyday essentials.",
+    "Designed with attention to detail, built to be genuinely useful rather than just decorative.",
+    "A dependable choice that balances quality and value.",
+    "Equally at home at your desk, around the house, or on the go.",
+  ],
+};
+
+/**
+ * Builds a structured, multi-paragraph description from data already
+ * on the product row -- no bespoke per-category copywriting needed.
+ * Shape: a one-line hook, two theme-appropriate benefit sentences (one
+ * fixed, one randomised so not every product in a theme reads
+ * identically), a specs line built from whatever attributes actually
+ * exist, and a closing trust line.
+ */
+export function buildAdvancedDescription(opts: {
+  name: string; brand: string; categoryName: string; sellerId: string;
+  color?: string | null; variant?: string | null; sizeCapacity?: string | null;
+}): string {
+  const benefits = SELLER_THEME_BENEFITS[opts.sellerId] ?? SELLER_THEME_BENEFITS["sel-06"];
+  const b1 = benefits[0];
+  const b2 = benefits[1 + Math.floor(Math.random() * (benefits.length - 1))];
+
+  const specs: string[] = [`Brand: ${opts.brand}`];
+  if (opts.color) specs.push(`Color: ${opts.color}`);
+  if (opts.sizeCapacity) specs.push(`Size/Capacity: ${opts.sizeCapacity}`);
+  if (opts.variant) specs.push(`Model: ${opts.variant}`);
+
+  return [
+    `${opts.name} is part of Ballylife's ${opts.categoryName} range from ${opts.brand}.`,
+    `${b1} ${b2}`,
+    `Specs — ${specs.join(" · ")}`,
+    `Backed by Ballylife's buyer protection, secure checkout, and fast delivery.`,
+  ].join("\n\n");
+}

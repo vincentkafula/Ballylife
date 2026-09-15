@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
 import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES, generateBulkProducts, CSV_CATEGORY_MAP } from "./seedData";
 import { parseCsv } from "../utils/csv";
+import { buildAdvancedDescription } from "./seedData";
 
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -45,6 +46,7 @@ export async function migrate(): Promise<void> {
     await seedDefaultCreditLogins();
     await seedBulkProducts();
     await seedCsvCatalogue();
+    await upgradeProductDescriptions();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
@@ -132,6 +134,7 @@ export async function migrate(): Promise<void> {
   await seedDefaultCreditLogins();
   await seedBulkProducts();
   await seedCsvCatalogue();
+  await upgradeProductDescriptions();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
@@ -653,6 +656,63 @@ async function seedCsvCatalogue(): Promise<void> {
     if ((start / BATCH_SIZE) % 20 === 0) console.log(`[db]   ...${Math.min(start + BATCH_SIZE, rows.length)}/${rows.length} CSV products inserted`);
   }
   console.log(`[db] Imported ${rows.length} CSV products in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
+}
+
+/**
+ * Upgrades every bulk-generated and CSV-imported product's description
+ * from a single generic sentence to a structured, multi-paragraph one
+ * (hook, two theme-appropriate benefit sentences, a specs line built
+ * from whatever attributes the row actually has, a trust line) -- see
+ * buildAdvancedDescription in seedData.ts. Gated on a marker phrase
+ * from that generator so this only runs once; paginated reads and
+ * batched VALUES-based UPDATEs (500 rows per statement) for the same
+ * boot-time reason as the seed functions above.
+ */
+async function upgradeProductDescriptions(): Promise<void> {
+  const { rows: markerRows } = await pool!.query(
+    `SELECT description FROM mkt_products WHERE sku LIKE 'BLK-%' OR sku LIKE 'SKU-%' LIMIT 1`
+  );
+  if (markerRows.length > 0 && String(markerRows[0].description ?? "").includes("Backed by Ballylife")) {
+    console.log("[db] Product descriptions already upgraded — skipping.");
+    return;
+  }
+
+  const BATCH_SIZE = 500;
+  console.log("[db] Upgrading product descriptions for bulk/CSV catalogue products...");
+  const startedAt = Date.now();
+  let offset = 0;
+  let totalUpdated = 0;
+
+  for (;;) {
+    const { rows } = await pool!.query(
+      `SELECT p.id, p.name, p.brand, p.seller_id, p.attributes, c.name AS category_name
+       FROM mkt_products p JOIN mkt_categories c ON c.id = p.category_id
+       WHERE p.sku LIKE 'BLK-%' OR p.sku LIKE 'SKU-%'
+       ORDER BY p.id LIMIT $1 OFFSET $2`,
+      [BATCH_SIZE, offset]
+    );
+    if (rows.length === 0) break;
+
+    const values: string[] = [];
+    const params: unknown[] = [];
+    for (const r of rows) {
+      const attrs = (typeof r.attributes === "string" ? JSON.parse(r.attributes) : r.attributes) ?? {};
+      const description = buildAdvancedDescription({
+        name: r.name, brand: r.brand ?? "Ballylife", categoryName: r.category_name, sellerId: r.seller_id,
+        color: attrs.Color ?? null, variant: attrs["Variant/Model"] ?? null, sizeCapacity: attrs["Size/Capacity"] ?? null,
+      });
+      values.push(`($${params.length + 1}::uuid,$${params.length + 2}::text)`);
+      params.push(r.id, description);
+    }
+    await pool!.query(
+      `UPDATE mkt_products SET description = v.description FROM (VALUES ${values.join(",")}) AS v(id, description) WHERE mkt_products.id = v.id`,
+      params
+    );
+    totalUpdated += rows.length;
+    offset += BATCH_SIZE;
+    if ((offset / BATCH_SIZE) % 40 === 0) console.log(`[db]   ...${totalUpdated} descriptions upgraded so far`);
+  }
+  console.log(`[db] Upgraded ${totalUpdated} product descriptions in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
 }
 
 async function seedVehiclesCategoryAndDuty(): Promise<void> {

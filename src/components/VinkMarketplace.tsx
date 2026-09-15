@@ -1273,7 +1273,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
         <div className="py-5">
           {tab === "desc" && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600 leading-relaxed">{p.description as string}</p>
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{p.description as string}</p>
               {Object.keys(p.attributes as R ?? {}).length > 0 && (
                 <div>
                   <p className="text-sm font-bold text-gray-800 mb-3">Specifications</p>
