@@ -267,14 +267,21 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
   const imgs = p.images as string[];
 
   return (
-    <div className="bg-white rounded-lg overflow-hidden border border-gray-200 hover:shadow-lg hover:border-[#D4A54A]/50 transition-all duration-200 group flex flex-col h-full" style={{ boxShadow: "0 1px 2px rgba(20,17,13,0.05)" }}>
+    <div className="bg-white rounded-xl overflow-hidden border border-gray-200 hover:shadow-xl hover:border-[#D4A54A]/50 transition-all duration-200 group flex flex-col h-full" style={{ boxShadow: "0 1px 3px rgba(20,17,13,0.06)" }}>
       {/* Image — portrait, not square, on a neutral mat like real product photography would sit on */}
       <div className="relative cursor-pointer bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
-        <div className="absolute inset-0 flex items-center justify-center text-6xl p-6"
-          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"}22,${imgs?.[1] ?? "#E5E7EB"}33)` }}>
-          {getProductIllustration(p)
-            ? <div className="w-24 h-24">{getProductIllustration(p)!()}</div>
-            : (p.emoji as string)}
+        <div className="absolute inset-0 flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105"
+          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"},${imgs?.[1] ?? "#E5E7EB"})` }}>
+          {/* Soft circular spotlight behind the product -- reads as a
+              studio backdrop rather than a flat color fill, and gives
+              the icon somewhere to visually "sit" rather than floating
+              on a bare gradient. */}
+          <div className="absolute rounded-full" style={{ width: "78%", aspectRatio: "1", background: "radial-gradient(circle, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 55%, transparent 75%)" }} />
+          <div className="relative text-7xl p-5" style={{ filter: "drop-shadow(0 14px 16px rgba(0,0,0,0.18))" }}>
+            {getProductIllustration(p)
+              ? <div className="w-28 h-28">{getProductIllustration(p)!()}</div>
+              : (p.emoji as string)}
+          </div>
         </div>
         {p.isFlashDeal && (
           <div className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -353,11 +360,11 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
   return (
     <div className="bg-white rounded-lg border border-gray-200 flex flex-col cursor-pointer hover:shadow-md transition-shadow min-w-[160px] max-w-[190px] flex-shrink-0 overflow-hidden">
       <div className="relative bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
-        <div className="absolute inset-0 flex items-center justify-center text-5xl p-5"
-          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#f5f5f5"}22,${imgs?.[1] ?? "#e8e8e8"}33)` }}>
+        <div className="absolute inset-0 flex items-center justify-center text-6xl p-5"
+          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#f5f5f5"},${imgs?.[1] ?? "#e8e8e8"})` }}>
           {getProductIllustration(p)
-            ? <div className="w-16 h-16">{getProductIllustration(p)!()}</div>
-            : (p.emoji as string)}
+            ? <div className="w-20 h-20" style={{ filter: "drop-shadow(0 8px 10px rgba(0,0,0,0.15))" }}>{getProductIllustration(p)!()}</div>
+            : <span style={{ filter: "drop-shadow(0 8px 10px rgba(0,0,0,0.15))" }}>{p.emoji as string}</span>}
         </div>
         {discount > 0 && (
           <div className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">-{discount}%</div>
@@ -677,8 +684,8 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             <div className="grid sm:grid-cols-2 gap-6 sm:gap-10 p-4 sm:p-8">
               {/* Product card */}
               <div className="rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onClick={() => onProduct(p)}>
-                <div className="relative" style={{ aspectRatio: "16 / 11", background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"}33,${imgs?.[1] ?? "#E5E7EB"}55)` }}>
-                  <div className="absolute inset-0 flex items-center justify-center text-7xl p-8">
+                <div className="relative" style={{ aspectRatio: "16 / 11", background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"},${imgs?.[1] ?? "#E5E7EB"})` }}>
+                  <div className="absolute inset-0 flex items-center justify-center text-7xl p-8" style={{ filter: "drop-shadow(0 14px 16px rgba(0,0,0,0.18))" }}>
                     {getProductIllustration(p) ? <div className="w-28 h-28">{getProductIllustration(p)!()}</div> : (p.emoji as string)}
                   </div>
                   {discount > 0 && (
@@ -1027,9 +1034,11 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
                 <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4 hover:shadow-md cursor-pointer transition-all" onClick={() => onProduct(p)}>
                   <div className="w-20 h-20 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden"
                     style={{ background: `linear-gradient(135deg,${imgs?.[0]},${imgs?.[1]})` }}>
-                    {getProductIllustration(p)
-                      ? <div className="w-14 h-14">{getProductIllustration(p)!()}</div>
-                      : (p.emoji as string)}
+                    <div style={{ filter: "drop-shadow(0 6px 8px rgba(0,0,0,0.15))" }}>
+                      {getProductIllustration(p)
+                        ? <div className="w-14 h-14">{getProductIllustration(p)!()}</div>
+                        : (p.emoji as string)}
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-400">{p.brand as string}</p>
