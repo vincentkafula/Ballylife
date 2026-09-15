@@ -344,7 +344,7 @@ const BULK_CATEGORY_SPECS: BulkCategorySpec[] = [
   },
 ];
 
-export function generateBulkProducts(count: number): Omit<Product, "id" | "slug" | "createdAt" | "updatedAt">[] {
+export function generateBulkProducts(count: number, startIndex = 0): Omit<Product, "id" | "slug" | "createdAt" | "updatedAt">[] {
   const out: Omit<Product, "id" | "slug" | "createdAt" | "updatedAt">[] = [];
   const palettes = ["#1a1a2e,#16213e", "#2d3748,#1a202c", "#0f172a,#1e293b", "#18181b,#27272a", "#1a237e,#283593",
     "#D4AF37,#B8860B", "#E53935,#B71C1C", "#F9A825,#F57F17", "#1565C0,#0D47A1", "#374151,#1f2937",
@@ -366,7 +366,7 @@ export function generateBulkProducts(count: number): Omit<Product, "id" | "slug"
       description: `A ${adj.toLowerCase()} ${noun.toLowerCase()} from ${brand}, part of Ballylife's ${spec.categoryName} range.`,
       price, compareAtPrice: hasDiscount ? Math.round(price * (1 + rand(10, 30) / 100)) : null,
       currency: "ZMW", images: [c1, c2], emoji, status: stock > 0 ? "active" : "out_of_stock",
-      stock, sku: `BLK-${spec.categoryId.toUpperCase()}-${i}`, brand,
+      stock, sku: `BLK-${spec.categoryId.toUpperCase()}-${startIndex + i}`, brand,
       tags: [noun.toLowerCase().replace(/\s+/g, "-")], attributes: {}, variants: [],
       avgRating: Math.round((rand(30, 50) / 10) * 10) / 10, reviewCount: rand(0, 900), totalSold: rand(0, 600),
       isFeatured: false, isFlashDeal: false, flashDealEndsAt: null,

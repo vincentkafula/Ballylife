@@ -512,22 +512,26 @@ async function seedDefaultCreditLogins(): Promise<void> {
 
 /**
  * Seeds a large volume of catalog filler -- demonstrates the platform
- * at real scale rather than the ~24 hand-curated products above. Gated
- * on a marker SKU prefix so this only ever runs once, and batched
- * (500 rows per INSERT) rather than one row at a time, since a
- * one-by-one loop at this volume would make container boot
- * unreasonably slow.
+ * at real scale rather than the ~24 hand-curated products above. Tops
+ * up to TARGET rather than just skip-if-any-exist, so raising TARGET
+ * on a later deploy adds the difference instead of doing nothing;
+ * slugs and SKUs are indexed from the existing count so a top-up never
+ * collides with what's already there. Batched (500 rows per INSERT)
+ * rather than one row at a time, since a one-by-one loop at this
+ * volume would make container boot unreasonably slow.
  */
 async function seedBulkProducts(): Promise<void> {
+  const TARGET = 100_000;
+  const BATCH_SIZE = 500;
   const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_products WHERE sku LIKE 'BLK-%'");
-  if (Number(rows[0].count) > 0) {
-    console.log("[db] Bulk demo catalog already seeded — skipping.");
+  const existing = Number(rows[0].count);
+  const remaining = TARGET - existing;
+  if (remaining <= 0) {
+    console.log(`[db] Bulk demo catalog already has ${existing} products (target ${TARGET}) — skipping.`);
     return;
   }
-  const TOTAL = 20_000;
-  const BATCH_SIZE = 500;
-  console.log(`[db] Seeding ${TOTAL} bulk demo products in batches of ${BATCH_SIZE} — this will take a little while...`);
-  const products = generateBulkProducts(TOTAL);
+  console.log(`[db] Topping up bulk demo products: ${existing} already seeded, adding ${remaining} more to reach ${TARGET}, in batches of ${BATCH_SIZE} — this will take a little while...`);
+  const products = generateBulkProducts(remaining, existing);
   const startedAt = Date.now();
 
   for (let start = 0; start < products.length; start += BATCH_SIZE) {
@@ -538,7 +542,7 @@ async function seedBulkProducts(): Promise<void> {
     const values: string[] = [];
     const params: unknown[] = [];
     batch.forEach((p, i) => {
-      const globalIndex = start + i;
+      const globalIndex = existing + start + i;
       const slug = `${p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${globalIndex}`;
       const row = [p.sellerId, p.categoryId, p.name, slug, p.shortDescription, p.description, p.price, p.compareAtPrice,
         p.currency, JSON.stringify(p.images), p.emoji, p.status, p.stock, p.sku, p.brand,
@@ -554,7 +558,7 @@ async function seedBulkProducts(): Promise<void> {
     );
     if ((start / BATCH_SIZE) % 10 === 0) console.log(`[db]   ...${Math.min(start + BATCH_SIZE, products.length)}/${products.length} bulk products inserted`);
   }
-  console.log(`[db] Seeded ${TOTAL} bulk demo products in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
+  console.log(`[db] Seeded ${remaining} bulk demo products in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (total now ${TARGET}).`);
 }
 
 /**
