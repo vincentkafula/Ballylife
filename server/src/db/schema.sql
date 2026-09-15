@@ -667,3 +667,15 @@ ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS delivery_signed_at TIMESTAMPTZ;
 ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_provider_id TEXT REFERENCES mkt_credit_providers(id);
 ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_decision TEXT; -- pending | approved | declined
 ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_decided_at TIMESTAMPTZ;
+
+-- Google/Facebook sign-in: a user row created this way still has a
+-- password_hash (NOT NULL, so it gets a random unusable one at creation
+-- time -- never actually checked against, since login for these users
+-- goes through the oauth_provider/oauth_id pair below, not
+-- POST /auth/login's password comparison). The partial unique index
+-- means one Google account and one Facebook account can never both map
+-- to two different rows for the same provider identity, while leaving
+-- regular (non-OAuth) users' provider/id both NULL and unconstrained.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT; -- 'google' | 'facebook' | NULL
+ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_id TEXT;       -- the provider's own user id (Google 'sub', Facebook 'id')
+CREATE UNIQUE INDEX IF NOT EXISTS users_oauth_identity_idx ON users (oauth_provider, oauth_id) WHERE oauth_provider IS NOT NULL;

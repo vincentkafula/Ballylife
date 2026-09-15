@@ -1,8 +1,34 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { X, User, Store, Loader2, Eye, EyeOff } from "lucide-react";
 import { mktAuth, type MktAuthUser } from "../services/marketplaceApi";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import { SellerApplicationWizard } from "./SellerApplicationWizard";
+
+// Public identifiers only -- never a secret -- so it's fine for these
+// to be baked into the client bundle at build time. Both are unset
+// until real Google Cloud / Meta for Developers credentials exist;
+// each button below only renders once its own var is present, so
+// there's nothing else to change here once those are added.
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+const FACEBOOK_APP_ID = import.meta.env.VITE_FACEBOOK_APP_ID as string | undefined;
+
+declare global {
+  interface Window {
+    google?: { accounts: { id: { initialize: (cfg: object) => void; renderButton: (el: HTMLElement, opts: object) => void } } };
+    FB?: { init: (cfg: object) => void; login: (cb: (res: { authResponse?: { accessToken: string } }) => void, opts: object) => void };
+    fbAsyncInit?: () => void;
+  }
+}
+
+function loadScriptOnce(src: string, id: string): Promise<void> {
+  return new Promise(resolve => {
+    if (document.getElementById(id)) { resolve(); return; }
+    const script = document.createElement("script");
+    script.id = id; script.src = src; script.async = true; script.defer = true;
+    script.onload = () => resolve();
+    document.body.appendChild(script);
+  });
+}
 
 type Tab = "signin" | "customer" | "seller" | "forgot" | "reset";
 
@@ -44,6 +70,60 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<"google" | "facebook" | null>(null);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+
+  const handleOauthResult = useCallback((r: { success: boolean; token?: string; user?: MktAuthUser; error?: string }) => {
+    setOauthLoading(null);
+    if (r.success && r.token && r.user) {
+      onAuthenticated(r.user, JSON.parse(localStorage.getItem("mkt_seller") ?? "null"), JSON.parse(localStorage.getItem("mkt_supplier") ?? "null"), JSON.parse(localStorage.getItem("mkt_authority") ?? "null"));
+    } else {
+      setError(r.error ?? "Sign-in failed. Please try again.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Google's button is rendered by their own script directly into a DOM
+  // node (not a React element this app controls the markup of --
+  // that's a Google brand-guideline requirement for "Sign in with
+  // Google" buttons), so this loads the script once, initializes it
+  // with a callback that hands the ID token straight to the backend for
+  // verification, and renders the button into googleButtonRef.
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || (tab !== "signin" && tab !== "customer")) return;
+    let cancelled = false;
+    loadScriptOnce("https://accounts.google.com/gsi/client", "google-identity-script").then(() => {
+      if (cancelled || !window.google || !googleButtonRef.current) return;
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (resp: { credential: string }) => {
+          setError(null); setOauthLoading("google");
+          const r = await mktAuth.google(resp.credential);
+          handleOauthResult(r);
+        },
+      });
+      window.google.accounts.id.renderButton(googleButtonRef.current, { theme: "outline", size: "large", width: 320, text: tab === "customer" ? "signup_with" : "signin_with" });
+    });
+    return () => { cancelled = true; };
+  }, [tab, handleOauthResult]);
+
+  const handleFacebookLogin = async () => {
+    if (!FACEBOOK_APP_ID) return;
+    setError(null); setOauthLoading("facebook");
+    await loadScriptOnce("https://connect.facebook.net/en_US/sdk.js", "facebook-jssdk");
+    if (!window.FB) {
+      window.fbAsyncInit = () => window.FB!.init({ appId: FACEBOOK_APP_ID, cookie: true, xfbml: false, version: "v21.0" });
+      // fbAsyncInit fires once the SDK finishes its own internal setup —
+      // give it a moment on first load before calling FB.login below.
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (!window.FB) { setOauthLoading(null); setError("Couldn't load Facebook sign-in — please try again."); return; }
+    window.FB.login(async (res) => {
+      if (!res.authResponse?.accessToken) { setOauthLoading(null); setError("Facebook sign-in was cancelled."); return; }
+      const r = await mktAuth.facebook(res.authResponse.accessToken);
+      handleOauthResult(r);
+    }, { scope: "email" });
+  };
 
   // Sign in
   const [siUsername, setSiUsername] = useState("");
@@ -119,6 +199,22 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     }
   };
 
+  const oauthButtons = (tab === "signin" || tab === "customer") && (GOOGLE_CLIENT_ID || FACEBOOK_APP_ID) ? (
+    <div className="mb-4">
+      {GOOGLE_CLIENT_ID && <div ref={googleButtonRef} className="flex justify-center mb-2" />}
+      {FACEBOOK_APP_ID && (
+        <button type="button" onClick={handleFacebookLogin} disabled={oauthLoading !== null}
+          className="w-full py-2.5 rounded-lg font-semibold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"
+          style={{ background: "#1877F2" }}>
+          {oauthLoading === "facebook" ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue with Facebook</>}
+        </button>
+      )}
+      <div className="flex items-center gap-2 mt-4 mb-1">
+        <div className="flex-1 h-px bg-gray-200" /><span className="text-[10px] text-gray-400 uppercase tracking-wide">or</span><div className="flex-1 h-px bg-gray-200" />
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
       <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -149,6 +245,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
 
           {tab === "signin" && (
             <div>
+              {oauthButtons}
               <Field label="Username" value={siUsername} onChange={setSiUsername} />
               <Field label="Password" value={siPassword} onChange={setSiPassword} type="password" />
               <button onClick={handleSignIn} disabled={loading}
@@ -193,6 +290,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
 
           {tab === "customer" && (
             <div>
+              {oauthButtons}
               <Field label="Full name" value={cName} onChange={setCName} />
               <Field label="Username" value={cUsername} onChange={setCUsername} />
               <Field label="Email" value={cEmail} onChange={setCEmail} type="email" />

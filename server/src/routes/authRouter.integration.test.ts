@@ -115,3 +115,27 @@ describe("POST /api/auth/forgot-password + reset-password", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("Google/Facebook sign-in -- not configured (this file's real, current environment)", () => {
+  // No GOOGLE_CLIENT_ID or FACEBOOK_APP_ID is set anywhere in this test
+  // run -- exactly production's actual state until real credentials are
+  // added. This isn't a mock of an unconfigured state, it genuinely is
+  // one, same as every other environment these tests run in right now.
+  it("reports both providers as disabled", async () => {
+    const res = await request(app).get("/api/auth/oauth-config");
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ googleEnabled: false, facebookEnabled: false });
+  });
+
+  it("POST /google returns 503 rather than attempting to verify anything", async () => {
+    const res = await request(app).post("/api/auth/google").send({ credential: "irrelevant" });
+    expect(res.status).toBe(503);
+    expect(res.body.success).toBe(false);
+  });
+
+  it("POST /facebook returns 503 rather than attempting to verify anything", async () => {
+    const res = await request(app).post("/api/auth/facebook").send({ accessToken: "irrelevant" });
+    expect(res.status).toBe(503);
+    expect(res.body.success).toBe(false);
+  });
+});

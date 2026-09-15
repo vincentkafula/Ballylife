@@ -316,6 +316,41 @@ export const mktCustomer = {
 
 // ── Marketplace auth (separate from the site's admin login) ─────────────────
 export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; }
+
+// Shared by login() and the OAuth methods below: none of them get the
+// seller/supplier/etc. record back in the initial response, so each
+// looks it up by role so the app knows which store/supplier/authority
+// this account owns.
+async function finishOauthLogin(r: { success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }) {
+  if (r.success && r.data?.token) {
+    const { token, user } = r.data;
+    setMktToken(token);
+    localStorage.setItem("mkt_user", JSON.stringify(user));
+    await loadRoleRecord(user);
+    return { success: true, token, user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
+  }
+  return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Sign-in failed" };
+}
+
+async function loadRoleRecord(user: MktAuthUser): Promise<void> {
+  if (user.role === "seller") {
+    const sellerRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/sellers/by-user/${user.id}`);
+    if (sellerRes.success) localStorage.setItem("mkt_seller", JSON.stringify(sellerRes.data));
+  } else if (user.role === "supplier") {
+    const supplierRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/suppliers/by-user/${user.id}`);
+    if (supplierRes.success) localStorage.setItem("mkt_supplier", JSON.stringify(supplierRes.data));
+  } else if (user.role === "revenue_authority") {
+    const authorityRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/revenue-authorities/by-user/${user.id}`);
+    if (authorityRes.success) localStorage.setItem("mkt_authority", JSON.stringify(authorityRes.data));
+  } else if (user.role === "shipping_company") {
+    const shippingRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/shipping-companies/by-user/${user.id}`);
+    if (shippingRes.success) localStorage.setItem("mkt_shipping", JSON.stringify(shippingRes.data));
+  } else if (user.role === "credit_provider") {
+    const creditRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/credit-providers/by-user/${user.id}`);
+    if (creditRes.success) localStorage.setItem("mkt_credit", JSON.stringify(creditRes.data));
+  }
+}
+
 export const mktAuth = {
   login: async (username: string, password: string) => {
     const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
@@ -323,25 +358,7 @@ export const mktAuth = {
       const { token, user } = r.data;
       setMktToken(token);
       localStorage.setItem("mkt_user", JSON.stringify(user));
-      // A plain login (unlike registration) doesn't come with the
-      // seller/supplier record already in hand — look it up by role so
-      // the app knows which store/supplier this account owns.
-      if (user.role === "seller") {
-        const sellerRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/sellers/by-user/${user.id}`);
-        if (sellerRes.success) localStorage.setItem("mkt_seller", JSON.stringify(sellerRes.data));
-      } else if (user.role === "supplier") {
-        const supplierRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/suppliers/by-user/${user.id}`);
-        if (supplierRes.success) localStorage.setItem("mkt_supplier", JSON.stringify(supplierRes.data));
-      } else if (user.role === "revenue_authority") {
-        const authorityRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/revenue-authorities/by-user/${user.id}`);
-        if (authorityRes.success) localStorage.setItem("mkt_authority", JSON.stringify(authorityRes.data));
-      } else if (user.role === "shipping_company") {
-        const shippingRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/shipping-companies/by-user/${user.id}`);
-        if (shippingRes.success) localStorage.setItem("mkt_shipping", JSON.stringify(shippingRes.data));
-      } else if (user.role === "credit_provider") {
-        const creditRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/credit-providers/by-user/${user.id}`);
-        if (creditRes.success) localStorage.setItem("mkt_credit", JSON.stringify(creditRes.data));
-      }
+      await loadRoleRecord(user);
       // Flatten to the shape callers expect (token/user at the top level)
       // — the backend nests them under data, but every caller here (and
       // MarketplaceAuthModal) was written against a flat response.
@@ -357,6 +374,19 @@ export const mktAuth = {
       return { success: true, token: r.data.token, user: r.data.user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
     }
     return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Registration failed" };
+  },
+  oauthConfig: () => api<{ success: boolean; data: { googleEnabled: boolean; facebookEnabled: boolean } }>("/api/auth/oauth-config"),
+  // Google/Facebook sign-in: same post-login role lookup as login()
+  // above (a Google sign-in can land on an existing seller/supplier/etc.
+  // account if it was linked by matching email, not just a fresh
+  // customer), so this shares that logic rather than assuming customer.
+  google: async (credential: string) => {
+    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
+    return finishOauthLogin(r);
+  },
+  facebook: async (accessToken: string) => {
+    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/facebook", { method: "POST", body: JSON.stringify({ accessToken }) });
+    return finishOauthLogin(r);
   },
   registerSeller: async (body: { username: string; password: string; name: string; email: string; storeName: string; description?: string; phone?: string; taxId?: string; applicationData?: unknown }) => {
     const r = await mktSellers.register(body) as { success: boolean; token: string; user: MktAuthUser; seller: unknown; error?: string };
