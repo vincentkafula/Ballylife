@@ -101,6 +101,26 @@ function clearRecentlyViewed() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtZAR = formatZAR; // now converts + formats in the shopper's local currency
+
+// True only when the app is running as the installed PWA/TWA (opened
+// from a home-screen icon, no browser chrome) -- false in an ordinary
+// browser tab, even on the exact same phone at the exact same width.
+// display-mode: standalone is what Android's TWA wrapper reports;
+// navigator.standalone is Safari's older iOS-only equivalent, kept as
+// a fallback since not every engine supports the media query yet.
+function useIsStandalone(): boolean {
+  const [standalone, setStandalone] = useState(() =>
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(display-mode: standalone)").matches || (window.navigator as { standalone?: boolean }).standalone === true)
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(display-mode: standalone)");
+    const onChange = () => setStandalone(mq.matches || (window.navigator as { standalone?: boolean }).standalone === true);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return standalone;
+}
 const ago = (iso: string) => {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
@@ -552,6 +572,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
   const [recentIds, setRecentIds] = useState<string[]>([]);
   useEffect(() => { setRecentIds(getRecentlyViewed()); }, []);
+  const isStandalone = useIsStandalone();
   const recentProducts = recentIds
     .map(id => products.find(p => String(p.id) === id))
     .filter((p): p is R => Boolean(p));
@@ -795,7 +816,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         ))}
       </div>
 
-      <Footer onLinkClick={onFooterLink} />
+      {!isStandalone && <Footer onLinkClick={onFooterLink} />}
     </div>
   );
 }
@@ -811,6 +832,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
   const [activeCat, setActiveCat] = useState("");
   const [sort, setSort]         = useState("popular");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const isStandalone = useIsStandalone();
 
   // Vehicle-specific filters — only shown/applied when browsing the
   // Vehicles category itself (not its Parts & Equipment subcategory,
@@ -985,7 +1007,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
             })}
           </div>
         )}
-        <Footer onLinkClick={onFooterLink} />
+        {!isStandalone && <Footer onLinkClick={onFooterLink} />}
       </div>
     </div>
   );
@@ -1009,6 +1031,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [show3D, setShow3D] = useState(false);
+  const isStandalone = useIsStandalone();
 
   const submitReview = async () => {
     if (!authUser) { onRequireAuth(); return; }
@@ -1295,7 +1318,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           </div>
         </div>
       )}
-      <Footer onLinkClick={onFooterLink} />
+      {!isStandalone && <Footer onLinkClick={onFooterLink} />}
     </div>
   );
 }
