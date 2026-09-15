@@ -828,6 +828,9 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
 }) {
   const [products, setProducts] = useState<R[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage]         = useState(1);
+  const [hasMore, setHasMore]   = useState(true);
   const [search, setSearch]     = useState(initialSearch ?? "");
   const [activeCat, setActiveCat] = useState("");
   const [sort, setSort]         = useState("popular");
@@ -852,8 +855,9 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
 
   const load = useCallback(async () => {
     setLoading(true);
+    setPage(1);
     try {
-      const params: Record<string, string> = { category: activeCat, search, sort, limit: "78" };
+      const params: Record<string, string> = { category: activeCat, search, sort, limit: "78", page: "1" };
       if (isVehicleCategory) {
         if (vCondition) params.condition = vCondition;
         if (vBodyType) params.bodyType = vBodyType;
@@ -865,10 +869,48 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
       }
       const res = await mktProducts.list(params);
       setProducts(res.data as R[]);
+      setHasMore(Number(res.meta?.pages ?? 1) > 1);
     } finally { setLoading(false); }
   }, [activeCat, search, sort, isVehicleCategory, vCondition, vBodyType, vFuelType, vTransmission, vMinYear, vMaxYear, vMaxMileage]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Infinite scroll: a sentinel just above the footer triggers the next
+  // page as it comes into view, appending rather than replacing --
+  // browsing "All" (or any category) never has to hit a dead end at a
+  // fixed 78 items, it keeps going for as long as the catalog does.
+  const loadMore = useCallback(async () => {
+    if (loadingMore || loading || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    try {
+      const params: Record<string, string> = { category: activeCat, search, sort, limit: "78", page: String(nextPage) };
+      if (isVehicleCategory) {
+        if (vCondition) params.condition = vCondition;
+        if (vBodyType) params.bodyType = vBodyType;
+        if (vFuelType) params.fuelType = vFuelType;
+        if (vTransmission) params.transmission = vTransmission;
+        if (vMinYear) params.minYear = vMinYear;
+        if (vMaxYear) params.maxYear = vMaxYear;
+        if (vMaxMileage) params.maxMileage = vMaxMileage;
+      }
+      const res = await mktProducts.list(params);
+      setProducts(prev => [...prev, ...(res.data as R[])]);
+      setPage(nextPage);
+      setHasMore(nextPage < Number(res.meta?.pages ?? 1));
+    } finally { setLoadingMore(false); }
+  }, [loadingMore, loading, hasMore, page, activeCat, search, sort, isVehicleCategory, vCondition, vBodyType, vFuelType, vTransmission, vMinYear, vMaxYear, vMaxMileage]);
+
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) loadMore();
+    }, { rootMargin: "600px" }); // fire well before the sentinel is actually visible, so more loads in ahead of the user reaching it
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -1005,6 +1047,15 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
                 </div>
               );
             })}
+          </div>
+        )}
+        {!loading && products.length > 0 && (
+          <div ref={sentinelRef} className="flex items-center justify-center py-8">
+            {loadingMore ? (
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B8862E" }} />
+            ) : !hasMore ? (
+              <p className="text-xs text-gray-400">You've reached the end — {products.length.toLocaleString()} products shown</p>
+            ) : null}
           </div>
         )}
         {!isStandalone && <Footer onLinkClick={onFooterLink} />}
