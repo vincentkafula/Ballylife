@@ -5,11 +5,19 @@ import rateLimit from "express-rate-limit";
 
 import authRouter from "./routes/authRouter";
 import marketplaceRouter from "./routes/marketplaceRouter";
+import geoRouter from "./routes/geoRouter";
 import { migrate } from "./db/migrate";
 import { hasDb } from "./db/pool";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+
+// Railway (and most PaaS hosts) sit the app behind a reverse proxy --
+// without this, req.ip always reflects the proxy's own internal
+// address rather than the real visitor's, which silently breaks
+// IP-based geolocation (every request looks like it's coming from a
+// private IP and falls back to the default country).
+app.set("trust proxy", 1);
 
 // ── CORS ────────────────────────────────────────────────────────────────
 // Set MARKETPLACE_ALLOWED_ORIGINS (comma-separated) in Railway to the
@@ -50,6 +58,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/marketplace", marketplaceRouter);
+app.use("/api", geoRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, error: "Not found" });

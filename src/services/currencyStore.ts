@@ -96,6 +96,43 @@ export function setCountryManually(countryCode: string): void {
   }).catch(() => {});
 }
 
+/** Uses the browser's own Geolocation API for a real GPS/network-assisted
+ *  position -- more precise than IP lookup (no VPN/proxy/corporate-network
+ *  skew), at the cost of needing the user to grant permission. Resolves
+ *  to true on success, false if permission was denied, the browser
+ *  doesn't support geolocation, or the reverse-geocode lookup failed --
+ *  callers can use that to show a fallback message rather than hanging. */
+export function useLiveLocation(): Promise<boolean> {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { resolve(false); return; }
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const res = await fetch(`${BASE}/api/geo/reverse`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lat: position.coords.latitude, lng: position.coords.longitude }),
+          }).then(r => r.json());
+          if (!res.success) { resolve(false); return; }
+          const match: CountryOption = res.data;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(match));
+          setState({ country: match });
+          const ratesRes = await fetch(`${BASE}/api/currency/rates`).then(r => r.json());
+          if (ratesRes.success) {
+            const rate = match.code === "ZMW" ? 1 : (ratesRes.data.rates[match.code] ?? null);
+            setState({ rate });
+          }
+          resolve(true);
+        } catch {
+          resolve(false);
+        }
+      },
+      () => resolve(false), // permission denied or position unavailable
+      { timeout: 10_000, maximumAge: 5 * 60_000 }
+    );
+  });
+}
+
 function subscribe(fn: () => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);

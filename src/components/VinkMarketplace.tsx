@@ -78,7 +78,7 @@ import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
 import { ProductPhotoGallery } from "./ProductPhotoGallery";
 import { Footer } from "./Footer";
-import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
+import { formatZAR, useCurrency, setCountryManually, useLiveLocation } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
@@ -1865,6 +1865,15 @@ interface VinkMarketplaceProps { initialAction?: "sell" | "shop" | null; initial
 
 export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketplaceProps) {
   const currency = useCurrency(); // subscribes this whole tree to live currency/rate updates
+  const [locating, setLocating] = useState(false);
+  const [locateFailed, setLocateFailed] = useState(false);
+  const handleUseLiveLocation = async () => {
+    setLocating(true);
+    setLocateFailed(false);
+    const ok = await useLiveLocation();
+    setLocating(false);
+    if (!ok) setLocateFailed(true);
+  };
   const [view, setView]           = useState<View>("home");
   const [categories, setCategories] = useState<R[]>([]);
   const [products, setProducts]   = useState<R[]>([]);
@@ -2090,6 +2099,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             <p className="px-3 pb-2 mb-1 border-b border-gray-100 text-[11px] text-gray-400">
               Prices shown in your local currency, converted from ZAR at today's rate.{currency.ratesStale ? " (using last known rate)" : ""}
             </p>
+            <button onClick={handleUseLiveLocation} disabled={locating}
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-1.5 border-b border-gray-100 mb-1 font-semibold disabled:opacity-50"
+              style={{ color: "#B8862E" }}>
+              <MapPin className="w-3.5 h-3.5" /> {locating ? "Finding you…" : "Use my live location"}
+            </button>
+            {locateFailed && (
+              <p className="px-3 pb-1.5 text-[10px] text-red-500">Couldn't get your location — check your browser's location permission and try again.</p>
+            )}
             {currency.countries.map(c => (
               <button
                 key={c.countryCode}
