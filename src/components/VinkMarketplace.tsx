@@ -636,47 +636,72 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         </div>
       )}
 
-      {/* ── Pick Up Where You Left Off — one product, editorial treatment ── */}
-      {recentProducts.length > 0 && (
-        <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl" style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 45%,#E8D9B5 100%)" }}>
-          {/* Decorative blobs */}
-          <div className="absolute -top-12 -right-8 w-56 h-56 rounded-full opacity-40 pointer-events-none" style={{ background: "radial-gradient(circle,#D4A54A 0%,transparent 70%)" }} />
-          <div className="absolute -bottom-20 right-16 w-72 h-72 rounded-full opacity-30 pointer-events-none" style={{ background: "radial-gradient(circle,#B8862E 0%,transparent 70%)" }} />
+      {/* ── Pick Up Where You Left Off — editorial two-column layout,
+          matching the supplied reference: a full product card (photo,
+          name, price, rating) on the left, and a headline/description/
+          feature-icons/CTA block on the right. ── */}
+      {recentProducts.length > 0 && (() => {
+        const p = recentProducts[0];
+        const imgs = p.images as string[];
+        const discount = p.compareAtPrice ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
+        return (
+          <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl bg-white border border-gray-100">
+            <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }}
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10 text-[11px] font-semibold text-gray-400 hover:text-gray-600 transition-colors">
+              Clear All
+            </button>
 
-          <div className="relative flex flex-col sm:flex-row items-center gap-4 sm:gap-7 p-4 sm:p-7">
-            {/* Buttons */}
-            <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-2 z-10">
-              <button onClick={onCategory} className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-white transition-transform hover:scale-[1.03]"
-                style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-                View More <ChevronRight className="w-3 h-3" />
-              </button>
-              <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }} className="text-[11px] sm:text-xs font-bold px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-white text-gray-700 border border-gray-200 hover:border-gray-300 transition-colors">
-                Clear All
-              </button>
-            </div>
+            <div className="grid sm:grid-cols-2 gap-6 sm:gap-10 p-4 sm:p-8">
+              {/* Product card */}
+              <div className="rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onClick={() => onProduct(p)}>
+                <div className="relative" style={{ aspectRatio: "16 / 11", background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"}33,${imgs?.[1] ?? "#E5E7EB"}55)` }}>
+                  <div className="absolute inset-0 flex items-center justify-center text-7xl p-8">
+                    {getProductIllustration(p) ? <div className="w-28 h-28">{getProductIllustration(p)!()}</div> : (p.emoji as string)}
+                  </div>
+                  {discount > 0 && (
+                    <span className="absolute top-3 left-3 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">-{discount}%</span>
+                  )}
+                </div>
+                <div className="p-4 sm:p-5">
+                  <p className="text-base sm:text-lg font-semibold text-gray-900 mb-1.5 line-clamp-1">{p.name as string}</p>
+                  <p className="text-xl sm:text-2xl font-bold mb-2" style={{ color: "#8C6420" }}>{fmtZAR(Number(p.price))}</p>
+                  <div className="flex items-center gap-1.5">
+                    <Stars rating={Number(p.avgRating)} size={14} />
+                    <span className="text-xs text-gray-500">{Number(p.avgRating).toFixed(1)} ({Number(p.reviewCount ?? 0).toLocaleString()})</span>
+                  </div>
+                </div>
+              </div>
 
-            {/* Single most-recent product */}
-            <div className="shrink-0 mt-7 sm:mt-0" style={{ width: 165 }}>
-              <ProductCard p={recentProducts[0]} onView={() => onProduct(recentProducts[0])} onCart={() => onCart(recentProducts[0])}
-                wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(recentProducts[0].id))} />
-            </div>
-
-            {/* Headline */}
-            <div className="flex-1 text-center sm:text-left">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold mb-2" style={{ background: "rgba(184,134,46,0.12)", color: "#8C6420" }}>
-                <Clock className="w-2.5 h-2.5" /> JUST FOR YOU
-              </span>
-              <h3 className="font-serif leading-tight mb-2" style={{ fontWeight: 700, fontSize: "clamp(18px,3vw,30px)" }}>
-                <span className="text-gray-900">Pick Up Where</span><br />
-                <span style={{ background: "linear-gradient(135deg,#D4A54A,#8C6420)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>You Left Off</span>
-              </h3>
-              <p className="text-xs sm:text-sm text-gray-600 max-w-md mx-auto sm:mx-0">
-                Good taste doesn't need reminding — but here it is anyway. Still there. Still yours if you want it.
-              </p>
+              {/* Text content */}
+              <div className="flex flex-col justify-center">
+                <span className="text-[11px] font-bold tracking-[0.15em] uppercase mb-3" style={{ color: "#B8862E" }}>Just for You</span>
+                <h3 className="font-serif font-bold leading-[1.08] text-gray-900 mb-4" style={{ fontSize: "clamp(24px,3.6vw,38px)" }}>
+                  Pick Up Where<br />You Left Off
+                </h3>
+                <p className="text-sm sm:text-base text-gray-500 leading-relaxed mb-5 max-w-md">
+                  Good taste doesn't need reminding — but here it is anyway. Still there. Still yours if you want it.
+                </p>
+                <div className="flex items-center gap-4 sm:gap-6 mb-6 flex-wrap">
+                  {[
+                    { icon: <Heart className="w-5 h-5" />, label: "Saved for You" },
+                    { icon: <CheckCircle className="w-5 h-5" />, label: "Still Available" },
+                    { icon: <Zap className="w-5 h-5" />, label: "Quick Checkout" },
+                  ].map((f, i) => (
+                    <div key={f.label} className={`flex items-center gap-2 ${i > 0 ? "sm:pl-6 sm:border-l sm:border-gray-200" : ""}`}>
+                      <span style={{ color: "#B8862E" }}>{f.icon}</span>
+                      <span className="text-xs sm:text-sm text-gray-600 font-medium">{f.label}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={onCategory} className="inline-flex items-center gap-2 w-fit text-white font-bold px-6 py-3 rounded-lg transition-transform hover:scale-[1.02]"
+                  style={{ background: "#8C6420" }}>
+                  View More <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── What to Explore Next — 6 across ── */}
       {topPicks.length > 0 && (
