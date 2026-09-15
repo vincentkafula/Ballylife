@@ -72,6 +72,8 @@ import { CustomerDashboard } from "./CustomerDashboard";
 import { SellerDashboard } from "./SellerDashboard";
 import { SupplierDashboard } from "./SupplierDashboard";
 import { AuthorityDashboard } from "./AuthorityDashboard";
+import { ShippingCompanyDashboard } from "./ShippingCompanyDashboard";
+import { CreditProviderDashboard } from "./CreditProviderDashboard";
 import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
 import { ProductPhotoGallery } from "./ProductPhotoGallery";
@@ -79,7 +81,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, setCountryManually } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
+type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1792,6 +1794,8 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const [authSeller, setAuthSeller] = useState<{ id: string; storeName: string; status: string } | null>(null);
   const [authSupplier, setAuthSupplier] = useState<Record<string, unknown> | null>(null);
   const [authAuthority, setAuthAuthority] = useState<Record<string, unknown> | null>(null);
+  const [authShipping, setAuthShipping] = useState<Record<string, unknown> | null>(null);
+  const [authCredit, setAuthCredit] = useState<Record<string, unknown> | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<"signin" | "seller">(initialAction === "sell" ? "seller" : "signin");
   const [navSearch, setNavSearch] = useState("");
@@ -1801,14 +1805,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const navSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const MANAGER_ROLES = ["superadmin", "noc_engineer", "billing_admin", "marketplace_admin"];
-  const role: "customer" | "seller" | "supplier" | "authority" | "manager" | null =
-    !authUser ? null : MANAGER_ROLES.includes(authUser.role) ? "manager" : authUser.role === "seller" ? "seller" : authUser.role === "supplier" ? "supplier" : authUser.role === "revenue_authority" ? "authority" : "customer";
+  const role: "customer" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "manager" | null =
+    !authUser ? null : MANAGER_ROLES.includes(authUser.role) ? "manager" : authUser.role === "seller" ? "seller" : authUser.role === "supplier" ? "supplier" : authUser.role === "revenue_authority" ? "authority" : authUser.role === "shipping_company" ? "shipping" : authUser.role === "credit_provider" ? "credit" : "customer";
 
   useEffect(() => {
     // Marketplace is a fully independent account system now — its own
     // users table, its own JWT, no bridging with Vink's main app login.
     const restored = mktAuth.restoreSession();
-    if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); setAuthSupplier(restored.supplier); setAuthAuthority(restored.authority); }
+    if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); setAuthSupplier(restored.supplier); setAuthAuthority(restored.authority); setAuthShipping(restored.shipping); setAuthCredit(restored.credit); }
   }, []);
 
   useEffect(() => {
@@ -1875,13 +1879,15 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     }
   };
 
-  const handleAuthenticated = (user: MktAuthUser, seller: { id: string; storeName: string; status: string } | null, supplier?: Record<string, unknown> | null, authority?: Record<string, unknown> | null) => {
+  const handleAuthenticated = (user: MktAuthUser, seller: { id: string; storeName: string; status: string } | null, supplier?: Record<string, unknown> | null, authority?: Record<string, unknown> | null, shipping?: Record<string, unknown> | null, credit?: Record<string, unknown> | null) => {
     setAuthUser(user);
     setAuthSeller(seller);
     setAuthSupplier(supplier ?? null);
     setAuthAuthority(authority ?? null);
+    setAuthShipping(shipping ?? null);
+    setAuthCredit(credit ?? null);
     setShowAuthModal(false);
-    const dest = MANAGER_ROLES.includes(user.role) ? "admin" : user.role === "seller" ? "seller" : user.role === "supplier" ? "supplier" : user.role === "revenue_authority" ? "authority" : "account";
+    const dest = MANAGER_ROLES.includes(user.role) ? "admin" : user.role === "seller" ? "seller" : user.role === "supplier" ? "supplier" : user.role === "revenue_authority" ? "authority" : user.role === "shipping_company" ? "shipping" : user.role === "credit_provider" ? "credit" : "account";
     setView(dest as View);
   };
 
@@ -1891,6 +1897,8 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     setAuthSeller(null);
     setAuthSupplier(null);
     setAuthAuthority(null);
+    setAuthShipping(null);
+    setAuthCredit(null);
     setCart(null);
     setWishlistIds(new Set());
     setAddresses([]);
@@ -2233,6 +2241,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
           {view === "authority" && authUser && authAuthority && role === "authority" && (
             <AuthorityDashboard user={authUser} authority={authAuthority} onSignOut={handleSignOut} />
+          )}
+          {view === "shipping" && authUser && authShipping && role === "shipping" && (
+            <ShippingCompanyDashboard user={authUser} shipping={authShipping} onSignOut={handleSignOut} />
+          )}
+          {view === "credit" && authUser && authCredit && role === "credit" && (
+            <CreditProviderDashboard user={authUser} credit={authCredit} onSignOut={handleSignOut} />
           )}
           {view === "trackOrder" && (
             <OrderTracking onBack={() => setView("home")} />

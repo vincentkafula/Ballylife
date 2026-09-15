@@ -618,3 +618,52 @@ CREATE TABLE IF NOT EXISTS mkt_order_refunds (
 CREATE INDEX IF NOT EXISTS idx_mkt_order_refunds_order ON mkt_order_refunds(order_id);
 
 ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS refunded_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
+
+-- ── Shipping companies and credit providers ───────────────────────────────
+-- Two more real role types, following the exact same pattern as
+-- mkt_suppliers/mkt_revenue_authorities: a dedicated profile table,
+-- linked to a users row via user_id once someone (admin, or the seed
+-- script for the demo login) onboards a login for them. Being able to
+-- sign in does not by itself mean anything about the underlying
+-- business relationship -- same caveat as the revenue-authority table.
+
+CREATE TABLE IF NOT EXISTS mkt_shipping_companies (
+  id             TEXT PRIMARY KEY, -- e.g. 'ship-dhl-za'
+  name           TEXT NOT NULL,    -- e.g. "DHL Express"
+  country        TEXT,
+  contact_name   TEXT,
+  contact_email  TEXT,
+  status         TEXT NOT NULL DEFAULT 'active', -- active | suspended
+  user_id        UUID REFERENCES users(id),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS mkt_credit_providers (
+  id             TEXT PRIMARY KEY,   -- e.g. 'cred-payflex'
+  name           TEXT NOT NULL,      -- e.g. "PayFlex"
+  provider_key   TEXT UNIQUE NOT NULL, -- e.g. 'payflex' -- matches the suffix on
+                                        -- mkt_orders.payment_method ('bnpl_payflex'),
+                                        -- so an order can be routed to the right
+                                        -- provider's dashboard without guessing
+  contact_name   TEXT,
+  contact_email  TEXT,
+  status         TEXT NOT NULL DEFAULT 'active',
+  user_id        UUID REFERENCES users(id),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Which shipping company has an order, and the delivery signature that
+-- closes out the fulfilment leg -- "bring it back with the sign detail"
+-- as the actual proof of delivery, not just a status flag.
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS shipping_company_id TEXT REFERENCES mkt_shipping_companies(id);
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS delivery_signed_by TEXT;
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS delivery_signed_at TIMESTAMPTZ;
+
+-- Which credit provider is being asked to lend, and their decision.
+-- Set at checkout time for any bnpl_* payment method (see
+-- marketplaceRouter.ts POST /orders); NULL for every other payment
+-- method, since only a credit purchase involves a third party actually
+-- deciding whether to lend.
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_provider_id TEXT REFERENCES mkt_credit_providers(id);
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_decision TEXT; -- pending | approved | declined
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_decided_at TIMESTAMPTZ;

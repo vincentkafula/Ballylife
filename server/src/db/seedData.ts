@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority, VehicleDutyZm, FxRate } from "../types/marketplace";
+import type { Seller, Category, Product, Coupon, Supplier, SupplierProduct, Warehouse, TaxRate, DutyRate, RevenueAuthority, ShippingCompany, CreditProvider, VehicleDutyZm, FxRate } from "../types/marketplace";
 
 const ago    = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const future = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString();
@@ -193,6 +193,19 @@ export const DUTY_RATES: DutyRate[] = [
 export const REVENUE_AUTHORITIES: RevenueAuthority[] = [
   { id: "auth-za-sars", name: "South African Revenue Service (SARS)", country: "ZA", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", createdAt: new Date().toISOString() },
   { id: "auth-zm-zra", name: "Zambia Revenue Authority (ZRA)", country: "ZM", contactName: null, contactEmail: null, status: "not_agreed", notes: "No reporting or data-sharing agreement in place yet — this is a placeholder pending outreach.", createdAt: new Date().toISOString() },
+];
+
+// ─── Shipping & credit partners ────────────────────────────────────────────────
+// Real fulfilment/lending partners, not placeholders — orders actually get
+// routed to these once a shipping company claims one or a customer chooses
+// a BNPL provider at checkout (see POST /orders in marketplaceRouter.ts).
+export const SHIPPING_COMPANIES: ShippingCompany[] = [
+  { id: "ship-dhl-za", name: "DHL Express", country: "ZA", contactName: null, contactEmail: null, status: "active", createdAt: new Date().toISOString() },
+];
+
+export const CREDIT_PROVIDERS: CreditProvider[] = [
+  { id: "cred-payflex", name: "PayFlex", providerKey: "payflex", contactName: null, contactEmail: null, status: "active", createdAt: new Date().toISOString() },
+  { id: "cred-payjustnow", name: "PayJustNow", providerKey: "payjustnow", contactName: null, contactEmail: null, status: "active", createdAt: new Date().toISOString() },
 ];
 
 // ─── Vehicle department ───────────────────────────────────────────────────────

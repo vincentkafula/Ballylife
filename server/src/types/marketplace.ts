@@ -437,6 +437,28 @@ export interface RevenueAuthority {
   createdAt: string;
 }
 
+export interface ShippingCompany {
+  id: string;
+  name: string;
+  country: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  status: "active" | "suspended";
+  userId?: string | null;
+  createdAt: string;
+}
+
+export interface CreditProvider {
+  id: string;
+  name: string;
+  providerKey: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  status: "active" | "suspended";
+  userId?: string | null;
+  createdAt: string;
+}
+
 // ─── Settlement ledger (platform fee + supplier/seller payouts) ──────────────
 export interface FxRate {
   currency: string;

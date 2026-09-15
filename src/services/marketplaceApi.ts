@@ -272,6 +272,25 @@ export const mktAuthoritySelf = {
   taxSummary: (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/revenue-authorities/${id}/tax-summary`),
 };
 
+// ── Shipping company self-service (claim, pick up, deliver-with-signature) ──
+export const mktShippingSelf = {
+  byUser:  (userId: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/shipping-companies/by-user/${userId}`),
+  get:     (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/shipping-companies/${id}`),
+  orders:  (id: string) => api<{ success: boolean; data: unknown[]; meta: unknown }>(`/api/marketplace/shipping-companies/${id}/orders`),
+  claim:   (id: string, orderId: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/shipping-companies/${id}/orders/${orderId}/claim`, { method: "POST" }),
+  pickup:  (id: string, orderId: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/shipping-companies/${id}/orders/${orderId}/pickup`, { method: "POST" }),
+  deliver: (id: string, orderId: string, signedBy: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/shipping-companies/${id}/orders/${orderId}/deliver`, { method: "POST", body: JSON.stringify({ signedBy }) }),
+};
+
+// ── Credit provider self-service (approve/decline a BNPL lending decision) ──
+export const mktCreditSelf = {
+  byUser:  (userId: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/credit-providers/by-user/${userId}`),
+  get:     (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/credit-providers/${id}`),
+  orders:  (id: string) => api<{ success: boolean; data: unknown[]; meta: unknown }>(`/api/marketplace/credit-providers/${id}/orders`),
+  approve: (id: string, orderId: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/credit-providers/${id}/orders/${orderId}/approve`, { method: "POST" }),
+  decline: (id: string, orderId: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/credit-providers/${id}/orders/${orderId}/decline`, { method: "POST" }),
+};
+
 // ── Supplier self-service (only for suppliers an admin has onboarded with
 // a login — see mktAdmin.createSupplierLogin below) ──────────────────────────
 export const mktSuppliersSelf = {
@@ -316,6 +335,12 @@ export const mktAuth = {
       } else if (user.role === "revenue_authority") {
         const authorityRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/revenue-authorities/by-user/${user.id}`);
         if (authorityRes.success) localStorage.setItem("mkt_authority", JSON.stringify(authorityRes.data));
+      } else if (user.role === "shipping_company") {
+        const shippingRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/shipping-companies/by-user/${user.id}`);
+        if (shippingRes.success) localStorage.setItem("mkt_shipping", JSON.stringify(shippingRes.data));
+      } else if (user.role === "credit_provider") {
+        const creditRes = await api<{ success: boolean; data: unknown }>(`/api/marketplace/credit-providers/by-user/${user.id}`);
+        if (creditRes.success) localStorage.setItem("mkt_credit", JSON.stringify(creditRes.data));
       }
       // Flatten to the shape callers expect (token/user at the top level)
       // — the backend nests them under data, but every caller here (and
@@ -338,14 +363,14 @@ export const mktAuth = {
     if (r.success && r.token) { setMktToken(r.token); localStorage.setItem("mkt_user", JSON.stringify(r.user)); localStorage.setItem("mkt_seller", JSON.stringify(r.seller)); }
     return r;
   },
-  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); localStorage.removeItem("mkt_authority"); },
+  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); localStorage.removeItem("mkt_authority"); localStorage.removeItem("mkt_shipping"); localStorage.removeItem("mkt_credit"); },
   changePassword: (currentPassword: string, newPassword: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
   forgotPassword: (email: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
   resetPassword: (token: string, newPassword: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
-  restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null; authority: Record<string, unknown> | null } | null => {
+  restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null; authority: Record<string, unknown> | null; shipping: Record<string, unknown> | null; credit: Record<string, unknown> | null } | null => {
     if (!getMktToken()) return null;
     const raw = localStorage.getItem("mkt_user");
     if (!raw) return null;
@@ -354,7 +379,13 @@ export const mktAuth = {
       const sellerRaw = localStorage.getItem("mkt_seller");
       const supplierRaw = localStorage.getItem("mkt_supplier");
       const authorityRaw = localStorage.getItem("mkt_authority");
-      return { user, seller: sellerRaw ? JSON.parse(sellerRaw) : null, supplier: supplierRaw ? JSON.parse(supplierRaw) : null, authority: authorityRaw ? JSON.parse(authorityRaw) : null };
+      const shippingRaw = localStorage.getItem("mkt_shipping");
+      const creditRaw = localStorage.getItem("mkt_credit");
+      return {
+        user, seller: sellerRaw ? JSON.parse(sellerRaw) : null, supplier: supplierRaw ? JSON.parse(supplierRaw) : null,
+        authority: authorityRaw ? JSON.parse(authorityRaw) : null, shipping: shippingRaw ? JSON.parse(shippingRaw) : null,
+        credit: creditRaw ? JSON.parse(creditRaw) : null,
+      };
     } catch { return null; }
   },
 };

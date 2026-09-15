@@ -13,7 +13,7 @@ export const JWT_EXPIRES = "8h";
 export interface MktAuthPayload {
   userId: string;
   username: string;
-  role: "customer" | "seller" | "marketplace_admin";
+  role: "customer" | "seller" | "marketplace_admin" | "supplier" | "revenue_authority" | "shipping_company" | "credit_provider";
 }
 
 declare global {

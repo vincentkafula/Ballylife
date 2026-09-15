@@ -67,6 +67,30 @@ async function requireAuthorityOwner(req: Request, res: Response, next: NextFunc
   next();
 }
 
+// Only the shipping-company account linked to this record (or a
+// marketplace manager) may manage it.
+async function requireShippingOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (MANAGER_ROLES.includes(req.user!.role as any)) { next(); return; }
+  const { rows } = await pool!.query(`SELECT user_id FROM mkt_shipping_companies WHERE id = $1`, [req.params.id]);
+  if (!rows.length || rows[0].user_id !== req.user!.userId) {
+    res.status(403).json({ success: false, error: "You can only manage your own shipping company's data" });
+    return;
+  }
+  next();
+}
+
+// Only the credit-provider account linked to this record (or a
+// marketplace manager) may manage it.
+async function requireCreditOwner(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (MANAGER_ROLES.includes(req.user!.role as any)) { next(); return; }
+  const { rows } = await pool!.query(`SELECT user_id FROM mkt_credit_providers WHERE id = $1`, [req.params.id]);
+  if (!rows.length || rows[0].user_id !== req.user!.userId) {
+    res.status(403).json({ success: false, error: "You can only manage your own credit provider's data" });
+    return;
+  }
+  next();
+}
+
 const router: ReturnType<typeof Router> = Router();
 
 // ─── Row → API shape mappers (snake_case columns → camelCase JSON) ──────────
@@ -154,7 +178,7 @@ const ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY: Record<string, string> = { CN: "wh-o
 // distinction matters: whether an order gets auto-confirmed at
 // checkout or has to wait for genuine payment confirmation like every
 // other account does.
-const DEMO_USERNAMES = new Set(["admin", "seller1", "supplier1", "customer1", "sars1"]);
+const DEMO_USERNAMES = new Set(["admin", "seller1", "supplier1", "customer1", "sars1", "shipping1", "credit1", "credit2"]);
 
 const mapOrder = (r: any) => ({
   id: r.id, orderNumber: r.order_number, userId: r.user_id, customerName: r.customer_name,
@@ -165,6 +189,8 @@ const mapOrder = (r: any) => ({
   trackingNumber: r.tracking_number, carrier: r.carrier, estimatedDelivery: r.estimated_delivery,
   couponCode: r.coupon_code, notes: r.notes, placedAt: r.placed_at, confirmedAt: r.confirmed_at,
   shippedAt: r.shipped_at, deliveredAt: r.delivered_at, cancelledAt: r.cancelled_at, refundedAmount: Number(r.refunded_amount ?? 0),
+  shippingCompanyId: r.shipping_company_id ?? null, deliverySignedBy: r.delivery_signed_by ?? null, deliverySignedAt: r.delivery_signed_at ?? null,
+  creditProviderId: r.credit_provider_id ?? null, creditDecision: r.credit_decision ?? null, creditDecidedAt: r.credit_decided_at ?? null,
 });
 
 const mapOrderRefund = (r: any) => ({
@@ -196,6 +222,16 @@ const mapCustomsRecord = (r: any) => ({
 const mapRevenueAuthority = (r: any) => ({
   id: r.id, name: r.name, country: r.country, contactName: r.contact_name, contactEmail: r.contact_email,
   status: r.status, notes: r.notes, userId: r.user_id ?? null, createdAt: r.created_at,
+});
+
+const mapShippingCompany = (r: any) => ({
+  id: r.id, name: r.name, country: r.country, contactName: r.contact_name, contactEmail: r.contact_email,
+  status: r.status, userId: r.user_id ?? null, createdAt: r.created_at,
+});
+
+const mapCreditProvider = (r: any) => ({
+  id: r.id, name: r.name, providerKey: r.provider_key, contactName: r.contact_name, contactEmail: r.contact_email,
+  status: r.status, userId: r.user_id ?? null, createdAt: r.created_at,
 });
 
 const mapVehicleDutyZm = (r: any) => ({
@@ -910,15 +946,28 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     dutyAmount = round2(dutyAmount);
     const totalAmount = round2(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount);
 
+    // A BNPL payment method carries the provider's key as its suffix
+    // ('bnpl_payflex' -> 'payflex') -- look up the matching credit
+    // provider so this order can be routed straight to their dashboard
+    // for a real lending decision, rather than just recording the
+    // payment method as a string with nothing downstream reading it.
+    let creditProviderId: string | null = null;
+    const bnplMatch = /^bnpl_(.+)$/.exec(paymentMethod ?? "");
+    if (bnplMatch) {
+      const { rows: providerRows } = await client.query(`SELECT id FROM mkt_credit_providers WHERE provider_key = $1`, [bnplMatch[1]]);
+      creditProviderId = providerRows[0]?.id ?? null;
+    }
+
     const { rows } = await client.query(
       `INSERT INTO mkt_orders (order_number, user_id, customer_name, customer_email, items, subtotal, shipping_cost,
          tax_amount, duty_amount, discount_amount, total_amount, currency, status, payment_status, payment_method, shipping_address,
-         shipping_status, estimated_delivery, coupon_code, confirmed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ZAR','pending','pending_payment',$12,$13,'not_shipped', now() + ($15 || ' days')::interval, $14, NULL)
+         shipping_status, estimated_delivery, coupon_code, confirmed_at, credit_provider_id, credit_decision)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ZAR','pending','pending_payment',$12,$13,'not_shipped', now() + ($15 || ' days')::interval, $14, NULL, $16, $17)
        RETURNING *`,
       [orderNumber, userId, `${shippingAddress.firstName} ${shippingAddress.lastName}`, customerEmail,
        JSON.stringify(items), cart.subtotal, cart.shipping, taxAmount, dutyAmount, cart.coupon_discount, totalAmount,
-       paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code, estimatedDeliveryDays]
+       paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code, estimatedDeliveryDays,
+       creditProviderId, creditProviderId ? "pending" : null]
     );
     const order = rows[0];
 
@@ -1017,8 +1066,12 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       // order lifecycle without needing a real payment gateway to
       // actually clear a charge. For those accounts only, and only when
       // there's no gateway redirect to send them through (nothing to
-      // wait on), immediately mark the order confirmed here so the
-      // walkthrough completes without a manual/admin step.
+      // wait on) AND it isn't a BNPL order (a credit purchase always
+      // needs a real lending decision from the matched credit provider's
+      // dashboard, demo account or not -- that's the whole point of the
+      // provider workflow, so it's never skipped), immediately mark the
+      // order confirmed here so the walkthrough completes without a
+      // manual/admin step.
       //
       // Every other account (anyone who registered for real) gets no
       // such shortcut: the order stays exactly at pending_payment, same
@@ -1028,7 +1081,7 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
       // account has to actually be paid for before it's done.
       const isDemoAccount = DEMO_USERNAMES.has(req.user!.username);
       let paymentStatus: string = "pending_payment";
-      if (isDemoAccount && !submission.redirect) {
+      if (isDemoAccount && !submission.redirect && !creditProviderId) {
         const { rows: confirmedRows } = await pool!.query(
           `UPDATE mkt_orders SET status = 'confirmed', payment_status = 'payment_confirmed', confirmed_at = now() WHERE id = $1 RETURNING *`,
           [order.id]
@@ -1830,6 +1883,147 @@ router.get("/revenue-authorities/:id/tax-summary", requireAuth, requireAuthority
       },
     },
   });
+});
+
+// ── SHIPPING COMPANY SELF-SERVICE ────────────────────────────────────────
+// A shipping company sees confirmed orders that haven't been claimed by
+// anyone yet (the "available" pool), plus whatever it has already
+// claimed. Claiming, picking up, and delivering-with-signature are the
+// only three actions — a shipping company never touches payment,
+// pricing, or anything else about the order.
+router.get("/shipping-companies/by-user/:userId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  if (req.user!.userId !== req.params.userId && !MANAGER_ROLES.includes(req.user!.role as any)) {
+    res.status(403).json({ success: false, error: "Forbidden" }); return;
+  }
+  const { rows } = await pool!.query(`SELECT * FROM mkt_shipping_companies WHERE user_id = $1`, [req.params.userId]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "No shipping company account linked to this login" }); return; }
+  res.json({ success: true, data: mapShippingCompany(rows[0]) });
+});
+
+router.get("/shipping-companies/:id", requireAuth, requireShippingOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_shipping_companies WHERE id = $1`, [req.params.id]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Shipping company not found" }); return; }
+  res.json({ success: true, data: mapShippingCompany(rows[0]) });
+});
+
+router.get("/shipping-companies/:id/orders", requireAuth, requireShippingOwner, async (req: Request, res: Response): Promise<void> => {
+  // Two buckets in one query: orders this company has already claimed
+  // (any shipping_status), and confirmed-but-unclaimed orders anyone can
+  // still pick up — never another company's already-claimed orders.
+  const { rows } = await pool!.query(
+    `SELECT * FROM mkt_orders
+     WHERE shipping_company_id = $1
+        OR (shipping_company_id IS NULL AND status = 'confirmed')
+     ORDER BY placed_at DESC LIMIT 100`,
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows.map(mapOrder), meta: { total: rows.length } });
+});
+
+router.post("/shipping-companies/:id/orders/:orderId/claim", requireAuth, requireShippingOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `UPDATE mkt_orders SET shipping_company_id = $1
+     WHERE id::text = $2 AND shipping_company_id IS NULL AND status = 'confirmed' RETURNING *`,
+    [req.params.id, req.params.orderId]
+  );
+  if (!rows.length) { res.status(409).json({ success: false, error: "This order is no longer available to claim — it may already belong to another shipping company, or isn't confirmed yet." }); return; }
+  res.json({ success: true, data: mapOrder(rows[0]) });
+});
+
+router.post("/shipping-companies/:id/orders/:orderId/pickup", requireAuth, requireShippingOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `UPDATE mkt_orders SET shipping_status = 'picked_up', shipped_at = now()
+     WHERE id::text = $1 AND shipping_company_id = $2 RETURNING *`,
+    [req.params.orderId, req.params.id]
+  );
+  if (!rows.length) { res.status(404).json({ success: false, error: "Order not found, or not claimed by this shipping company." }); return; }
+  res.json({ success: true, data: mapOrder(rows[0]) });
+});
+
+router.post("/shipping-companies/:id/orders/:orderId/deliver", requireAuth, requireShippingOwner, async (req: Request, res: Response): Promise<void> => {
+  const signedBy = typeof req.body?.signedBy === "string" ? req.body.signedBy.trim() : "";
+  if (!signedBy) { res.status(400).json({ success: false, error: "signedBy is required — a delivery can't be closed out without a real recipient name." }); return; }
+  const { rows } = await pool!.query(
+    `UPDATE mkt_orders SET shipping_status = 'delivered', status = 'delivered', delivered_at = now(),
+       delivery_signed_by = $1, delivery_signed_at = now()
+     WHERE id::text = $2 AND shipping_company_id = $3 RETURNING *`,
+    [signedBy, req.params.orderId, req.params.id]
+  );
+  if (!rows.length) { res.status(404).json({ success: false, error: "Order not found, or not claimed by this shipping company." }); return; }
+  res.json({ success: true, data: mapOrder(rows[0]) });
+});
+
+// ── CREDIT PROVIDER SELF-SERVICE ─────────────────────────────────────────
+// A credit provider (PayFlex, PayJustNow) sees only the BNPL orders
+// routed to it (matched at checkout by provider_key), and can approve
+// or decline the lending decision. Approving is what actually moves the
+// order out of pending_payment -- there is no other path to confirmed
+// for a BNPL order, demo account or not (see POST /orders above).
+router.get("/credit-providers/by-user/:userId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  if (req.user!.userId !== req.params.userId && !MANAGER_ROLES.includes(req.user!.role as any)) {
+    res.status(403).json({ success: false, error: "Forbidden" }); return;
+  }
+  const { rows } = await pool!.query(`SELECT * FROM mkt_credit_providers WHERE user_id = $1`, [req.params.userId]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "No credit provider account linked to this login" }); return; }
+  res.json({ success: true, data: mapCreditProvider(rows[0]) });
+});
+
+router.get("/credit-providers/:id", requireAuth, requireCreditOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_credit_providers WHERE id = $1`, [req.params.id]);
+  if (!rows.length) { res.status(404).json({ success: false, error: "Credit provider not found" }); return; }
+  res.json({ success: true, data: mapCreditProvider(rows[0]) });
+});
+
+router.get("/credit-providers/:id/orders", requireAuth, requireCreditOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `SELECT * FROM mkt_orders WHERE credit_provider_id = $1 ORDER BY (credit_decision = 'pending') DESC, placed_at DESC LIMIT 100`,
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows.map(mapOrder), meta: { total: rows.length } });
+});
+
+router.post("/credit-providers/:id/orders/:orderId/approve", requireAuth, requireCreditOwner, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(
+    `UPDATE mkt_orders SET credit_decision = 'approved', credit_decided_at = now(),
+       status = 'confirmed', payment_status = 'payment_confirmed', confirmed_at = now()
+     WHERE id::text = $1 AND credit_provider_id = $2 AND credit_decision = 'pending' RETURNING *`,
+    [req.params.orderId, req.params.id]
+  );
+  if (!rows.length) { res.status(409).json({ success: false, error: "This order isn't awaiting a decision from this provider." }); return; }
+  res.json({ success: true, data: mapOrder(rows[0]) });
+});
+
+router.post("/credit-providers/:id/orders/:orderId/decline", requireAuth, requireCreditOwner, async (req: Request, res: Response): Promise<void> => {
+  const client = await pool!.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `UPDATE mkt_orders SET credit_decision = 'declined', credit_decided_at = now(),
+         status = 'payment_failed', payment_status = 'payment_failed'
+       WHERE id::text = $1 AND credit_provider_id = $2 AND credit_decision = 'pending' RETURNING *`,
+      [req.params.orderId, req.params.id]
+    );
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ success: false, error: "This order isn't awaiting a decision from this provider." });
+      return;
+    }
+    // A declined credit application means the sale never happened —
+    // same restock discipline as a rejected payment submission elsewhere
+    // in this file.
+    const items = (rows[0].items as any[]) ?? [];
+    for (const item of items) {
+      await client.query(`UPDATE mkt_products SET stock = stock + $1, total_sold = GREATEST(0, total_sold - $1) WHERE id::text = $2`, [item.quantity, item.productId]);
+    }
+    await client.query("COMMIT");
+    res.json({ success: true, data: mapOrder(rows[0]) });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[credit-provider] Decline failed, rolled back:", err);
+    res.status(500).json({ success: false, error: "Failed to decline order" });
+  } finally {
+    client.release();
+  }
 });
 
 // ── ADMIN: SUPPLY CHAIN (suppliers, catalog, warehouses, shipments) ─────────

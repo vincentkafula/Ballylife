@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -36,6 +36,10 @@ export async function migrate(): Promise<void> {
     await seedDefaultCustomerLogin();
     await seedRevenueAuthorities();
     await seedDefaultAuthorityLogin();
+    await seedShippingCompanies();
+    await seedDefaultShippingLogin();
+    await seedCreditProviders();
+    await seedDefaultCreditLogins();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
@@ -117,6 +121,10 @@ export async function migrate(): Promise<void> {
   await seedDefaultCustomerLogin();
   await seedRevenueAuthorities();
   await seedDefaultAuthorityLogin();
+  await seedShippingCompanies();
+  await seedDefaultShippingLogin();
+  await seedCreditProviders();
+  await seedDefaultCreditLogins();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
@@ -396,6 +404,108 @@ async function seedDefaultAuthorityLogin(): Promise<void> {
     await pool!.query(`UPDATE mkt_revenue_authorities SET user_id = $1 WHERE id = 'auth-za-sars'`, [userRows[0].id]);
   }
   console.log("[db] Seeded default revenue authority login: sars1 (linked to SARS/ZA, agreement status unchanged).");
+}
+
+/**
+ * Seeds the shipping-company placeholder (DHL Express) — gated on
+ * mkt_shipping_companies being empty.
+ */
+async function seedShippingCompanies(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_shipping_companies");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Shipping companies already seeded — skipping.");
+    return;
+  }
+  console.log("[db] Seeding shipping companies...");
+  for (const s of SHIPPING_COMPANIES) {
+    await pool!.query(
+      `INSERT INTO mkt_shipping_companies (id, name, country, contact_name, contact_email, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+      [s.id, s.name, s.country, s.contactName, s.contactEmail, s.status, s.createdAt]
+    );
+  }
+  console.log(`[db] Seeded ${SHIPPING_COMPANIES.length} shipping companies.`);
+}
+
+/**
+ * Creates one default shipping-company dashboard login, linked to DHL
+ * Express — so the fulfilment side of an order (pickup, deliver, capture
+ * the delivery signature) has somewhere to be demonstrated from.
+ */
+async function seedDefaultShippingLogin(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_shipping_companies WHERE user_id IS NOT NULL");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Default shipping login already seeded — skipping.");
+    return;
+  }
+  console.log("[db] Seeding default shipping login...");
+  const passwordHash = await bcrypt.hash("Ballylife@2026", 10);
+  const { rows: userRows } = await pool!.query(
+    `INSERT INTO users (username, password_hash, role, name, email)
+     VALUES ('shipping1', $1, 'shipping_company', 'DHL Express Demo Dispatcher', 'dispatch-demo@dhl.example')
+     ON CONFLICT (username) DO NOTHING RETURNING id`,
+    [passwordHash]
+  );
+  if (userRows.length) {
+    await pool!.query(`UPDATE mkt_shipping_companies SET user_id = $1 WHERE id = 'ship-dhl-za'`, [userRows[0].id]);
+  }
+  console.log("[db] Seeded default shipping login: shipping1 (linked to DHL Express).");
+}
+
+/**
+ * Seeds the credit-provider placeholders (PayFlex, PayJustNow) — gated on
+ * mkt_credit_providers being empty. provider_key matches the suffix
+ * Ballylife's own checkout already writes onto payment_method
+ * ('bnpl_payflex' / 'bnpl_payjustnow'), so an order routes to the right
+ * provider automatically.
+ */
+async function seedCreditProviders(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_credit_providers");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Credit providers already seeded — skipping.");
+    return;
+  }
+  console.log("[db] Seeding credit providers...");
+  for (const c of CREDIT_PROVIDERS) {
+    await pool!.query(
+      `INSERT INTO mkt_credit_providers (id, name, provider_key, contact_name, contact_email, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+      [c.id, c.name, c.providerKey, c.contactName, c.contactEmail, c.status, c.createdAt]
+    );
+  }
+  console.log(`[db] Seeded ${CREDIT_PROVIDERS.length} credit providers.`);
+}
+
+/**
+ * Creates one default credit-provider dashboard login per seeded
+ * provider (credit1 -> PayFlex, credit2 -> PayJustNow) — so the lending
+ * decision on a BNPL order (approve/decline) has somewhere to be
+ * demonstrated from, same reasoning as the shipping login above.
+ */
+async function seedDefaultCreditLogins(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_credit_providers WHERE user_id IS NOT NULL");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Default credit-provider logins already seeded — skipping.");
+    return;
+  }
+  console.log("[db] Seeding default credit-provider logins...");
+  const passwordHash = await bcrypt.hash("Ballylife@2026", 10);
+  const demoLogins: { username: string; providerId: string; name: string; email: string }[] = [
+    { username: "credit1", providerId: "cred-payflex", name: "PayFlex Demo Underwriter", email: "underwriting-demo@payflex.example" },
+    { username: "credit2", providerId: "cred-payjustnow", name: "PayJustNow Demo Underwriter", email: "underwriting-demo@payjustnow.example" },
+  ];
+  for (const login of demoLogins) {
+    const { rows: userRows } = await pool!.query(
+      `INSERT INTO users (username, password_hash, role, name, email)
+       VALUES ($1, $2, 'credit_provider', $3, $4)
+       ON CONFLICT (username) DO NOTHING RETURNING id`,
+      [login.username, passwordHash, login.name, login.email]
+    );
+    if (userRows.length) {
+      await pool!.query(`UPDATE mkt_credit_providers SET user_id = $1 WHERE id = $2`, [userRows[0].id, login.providerId]);
+    }
+  }
+  console.log("[db] Seeded default credit-provider logins: credit1 (PayFlex), credit2 (PayJustNow).");
 }
 
 /**
