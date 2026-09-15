@@ -16,17 +16,23 @@ beforeAll(async () => {
   app.use("/api", geoRouter);
 
   await pool.query(
-    `INSERT INTO mkt_fx_rates (currency, rate_to_zar) VALUES ('USD', 18.20), ('CNY', 2.52), ('JPY', 0.122), ('KRW', 0.0134), ('ZMW', 0.68)`
+    `INSERT INTO mkt_fx_rates (currency, rate_to_zar) VALUES ('USD', 18.20), ('CNY', 2.52), ('JPY', 0.122), ('KRW', 0.0134), ('ZMW', 0.68), ('NGN', 0.0114), ('KES', 0.142)`
   );
 });
 
 describe("GET /api/geo/countries", () => {
-  it("returns the fixed set of supported countries, each with a real currency", async () => {
+  it("returns all 54 African countries plus the non-African reference currencies, each with a working currency", async () => {
     const res = await request(app).get("/api/geo/countries");
     expect(res.status).toBe(200);
-    expect(res.body.data.length).toBe(6);
+    expect(res.body.data.length).toBe(58); // 54 African + US/CN/JP/KR
     const codes = res.body.data.map((c: { countryCode: string }) => c.countryCode);
-    expect(codes).toEqual(expect.arrayContaining(["ZM", "ZA", "US", "CN", "JP", "KR"]));
+    expect(codes).toEqual(expect.arrayContaining(["ZM", "ZA", "ZW", "NG", "EG", "KE", "GH", "US"]));
+  });
+
+  it("gives Zimbabwe USD rather than its own currency", async () => {
+    const res = await request(app).get("/api/geo/countries");
+    const zw = res.body.data.find((c: { countryCode: string }) => c.countryCode === "ZW");
+    expect(zw.code).toBe("USD");
   });
 });
 
@@ -64,6 +70,9 @@ describe("GET /api/currency/rates", () => {
     expect(res.body.data.rates.USD).toBeCloseTo(1 / 18.20, 6);
     expect(res.body.data.rates.ZMW).toBeCloseTo(1 / 0.68, 6);
     expect(res.body.data.rates.ZAR).toBe(1);
+    // Same inversion for a newly-added African currency -- proves this
+    // isn't special-cased to the original 5, it's generic.
+    expect(res.body.data.rates.NGN).toBeCloseTo(1 / 0.0114, 6);
   });
 
   it("reports rates as fresh right after being seeded", async () => {

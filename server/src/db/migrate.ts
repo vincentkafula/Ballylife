@@ -51,7 +51,6 @@ export async function migrate(): Promise<void> {
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
     await seedFxRates();
-    await seedZmwFxRate();
     return;
   }
 
@@ -139,7 +138,6 @@ export async function migrate(): Promise<void> {
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
   await seedFxRates();
-  await seedZmwFxRate();
 }
 
 /**
@@ -892,39 +890,20 @@ async function seedVehiclePartsCategoryAndListings(): Promise<void> {
  * empty. Illustrative only — see the schema.sql comment.
  */
 async function seedFxRates(): Promise<void> {
-  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_fx_rates");
-  if (Number(rows[0].count) > 0) {
+  const { rows: existingRows } = await pool!.query<{ currency: string }>("SELECT currency FROM mkt_fx_rates");
+  const existing = new Set(existingRows.map(r => r.currency));
+  const toInsert = FX_RATES.filter(r => !existing.has(r.currency));
+  if (toInsert.length === 0) {
     console.log("[db] FX rates already seeded — skipping.");
     return;
   }
 
-  console.log("[db] Seeding FX rates...");
-  for (const r of FX_RATES) {
+  console.log(`[db] Seeding ${toInsert.length} new FX rates (${existing.size} already present)...`);
+  for (const r of toInsert) {
     await pool!.query(
       `INSERT INTO mkt_fx_rates (currency, rate_to_zar, notes, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (currency) DO NOTHING`,
       [r.currency, r.rateToZar, r.notes, r.updatedAt]
     );
   }
-  console.log(`[db] Seeded ${FX_RATES.length} FX rates.`);
-}
-
-/**
- * Adds the ZMW FX rate that was missing from the original seed — needed
- * to convert ZRA's kwacha-denominated vehicle duty into ZAR. Gated on the
- * ZMW row specifically (not the whole mkt_fx_rates table, which was
- * already seeded with USD/CNY/JPY/KRW before ZMW was added here).
- */
-async function seedZmwFxRate(): Promise<void> {
-  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_fx_rates WHERE currency = 'ZMW'");
-  if (Number(rows[0].count) > 0) {
-    console.log("[db] ZMW FX rate already seeded — skipping.");
-    return;
-  }
-  const zmw = FX_RATES.find(r => r.currency === "ZMW");
-  if (!zmw) return;
-  await pool!.query(
-    `INSERT INTO mkt_fx_rates (currency, rate_to_zar, notes) VALUES ($1,$2,$3) ON CONFLICT (currency) DO NOTHING`,
-    [zmw.currency, zmw.rateToZar, zmw.notes]
-  );
-  console.log("[db] Seeded ZMW FX rate.");
+  console.log(`[db] Seeded ${toInsert.length} FX rates.`);
 }

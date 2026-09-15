@@ -266,6 +266,52 @@ export const FX_RATES: FxRate[] = [
   { currency: "JPY", rateToZar: 0.122, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
   { currency: "KRW", rateToZar: 0.0134, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
   { currency: "ZMW", rateToZar: 0.68,  notes: "Illustrative — used to convert ZRA's kwacha-denominated vehicle duty (mkt_vehicle_duty_zm) into ZAR. Verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
+  // ── African currencies (added to support every African country in the
+  // storefront's country/currency selector) — all illustrative,
+  // approximate order-of-magnitude figures, same caveat as above:
+  // verify against a live rate before any actual payout or settlement.
+  // Several West/Central African countries share a currency (the CFA
+  // franc, XOF/XAF), so these 39 rates cover all of Africa's ~50
+  // distinct currencies rather than one row per country.
+  { currency: "DZD", rateToZar: 0.135,  notes: "Illustrative — Algerian Dinar.", updatedAt: new Date().toISOString() },
+  { currency: "AOA", rateToZar: 0.020,  notes: "Illustrative — Angolan Kwanza.", updatedAt: new Date().toISOString() },
+  { currency: "XOF", rateToZar: 0.0305, notes: "Illustrative — West African CFA Franc (Benin, Burkina Faso, Guinea-Bissau, Ivory Coast, Mali, Niger, Senegal, Togo).", updatedAt: new Date().toISOString() },
+  { currency: "BWP", rateToZar: 1.35,   notes: "Illustrative — Botswana Pula.", updatedAt: new Date().toISOString() },
+  { currency: "BIF", rateToZar: 0.0063, notes: "Illustrative — Burundian Franc.", updatedAt: new Date().toISOString() },
+  { currency: "CVE", rateToZar: 0.185,  notes: "Illustrative — Cape Verdean Escudo.", updatedAt: new Date().toISOString() },
+  { currency: "XAF", rateToZar: 0.0305, notes: "Illustrative — Central African CFA Franc (Cameroon, CAR, Chad, Republic of Congo, Equatorial Guinea, Gabon).", updatedAt: new Date().toISOString() },
+  { currency: "KMF", rateToZar: 0.041,  notes: "Illustrative — Comorian Franc.", updatedAt: new Date().toISOString() },
+  { currency: "CDF", rateToZar: 0.0064, notes: "Illustrative — Congolese Franc (DR Congo).", updatedAt: new Date().toISOString() },
+  { currency: "DJF", rateToZar: 0.102,  notes: "Illustrative — Djiboutian Franc.", updatedAt: new Date().toISOString() },
+  { currency: "EGP", rateToZar: 0.38,   notes: "Illustrative — Egyptian Pound.", updatedAt: new Date().toISOString() },
+  { currency: "ERN", rateToZar: 1.213,  notes: "Illustrative — Eritrean Nakfa.", updatedAt: new Date().toISOString() },
+  { currency: "SZL", rateToZar: 1.0,    notes: "Illustrative — Swazi Lilangeni, pegged 1:1 to ZAR.", updatedAt: new Date().toISOString() },
+  { currency: "ETB", rateToZar: 0.133,  notes: "Illustrative — Ethiopian Birr.", updatedAt: new Date().toISOString() },
+  { currency: "GMD", rateToZar: 0.262,  notes: "Illustrative — Gambian Dalasi.", updatedAt: new Date().toISOString() },
+  { currency: "GHS", rateToZar: 1.24,   notes: "Illustrative — Ghanaian Cedi.", updatedAt: new Date().toISOString() },
+  { currency: "GNF", rateToZar: 0.0021, notes: "Illustrative — Guinean Franc.", updatedAt: new Date().toISOString() },
+  { currency: "KES", rateToZar: 0.142,  notes: "Illustrative — Kenyan Shilling.", updatedAt: new Date().toISOString() },
+  { currency: "LSL", rateToZar: 1.0,    notes: "Illustrative — Lesotho Loti, pegged 1:1 to ZAR.", updatedAt: new Date().toISOString() },
+  { currency: "LRD", rateToZar: 0.0965, notes: "Illustrative — Liberian Dollar.", updatedAt: new Date().toISOString() },
+  { currency: "LYD", rateToZar: 3.75,   notes: "Illustrative — Libyan Dinar.", updatedAt: new Date().toISOString() },
+  { currency: "MGA", rateToZar: 0.0040, notes: "Illustrative — Malagasy Ariary.", updatedAt: new Date().toISOString() },
+  { currency: "MWK", rateToZar: 0.0107, notes: "Illustrative — Malawian Kwacha.", updatedAt: new Date().toISOString() },
+  { currency: "MRU", rateToZar: 0.456,  notes: "Illustrative — Mauritanian Ouguiya.", updatedAt: new Date().toISOString() },
+  { currency: "MUR", rateToZar: 0.40,   notes: "Illustrative — Mauritian Rupee.", updatedAt: new Date().toISOString() },
+  { currency: "MAD", rateToZar: 1.82,   notes: "Illustrative — Moroccan Dirham.", updatedAt: new Date().toISOString() },
+  { currency: "MZN", rateToZar: 0.285,  notes: "Illustrative — Mozambican Metical.", updatedAt: new Date().toISOString() },
+  { currency: "NAD", rateToZar: 1.0,    notes: "Illustrative — Namibian Dollar, pegged 1:1 to ZAR.", updatedAt: new Date().toISOString() },
+  { currency: "NGN", rateToZar: 0.0114, notes: "Illustrative — Nigerian Naira.", updatedAt: new Date().toISOString() },
+  { currency: "RWF", rateToZar: 0.0127, notes: "Illustrative — Rwandan Franc.", updatedAt: new Date().toISOString() },
+  { currency: "STN", rateToZar: 0.79,   notes: "Illustrative — São Tomé and Príncipe Dobra.", updatedAt: new Date().toISOString() },
+  { currency: "SCR", rateToZar: 1.35,   notes: "Illustrative — Seychellois Rupee.", updatedAt: new Date().toISOString() },
+  { currency: "SLL", rateToZar: 0.81,   notes: "Illustrative — Sierra Leonean Leone (new leone, post-2022 redenomination).", updatedAt: new Date().toISOString() },
+  { currency: "SOS", rateToZar: 0.0319, notes: "Illustrative — Somali Shilling.", updatedAt: new Date().toISOString() },
+  { currency: "SSP", rateToZar: 0.0067, notes: "Illustrative — South Sudanese Pound.", updatedAt: new Date().toISOString() },
+  { currency: "SDG", rateToZar: 0.0303, notes: "Illustrative — Sudanese Pound.", updatedAt: new Date().toISOString() },
+  { currency: "TZS", rateToZar: 0.0070, notes: "Illustrative — Tanzanian Shilling.", updatedAt: new Date().toISOString() },
+  { currency: "TND", rateToZar: 5.85,   notes: "Illustrative — Tunisian Dinar.", updatedAt: new Date().toISOString() },
+  { currency: "UGX", rateToZar: 0.0049, notes: "Illustrative — Ugandan Shilling.", updatedAt: new Date().toISOString() },
 ];
 
 // ─── Bulk-generated catalog filler ─────────────────────────────────────────
