@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import express, { type Express } from "express";
 import { createTestDb } from "../test/testDb";
+import { FX_RATES } from "../db/seedData";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -15,24 +16,44 @@ beforeAll(async () => {
   app.set("trust proxy", 1);
   app.use("/api", geoRouter);
 
-  await pool.query(
-    `INSERT INTO mkt_fx_rates (currency, rate_to_zar) VALUES ('USD', 18.20), ('CNY', 2.52), ('JPY', 0.122), ('KRW', 0.0134), ('ZMW', 0.68), ('NGN', 0.0114), ('KES', 0.142)`
-  );
+  // Seed the real, full FX_RATES list -- not a hardcoded handful -- so
+  // the completeness test below actually proves every country in
+  // SUPPORTED_COUNTRIES has a working rate in what production really
+  // seeds, not just in a curated test subset.
+  for (const r of FX_RATES) {
+    await pool.query(`INSERT INTO mkt_fx_rates (currency, rate_to_zar) VALUES ($1, $2)`, [r.currency, r.rateToZar]);
+  }
 });
 
 describe("GET /api/geo/countries", () => {
-  it("returns all 54 African countries plus the non-African reference currencies, each with a working currency", async () => {
+  it("returns every country in the world, each with a working currency", async () => {
     const res = await request(app).get("/api/geo/countries");
     expect(res.status).toBe(200);
-    expect(res.body.data.length).toBe(58); // 54 African + US/CN/JP/KR
+    expect(res.body.data.length).toBe(198);
     const codes = res.body.data.map((c: { countryCode: string }) => c.countryCode);
-    expect(codes).toEqual(expect.arrayContaining(["ZM", "ZA", "ZW", "NG", "EG", "KE", "GH", "US"]));
+    expect(codes).toEqual(expect.arrayContaining(["ZM", "ZA", "ZW", "NG", "EG", "KE", "GH", "US", "GB", "FR", "DE", "IN", "CN", "BR", "AU", "JP"]));
   });
 
   it("gives Zimbabwe USD rather than its own currency", async () => {
     const res = await request(app).get("/api/geo/countries");
     const zw = res.body.data.find((c: { countryCode: string }) => c.countryCode === "ZW");
     expect(zw.code).toBe("USD");
+  });
+
+  it("has no duplicate country codes", async () => {
+    const res = await request(app).get("/api/geo/countries");
+    const codes = res.body.data.map((c: { countryCode: string }) => c.countryCode);
+    expect(new Set(codes).size).toBe(codes.length);
+  });
+
+  it("every country's currency actually converts -- no gaps between the country list and the seeded FX rates", async () => {
+    const countriesRes = await request(app).get("/api/geo/countries");
+    const ratesRes = await request(app).get("/api/currency/rates");
+    const rates = ratesRes.body.data.rates;
+    const uncovered = countriesRes.body.data
+      .map((c: { code: string }) => c.code)
+      .filter((code: string) => code !== "ZAR" && rates[code] === undefined);
+    expect(uncovered).toEqual([]);
   });
 });
 
