@@ -146,6 +146,16 @@ const ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY: Record<string, string> = { CN: "wh-o
 // used to reject an admin trying to skip steps or move backwards.
 // Defined and tested in ../utils/stateMachine.ts (SUPPLIER_ORDER_TRANSITIONS), imported above.
 
+// The fixed set of seeded walkthrough accounts shown on the sign-in
+// screen -- these exist purely to demonstrate the full order lifecycle
+// without a real payment gateway clearing an actual charge. Nothing
+// else about these accounts is special (no DB flag, no separate role);
+// this list is the single source of truth for the one place that
+// distinction matters: whether an order gets auto-confirmed at
+// checkout or has to wait for genuine payment confirmation like every
+// other account does.
+const DEMO_USERNAMES = new Set(["admin", "seller1", "supplier1", "customer1", "sars1"]);
+
 const mapOrder = (r: any) => ({
   id: r.id, orderNumber: r.order_number, userId: r.user_id, customerName: r.customer_name,
   customerEmail: r.customer_email, items: r.items, subtotal: Number(r.subtotal),
@@ -1002,13 +1012,38 @@ router.post("/orders", requireAuth, async (req: Request, res: Response): Promise
     });
 
     if (submission.accepted) {
+      // Seeded walkthrough accounts (the 5 fixed demo logins on the
+      // sign-in screen) exist purely to let someone explore the full
+      // order lifecycle without needing a real payment gateway to
+      // actually clear a charge. For those accounts only, and only when
+      // there's no gateway redirect to send them through (nothing to
+      // wait on), immediately mark the order confirmed here so the
+      // walkthrough completes without a manual/admin step.
+      //
+      // Every other account (anyone who registered for real) gets no
+      // such shortcut: the order stays exactly at pending_payment, same
+      // as the comment above already establishes, until a verified
+      // webhook or reconciliation job confirms it. That's the whole
+      // point of the distinction -- a demo teaches the procedure, a real
+      // account has to actually be paid for before it's done.
+      const isDemoAccount = DEMO_USERNAMES.has(req.user!.username);
+      let paymentStatus: string = "pending_payment";
+      if (isDemoAccount && !submission.redirect) {
+        const { rows: confirmedRows } = await pool!.query(
+          `UPDATE mkt_orders SET status = 'confirmed', payment_status = 'payment_confirmed', confirmed_at = now() WHERE id = $1 RETURNING *`,
+          [order.id]
+        );
+        Object.assign(order, confirmedRows[0]);
+        paymentStatus = "payment_confirmed";
+      }
+
       // 202 Accepted, not 201 Created-and-done — the order exists, but
       // payment is still in flight. The frontend should poll
       // GET /orders/:id to see the real, confirmed status.
       res.status(202).json({
         success: true,
         data: mapOrder(order),
-        meta: { paymentStatus: "pending_payment", mktPayTransactionId: submission.mktPayTransactionId, redirect: submission.redirect },
+        meta: { paymentStatus, mktPayTransactionId: submission.mktPayTransactionId, redirect: submission.redirect, isDemoAccount },
       });
       return;
     }

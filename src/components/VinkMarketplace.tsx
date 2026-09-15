@@ -1407,6 +1407,7 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
   onBack: () => void; onComplete: (order: R) => void;
 }) {
   const [step, setStep]     = useState<CheckoutStep>("address");
+  const [paymentPending, setPaymentPending] = useState(false);
   const [selAddr, setSelAddr] = useState(0);
   const [shipping, setShipping] = useState("standard");
   const [payment, setPayment] = useState("card");
@@ -1446,6 +1447,14 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
           return; // browser is navigating away — nothing left to do here
         }
         setStep("confirmation");
+        // Honest reading of what the backend actually did: it only ever
+        // auto-confirms a demo account's order (see marketplaceRouter.ts).
+        // Every real account lands here with paymentStatus still
+        // "pending_payment", genuinely unconfirmed -- the UI needs to say
+        // that plainly rather than showing the same "Order Placed!" +
+        // "Total paid" success screen regardless of whether anything was
+        // actually paid.
+        setPaymentPending(res.meta?.paymentStatus !== "payment_confirmed");
         onComplete(res.data as R);
       } else {
         setPlaceError((res as { error?: string }).error ?? "We couldn't place your order. Please check your details and try again.");
@@ -1625,14 +1634,29 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
 
       {step === "confirmation" && (
         <div className="max-w-lg mx-auto text-center py-10">
-          <div className="w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-5 text-5xl" style={{ background: "#F0FDF4" }}>✅</div>
-          <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed!</h2>
-          <p className="text-gray-500 mb-6">Thank you! A confirmation email is on its way.</p>
-          <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
-            <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold">3–5 business days</span></div>
-            <div className="flex justify-between text-sm"><span className="text-gray-500">Carrier</span><span className="font-semibold">DHL Express</span></div>
-          </div>
+          {paymentPending ? (
+            <>
+              <div className="w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-5 text-5xl" style={{ background: "#FFF8E8" }}>⏳</div>
+              <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed — Payment Pending</h2>
+              <p className="text-gray-500 mb-6">Your order is saved, but payment hasn't been confirmed yet. We'll email you as soon as it clears — nothing ships until then.</p>
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Payment status</span><span className="font-semibold text-amber-600">Pending confirmation</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold">3–5 business days after payment clears</span></div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-5 text-5xl" style={{ background: "#F0FDF4" }}>✅</div>
+              <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed!</h2>
+              <p className="text-gray-500 mb-6">Thank you! A confirmation email is on its way.</p>
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold">3–5 business days</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Carrier</span><span className="font-semibold">DHL Express</span></div>
+              </div>
+            </>
+          )}
           <button onClick={onBack} className="w-full py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>Continue Shopping</button>
         </div>
       )}
