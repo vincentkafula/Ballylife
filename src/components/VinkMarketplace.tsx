@@ -78,7 +78,7 @@ import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
 import { ProductPhotoGallery } from "./ProductPhotoGallery";
 import { Footer } from "./Footer";
-import { formatZAR, useCurrency, setCountryManually, useLiveLocation } from "../services/currencyStore";
+import { formatZAR, useCurrency, useLiveLocation } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
@@ -2089,35 +2089,28 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
         </button>
 
         <div className="relative group hidden lg:block shrink-0">
-          <button className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white">
+          <div className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white cursor-default">
             <span className="flex items-center gap-1 text-[10px] text-white/70 leading-none">
-              <MapPin className="w-3 h-3" /> Deliver to
+              <MapPin className="w-3 h-3" /> We deliver to
             </span>
-            <span className="text-xs font-bold leading-tight mt-0.5">{currency.country.country ?? currency.country.countryCode}</span>
-          </button>
-          <div className="absolute left-0 top-full mt-0 w-64 bg-white rounded-b shadow-2xl border border-gray-200 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30 max-h-80 overflow-y-auto">
-            <p className="px-3 pb-2 mb-1 border-b border-gray-100 text-[11px] text-gray-400">
-              Prices shown in your local currency, converted from ZAR at today's rate.{currency.ratesStale ? " (using last known rate)" : ""}
+            <span className="text-xs font-bold leading-tight mt-0.5">{currency.country.country ?? currency.country.countryCode} · {currency.country.code}</span>
+          </div>
+          {/* A small refine-only popover, not a browsable list -- the
+              country is meant to be detected automatically (IP on load,
+              or live GPS location on request), never picked manually
+              from 198 entries. */}
+          <div className="absolute left-0 top-full mt-0 w-72 bg-white rounded-b shadow-2xl border border-gray-200 py-2.5 px-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
+            <p className="text-[11px] text-gray-500 leading-relaxed mb-2">
+              Detected automatically from your location. Prices are shown in {currency.country.name} ({currency.country.code}), converted from ZAR at today's rate.{currency.ratesStale ? " (using last known rate)" : ""}
             </p>
             <button onClick={handleUseLiveLocation} disabled={locating}
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-1.5 border-b border-gray-100 mb-1 font-semibold disabled:opacity-50"
-              style={{ color: "#B8862E" }}>
-              <MapPin className="w-3.5 h-3.5" /> {locating ? "Finding you…" : "Use my live location"}
+              className="w-full text-left px-2.5 py-1.5 text-xs rounded-lg hover:bg-gray-50 flex items-center gap-1.5 font-semibold disabled:opacity-50"
+              style={{ color: "#B8862E", background: "#FBF3E1" }}>
+              <MapPin className="w-3.5 h-3.5" /> {locating ? "Finding you…" : "Not quite right? Use my live location"}
             </button>
             {locateFailed && (
-              <p className="px-3 pb-1.5 text-[10px] text-red-500">Couldn't get your location — check your browser's location permission and try again.</p>
+              <p className="pt-1.5 text-[10px] text-red-500">Couldn't get your location — check your browser's location permission and try again.</p>
             )}
-            {currency.countries.map(c => (
-              <button
-                key={c.countryCode}
-                onClick={() => setCountryManually(c.countryCode)}
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center justify-between"
-                style={{ color: currency.country.countryCode === c.countryCode ? "#D4A54A" : "#111827", fontWeight: currency.country.countryCode === c.countryCode ? 700 : 400 }}
-              >
-                <span>{c.country ?? c.countryCode}</span>
-                <span className="text-gray-400 text-xs">{c.code}</span>
-              </button>
-            ))}
           </div>
         </div>
 
