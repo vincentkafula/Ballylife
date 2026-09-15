@@ -267,3 +267,110 @@ export const FX_RATES: FxRate[] = [
   { currency: "KRW", rateToZar: 0.0134, notes: "Illustrative — verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
   { currency: "ZMW", rateToZar: 0.68,  notes: "Illustrative — used to convert ZRA's kwacha-denominated vehicle duty (mkt_vehicle_duty_zm) into ZAR. Verify against a live rate before an actual payout run.", updatedAt: new Date().toISOString() },
 ];
+
+// ─── Bulk-generated catalog filler ─────────────────────────────────────────
+// Demonstrates the platform at real scale -- tens of thousands of listings,
+// not a hand-curated handful. Every one uses the exact same
+// illustration approach as every hand-written product above (a pair of
+// hex colors for a gradient card background + one emoji as the
+// "cartoon" product image) since there's no real photography pipeline
+// behind this catalog and there was never meant to be one for filler
+// listings like these. Names are generated from category-appropriate
+// word pools rather than written one by one -- genuinely impossible to
+// hand-author at this volume -- but stay readable and plausible per
+// category rather than looking like random noise.
+interface BulkCategorySpec {
+  categoryId: string; categoryName: string; sellerId: string; sellerName: string;
+  nouns: string[]; adjectives: string[]; brands: string[]; emojis: string[];
+  minPrice: number; maxPrice: number;
+}
+
+const BULK_CATEGORY_SPECS: BulkCategorySpec[] = [
+  {
+    categoryId: "cat-01", categoryName: "Electronics", sellerId: "sel-01", sellerName: "TechZone",
+    nouns: ["Smartphone", "Laptop", "Tablet", "Headphones", "Earbuds", "Smart TV", "Smartwatch", "Monitor", "Keyboard", "Wireless Mouse", "Bluetooth Speaker", "Action Camera", "Drone", "Wi-Fi Router", "Power Bank", "Fast Charger", "Webcam", "Microphone", "Gaming Console", "External SSD"],
+    adjectives: ["Pro", "Max", "Ultra", "Lite", "Plus", "Air", "Studio", "Elite", "Core", "X", "Neo", "Prime"],
+    brands: ["Galaxy", "ProBook", "Vista", "AudioMax", "PulseFit", "Nova", "Zenith", "Apex", "Quantum", "Ion"],
+    emojis: ["📱", "💻", "⌨️", "🖥️", "🎧", "📷", "🔌", "🔋", "📺", "⌚", "🖱️", "🎮", "📡"],
+    minPrice: 150, maxPrice: 28000,
+  },
+  {
+    categoryId: "cat-02", categoryName: "Fashion", sellerId: "sel-02", sellerName: "Fashion Hub",
+    nouns: ["Sneakers", "Jeans", "T-Shirt", "Dress", "Jacket", "Sunglasses", "Handbag", "Belt", "Cap", "Scarf", "Hoodie", "Blazer", "Sandals", "Boots", "Watch", "Wallet", "Beanie", "Polo Shirt"],
+    adjectives: ["Classic", "Slim-Fit", "Vintage", "Modern", "Urban", "Essential", "Signature", "Everyday", "Relaxed", "Tailored"],
+    brands: ["Stride", "Denimco", "Skyline", "Aura", "Urban Edge", "Nova Wear", "Heritage", "Drift"],
+    emojis: ["👟", "👖", "👗", "🧥", "🕶️", "👜", "🧢", "🧣", "🩴", "👢", "⌚", "👒"],
+    minPrice: 99, maxPrice: 2400,
+  },
+  {
+    categoryId: "cat-03", categoryName: "Home & Garden", sellerId: "sel-03", sellerName: "HomeStyle",
+    nouns: ["Stand Mixer", "Cordless Vacuum", "Sofa", "Dining Table", "Bed Frame", "Table Lamp", "Area Rug", "Curtain Set", "Garden Chair", "BBQ Grill", "Plant Pot", "Tool Set", "Blender", "Air Fryer", "Cookware Set", "Bookshelf", "Coffee Table", "Wardrobe", "Mattress"],
+    adjectives: ["Compact", "Modern", "Rustic", "Deluxe", "Space-Saving", "Classic", "Minimalist", "Premium", "Everyday", "Family-Size"],
+    brands: ["Homeware", "CleanPro", "GardenLine", "Comfort+", "CozyNest", "Timberline", "Loft"],
+    emojis: ["🍳", "🧹", "🛋️", "🪑", "🛏️", "💡", "🪴", "🔥", "🍽️", "🧽", "🌿", "🧺"],
+    minPrice: 129, maxPrice: 9500,
+  },
+  {
+    categoryId: "cat-04", categoryName: "Health & Beauty", sellerId: "sel-05", sellerName: "BeautyBar",
+    nouns: ["Skincare Bundle", "Electric Toothbrush", "Hair Dryer", "Perfume", "Makeup Kit", "Vitamin Supplement", "Electric Shaver", "Face Mask Set", "Body Lotion", "Lipstick", "Hair Straightener", "Body Wash", "Sunscreen", "Hand Cream"],
+    adjectives: ["Daily", "Gentle", "Radiance", "Hydrating", "Nourishing", "Pure", "Renewing", "Everyday", "Premium", "Botanical"],
+    brands: ["PureGlow", "BrightSmile", "VitaLife", "GlowUp", "SereneSkin", "Bloom"],
+    emojis: ["💆", "🪥", "💇", "💄", "🧴", "💅", "✨", "🧖‍♀️"],
+    minPrice: 79, maxPrice: 1900,
+  },
+  {
+    categoryId: "cat-05", categoryName: "Sports", sellerId: "sel-04", sellerName: "SportsPro",
+    nouns: ["Running Shoes", "GPS Sport Watch", "Yoga Mat", "Dumbbell Set", "Mountain Bicycle", "Tennis Racket", "Football", "Basketball", "Gym Duffel Bag", "Resistance Bands", "Folding Treadmill", "Swim Goggles", "Cycling Helmet", "Jump Rope"],
+    adjectives: ["Pro", "Trail", "Performance", "Endurance", "Elite", "Training", "Competition", "Lightweight", "All-Terrain"],
+    brands: ["TrailTrack", "Stride", "FitGear", "ProCourt", "PeakForm", "Momentum"],
+    emojis: ["🏃", "⌚", "🧘", "🏋️", "🚴", "🎾", "⚽", "🏀", "🎒", "🏊", "🤸"],
+    minPrice: 99, maxPrice: 6500,
+  },
+  {
+    categoryId: "cat-06", categoryName: "Books & Media", sellerId: "sel-06", sellerName: "BookWorld",
+    nouns: ["Novel", "Self-Help Guide", "Cookbook", "Biography", "Children's Storybook", "Notebook", "Board Game", "Jigsaw Puzzle", "Journal", "Comic Collection", "Poetry Collection", "Study Guide"],
+    adjectives: ["Bestselling", "Illustrated", "Complete", "Essential", "Classic", "New Edition", "Collector's", "Pocket"],
+    brands: ["BookWorld Press", "ClassicReads", "MindfulPages", "Chapter One"],
+    emojis: ["📖", "📚", "✏️", "📓", "🧩", "🎲", "📔"],
+    minPrice: 45, maxPrice: 650,
+  },
+  {
+    categoryId: "cat-08", categoryName: "Vehicle Parts & Equipment", sellerId: "sel-01", sellerName: "TechZone",
+    nouns: ["Brake Pad Set", "Car Battery", "Alloy Wheel", "Roof Rack", "Dash Cam", "Car Cover", "Floor Mat Set", "Spark Plug Set", "Air Filter", "Tow Bar", "Wiper Blade Set", "Engine Oil Filter", "Hydraulic Floor Jack", "OBD2 Scanner"],
+    adjectives: ["Universal", "Heavy-Duty", "OEM-Fit", "All-Weather", "Premium", "Standard", "High-Performance"],
+    brands: ["AutoFit", "RoadMaster", "DuraParts", "TrekTech"],
+    emojis: ["🔧", "🔩", "🛞", "🚗", "🔋", "🧰", "🛑", "🌧️", "🛢️"],
+    minPrice: 89, maxPrice: 3200,
+  },
+];
+
+export function generateBulkProducts(count: number): Omit<Product, "id" | "slug" | "createdAt" | "updatedAt">[] {
+  const out: Omit<Product, "id" | "slug" | "createdAt" | "updatedAt">[] = [];
+  const palettes = ["#1a1a2e,#16213e", "#2d3748,#1a202c", "#0f172a,#1e293b", "#18181b,#27272a", "#1a237e,#283593",
+    "#D4AF37,#B8860B", "#E53935,#B71C1C", "#F9A825,#F57F17", "#1565C0,#0D47A1", "#374151,#1f2937",
+    "#6b7280,#4b5563", "#9ca3af,#6b7280", "#FAFAFA,#F5F5F5", "#EEEEEE,#E0E0E0"];
+  for (let i = 0; i < count; i++) {
+    const spec = BULK_CATEGORY_SPECS[i % BULK_CATEGORY_SPECS.length];
+    const noun = spec.nouns[rand(0, spec.nouns.length - 1)];
+    const adj = spec.adjectives[rand(0, spec.adjectives.length - 1)];
+    const brand = spec.brands[rand(0, spec.brands.length - 1)];
+    const emoji = spec.emojis[rand(0, spec.emojis.length - 1)];
+    const [c1, c2] = palettes[rand(0, palettes.length - 1)].split(",");
+    const price = rand(spec.minPrice, spec.maxPrice);
+    const hasDiscount = Math.random() < 0.35;
+    const stock = rand(0, 250);
+    out.push({
+      sellerId: spec.sellerId, sellerName: spec.sellerName, categoryId: spec.categoryId, categoryName: spec.categoryName,
+      name: `${brand} ${adj} ${noun}`,
+      shortDescription: `${adj} ${noun.toLowerCase()} from ${brand}.`,
+      description: `A ${adj.toLowerCase()} ${noun.toLowerCase()} from ${brand}, part of Ballylife's ${spec.categoryName} range.`,
+      price, compareAtPrice: hasDiscount ? Math.round(price * (1 + rand(10, 30) / 100)) : null,
+      currency: "ZMW", images: [c1, c2], emoji, status: stock > 0 ? "active" : "out_of_stock",
+      stock, sku: `BLK-${spec.categoryId.toUpperCase()}-${i}`, brand,
+      tags: [noun.toLowerCase().replace(/\s+/g, "-")], attributes: {}, variants: [],
+      avgRating: Math.round((rand(30, 50) / 10) * 10) / 10, reviewCount: rand(0, 900), totalSold: rand(0, 600),
+      isFeatured: false, isFlashDeal: false, flashDealEndsAt: null,
+    });
+  }
+  return out;
+}

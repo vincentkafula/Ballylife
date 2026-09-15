@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES, generateBulkProducts } from "./seedData";
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -40,6 +40,7 @@ export async function migrate(): Promise<void> {
     await seedDefaultShippingLogin();
     await seedCreditProviders();
     await seedDefaultCreditLogins();
+    await seedBulkProducts();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
@@ -125,6 +126,7 @@ export async function migrate(): Promise<void> {
   await seedDefaultShippingLogin();
   await seedCreditProviders();
   await seedDefaultCreditLogins();
+  await seedBulkProducts();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
@@ -506,6 +508,53 @@ async function seedDefaultCreditLogins(): Promise<void> {
     }
   }
   console.log("[db] Seeded default credit-provider logins: credit1 (PayFlex), credit2 (PayJustNow).");
+}
+
+/**
+ * Seeds a large volume of catalog filler -- demonstrates the platform
+ * at real scale rather than the ~24 hand-curated products above. Gated
+ * on a marker SKU prefix so this only ever runs once, and batched
+ * (500 rows per INSERT) rather than one row at a time, since a
+ * one-by-one loop at this volume would make container boot
+ * unreasonably slow.
+ */
+async function seedBulkProducts(): Promise<void> {
+  const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_products WHERE sku LIKE 'BLK-%'");
+  if (Number(rows[0].count) > 0) {
+    console.log("[db] Bulk demo catalog already seeded — skipping.");
+    return;
+  }
+  const TOTAL = 20_000;
+  const BATCH_SIZE = 500;
+  console.log(`[db] Seeding ${TOTAL} bulk demo products in batches of ${BATCH_SIZE} — this will take a little while...`);
+  const products = generateBulkProducts(TOTAL);
+  const startedAt = Date.now();
+
+  for (let start = 0; start < products.length; start += BATCH_SIZE) {
+    const batch = products.slice(start, start + BATCH_SIZE);
+    const cols = ["seller_id", "category_id", "name", "slug", "short_description", "description", "price", "compare_at_price",
+      "currency", "images", "emoji", "status", "stock", "sku", "brand", "tags", "attributes", "variants",
+      "avg_rating", "review_count", "total_sold", "is_featured", "is_flash_deal"];
+    const values: string[] = [];
+    const params: unknown[] = [];
+    batch.forEach((p, i) => {
+      const globalIndex = start + i;
+      const slug = `${p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${globalIndex}`;
+      const row = [p.sellerId, p.categoryId, p.name, slug, p.shortDescription, p.description, p.price, p.compareAtPrice,
+        p.currency, JSON.stringify(p.images), p.emoji, p.status, p.stock, p.sku, p.brand,
+        JSON.stringify(p.tags), JSON.stringify(p.attributes), JSON.stringify(p.variants),
+        p.avgRating, p.reviewCount, p.totalSold, p.isFeatured, p.isFlashDeal];
+      const placeholders = row.map((_, j) => `$${params.length + j + 1}`).join(",");
+      values.push(`(${placeholders})`);
+      params.push(...row);
+    });
+    await pool!.query(
+      `INSERT INTO mkt_products (${cols.join(",")}) VALUES ${values.join(",")} ON CONFLICT (slug) DO NOTHING`,
+      params
+    );
+    if ((start / BATCH_SIZE) % 10 === 0) console.log(`[db]   ...${Math.min(start + BATCH_SIZE, products.length)}/${products.length} bulk products inserted`);
+  }
+  console.log(`[db] Seeded ${TOTAL} bulk demo products in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
 }
 
 /**
