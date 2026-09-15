@@ -2,7 +2,10 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES, generateBulkProducts } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES, generateBulkProducts, CSV_CATEGORY_MAP } from "./seedData";
+import { parseCsv } from "../utils/csv";
+
+const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 /**
  * Applies schema.sql (idempotent — every statement is CREATE ... IF NOT
@@ -41,6 +44,7 @@ export async function migrate(): Promise<void> {
     await seedCreditProviders();
     await seedDefaultCreditLogins();
     await seedBulkProducts();
+    await seedCsvCatalogue();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
@@ -127,6 +131,7 @@ export async function migrate(): Promise<void> {
   await seedCreditProviders();
   await seedDefaultCreditLogins();
   await seedBulkProducts();
+  await seedCsvCatalogue();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
@@ -567,6 +572,89 @@ async function seedBulkProducts(): Promise<void> {
  * Zambia's flat ZRA specific-duty schedule, and two sample listings.
  * Gated on the category not existing yet.
  */
+/**
+ * Imports the uploaded 100,000-row product catalogue CSV
+ * (server/src/db/data/product-catalogue.csv) -- a real, structured
+ * dataset (unique SKUs, unique product IDs, no empty fields, verified
+ * before import) rather than generated filler. Creates the CSV's own
+ * 40-category taxonomy as top-level mkt_categories rows (each mapped to
+ * whichever existing seller fits it best -- see CSV_CATEGORY_MAP in
+ * seedData.ts) rather than losing that granularity by squashing it into
+ * Ballylife's original 8 categories. Gated on the CSV's own SKU prefix
+ * so this only ever runs once; batched (500 rows/INSERT) for the same
+ * boot-time reason as seedBulkProducts above.
+ */
+async function seedCsvCatalogue(): Promise<void> {
+  const { rows: existingRows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_products WHERE sku LIKE 'SKU-%'");
+  if (Number(existingRows[0].count) > 0) {
+    console.log("[db] CSV product catalogue already imported — skipping.");
+    return;
+  }
+
+  const csvPath = path.join(__dirname, "data", "product-catalogue.csv");
+  if (!fs.existsSync(csvPath)) {
+    console.log("[db] product-catalogue.csv not found — skipping CSV catalogue import.");
+    return;
+  }
+  const rows = parseCsv(fs.readFileSync(csvPath, "utf-8"));
+  console.log(`[db] Parsed ${rows.length} rows from product-catalogue.csv.`);
+
+  // Categories first -- every product below references one of these.
+  const categoryEntries = Object.entries(CSV_CATEGORY_MAP);
+  for (const [name, info] of categoryEntries) {
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    await pool!.query(
+      `INSERT INTO mkt_categories (id, name, slug, icon, parent_id, featured) VALUES ($1,$2,$3,$4,NULL,false) ON CONFLICT (id) DO NOTHING`,
+      [info.id, name, slug, info.icon]
+    );
+  }
+  console.log(`[db] Seeded ${categoryEntries.length} CSV-derived categories.`);
+
+  const COLOR_HEX: Record<string, [string, string]> = {
+    Black: ["#1a1a1a", "#2d2d2d"], White: ["#fafafa", "#e5e5e5"], Silver: ["#c0c0c0", "#9a9a9a"],
+    Grey: ["#6b7280", "#4b5563"], Red: ["#dc2626", "#991b1b"], Blue: ["#2563eb", "#1e40af"],
+    Navy: ["#1e3a5f", "#0f2540"], Green: ["#16a34a", "#166534"], Gold: ["#d4af37", "#b8860b"],
+    Orange: ["#f97316", "#c2410c"], Pink: ["#ec4899", "#be185d"], Yellow: ["#eab308", "#a16207"],
+  };
+
+  const BATCH_SIZE = 500;
+  const startedAt = Date.now();
+  for (let start = 0; start < rows.length; start += BATCH_SIZE) {
+    const batch = rows.slice(start, start + BATCH_SIZE);
+    const cols = ["seller_id", "category_id", "name", "slug", "short_description", "description", "price", "compare_at_price",
+      "currency", "images", "emoji", "status", "stock", "sku", "brand", "tags", "attributes", "variants",
+      "avg_rating", "review_count", "total_sold", "is_featured", "is_flash_deal"];
+    const values: string[] = [];
+    const params: unknown[] = [];
+    for (const r of batch) {
+      const catInfo = CSV_CATEGORY_MAP[r["Category"]];
+      if (!catInfo) continue; // defensive -- every category was verified to map before this ran, but never silently crash a whole batch over one bad row
+      const slug = `${r["Product Name"].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${r["Product ID"]}`;
+      const [c1, c2] = COLOR_HEX[r["Color"]] ?? ["#374151", "#1f2937"];
+      const price = Number(r["Selling Price (ZAR)"]);
+      const description = `${r["Description"]} ${r["Brand"]} ${r["Variant/Model"]}, ${r["Color"]}, ${r["Size/Capacity"]}.`;
+      const row = [
+        catInfo.sellerId, catInfo.id, r["Product Name"], slug, r["Description"], description, price, null,
+        "ZAR", JSON.stringify([c1, c2]), catInfo.icon, "active", rand(20, 300), r["SKU"], r["Brand"],
+        JSON.stringify([r["Subcategory"].toLowerCase().replace(/\s+/g, "-")]),
+        JSON.stringify({ Color: r["Color"], "Size/Capacity": r["Size/Capacity"], "Variant/Model": r["Variant/Model"] }),
+        JSON.stringify([]), (rand(30, 50) / 10).toFixed(1), rand(0, 900), rand(0, 600), false, false,
+      ];
+      const placeholders = row.map((_, j) => `$${params.length + j + 1}`).join(",");
+      values.push(`(${placeholders})`);
+      params.push(...row);
+    }
+    if (values.length) {
+      await pool!.query(
+        `INSERT INTO mkt_products (${cols.join(",")}) VALUES ${values.join(",")} ON CONFLICT (slug) DO NOTHING`,
+        params
+      );
+    }
+    if ((start / BATCH_SIZE) % 20 === 0) console.log(`[db]   ...${Math.min(start + BATCH_SIZE, rows.length)}/${rows.length} CSV products inserted`);
+  }
+  console.log(`[db] Imported ${rows.length} CSV products in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
+}
+
 async function seedVehiclesCategoryAndDuty(): Promise<void> {
   const { rows } = await pool!.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM mkt_categories WHERE id = 'cat-07'");
   if (Number(rows[0].count) > 0) {

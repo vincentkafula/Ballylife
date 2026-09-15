@@ -374,3 +374,60 @@ export function generateBulkProducts(count: number, startIndex = 0): Omit<Produc
   }
   return out;
 }
+
+// ─── CSV catalogue import mapping ──────────────────────────────────────────
+// The uploaded 100,000-row product catalogue (server/src/db/data/product-
+// catalogue.csv) uses its own 40-category taxonomy, richer and more
+// specific than Ballylife's original 8 categories -- rather than losing
+// that granularity by squashing it into the existing 8, each CSV category
+// becomes its own top-level mkt_categories row. Every category is mapped
+// to whichever of the 6 existing sellers fits it best thematically, so
+// every imported product has a real seller rather than sitting
+// unassigned.
+export const CSV_CATEGORY_MAP: Record<string, { id: string; icon: string; sellerId: string; sellerName: string }> = {
+  "Smartphones":              { id: "cat-csv-smartphones",       icon: "📱", sellerId: "sel-01", sellerName: "TechZone" },
+  "Mobile Accessories":       { id: "cat-csv-mobile-acc",        icon: "🔌", sellerId: "sel-01", sellerName: "TechZone" },
+  "Laptops & Computers":      { id: "cat-csv-laptops",           icon: "💻", sellerId: "sel-01", sellerName: "TechZone" },
+  "Computer Accessories":     { id: "cat-csv-computer-acc",      icon: "🖱️", sellerId: "sel-01", sellerName: "TechZone" },
+  "TV & Home Entertainment":  { id: "cat-csv-tv",                icon: "📺", sellerId: "sel-01", sellerName: "TechZone" },
+  "Audio & Headphones":       { id: "cat-csv-audio",             icon: "🎧", sellerId: "sel-01", sellerName: "TechZone" },
+  "Cameras & Photography":    { id: "cat-csv-cameras",           icon: "📷", sellerId: "sel-01", sellerName: "TechZone" },
+  "Smart Home & Security":    { id: "cat-csv-smart-home",        icon: "🔒", sellerId: "sel-01", sellerName: "TechZone" },
+  "Gaming":                   { id: "cat-csv-gaming",            icon: "🎮", sellerId: "sel-01", sellerName: "TechZone" },
+  "Networking":                { id: "cat-csv-networking",        icon: "📡", sellerId: "sel-01", sellerName: "TechZone" },
+  "Solar & Renewable Energy": { id: "cat-csv-solar",             icon: "☀️", sellerId: "sel-01", sellerName: "TechZone" },
+  "Batteries & Power":        { id: "cat-csv-batteries",         icon: "🔋", sellerId: "sel-01", sellerName: "TechZone" },
+  "Digital Products":         { id: "cat-csv-digital",           icon: "💾", sellerId: "sel-01", sellerName: "TechZone" },
+
+  "Fashion - Clothing":       { id: "cat-csv-fashion",           icon: "👗", sellerId: "sel-02", sellerName: "Fashion Hub" },
+  "Shoes & Sneakers":         { id: "cat-csv-shoes",             icon: "👟", sellerId: "sel-02", sellerName: "Fashion Hub" },
+  "Bags & Luggage":           { id: "cat-csv-bags",              icon: "👜", sellerId: "sel-02", sellerName: "Fashion Hub" },
+  "Jewellery & Watches":      { id: "cat-csv-jewellery",         icon: "💍", sellerId: "sel-02", sellerName: "Fashion Hub" },
+
+  "Kitchen Appliances":       { id: "cat-csv-kitchen",           icon: "🍳", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Home Appliances":          { id: "cat-csv-home-appliances",   icon: "🏠", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Furniture":                { id: "cat-csv-furniture",         icon: "🛋️", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Home & Décor":             { id: "cat-csv-decor",             icon: "🪴", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "DIY & Hardware":           { id: "cat-csv-diy",               icon: "🔧", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Cleaning & Household":     { id: "cat-csv-cleaning",          icon: "🧹", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Electrical & Plumbing":    { id: "cat-csv-electrical",        icon: "💡", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Garden & Outdoor":         { id: "cat-csv-garden",            icon: "🌿", sellerId: "sel-03", sellerName: "HomeStyle" },
+  "Construction":             { id: "cat-csv-construction",      icon: "🏗️", sellerId: "sel-03", sellerName: "HomeStyle" },
+
+  "Sports & Fitness":         { id: "cat-csv-sports",            icon: "⚽", sellerId: "sel-04", sellerName: "SportsPro" },
+  "Automotive":               { id: "cat-csv-automotive",        icon: "🚗", sellerId: "sel-04", sellerName: "SportsPro" },
+  "Travel":                   { id: "cat-csv-travel",            icon: "🧳", sellerId: "sel-04", sellerName: "SportsPro" },
+  "Safety & Security":        { id: "cat-csv-safety",            icon: "🦺", sellerId: "sel-04", sellerName: "SportsPro" },
+  "Agriculture":              { id: "cat-csv-agriculture",       icon: "🌾", sellerId: "sel-04", sellerName: "SportsPro" },
+
+  "Beauty & Personal Care":   { id: "cat-csv-beauty",            icon: "💄", sellerId: "sel-05", sellerName: "BeautyBar" },
+  "Health & Wellness":        { id: "cat-csv-health",            icon: "💊", sellerId: "sel-05", sellerName: "BeautyBar" },
+  "Baby & Maternity":         { id: "cat-csv-baby",              icon: "🍼", sellerId: "sel-05", sellerName: "BeautyBar" },
+  "Pet Products":             { id: "cat-csv-pets",              icon: "🐾", sellerId: "sel-05", sellerName: "BeautyBar" },
+
+  "Office Supplies":          { id: "cat-csv-office",            icon: "🖊️", sellerId: "sel-06", sellerName: "BookWorld" },
+  "School Supplies":          { id: "cat-csv-school",            icon: "🎒", sellerId: "sel-06", sellerName: "BookWorld" },
+  "Toys & Games":             { id: "cat-csv-toys",              icon: "🧸", sellerId: "sel-06", sellerName: "BookWorld" },
+  "Grocery & Food":           { id: "cat-csv-grocery",           icon: "🛒", sellerId: "sel-06", sellerName: "BookWorld" },
+  "Industrial & Business":    { id: "cat-csv-industrial",        icon: "🏭", sellerId: "sel-06", sellerName: "BookWorld" },
+};
