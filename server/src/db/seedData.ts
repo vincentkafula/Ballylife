@@ -656,3 +656,75 @@ export function buildAdvancedDescription(opts: {
     `Backed by Ballylife's buyer protection, secure checkout, and fast delivery.`,
   ].join("\n\n");
 }
+
+// ─── Realistic price recalibration ─────────────────────────────────────────
+// The CSV catalogue's original prices turned out to be essentially
+// uniform-random noise across R6-R37,500 for every one of its 40
+// categories regardless of what's realistic (School Supplies items
+// priced up to R37,466 alongside Laptops -- clearly wrong). Researched
+// real 2026 South African retail price ranges (ZAR) for the highest-
+// value, highest-visibility categories directly (Smartphones, Laptops
+// & Computers, TV & Home Entertainment, Kitchen Appliances, Home
+// Appliances -- see the commit this shipped in for sources); the
+// remaining categories use informed, reasonable estimates from general
+// retail knowledge rather than individually researched figures, which
+// is disclosed rather than presented as equally rigorous.
+export const CSV_CATEGORY_PRICE_BANDS: Record<string, { min: number; max: number }> = {
+  "Smartphones":              { min: 1500,  max: 70000 },  // researched
+  "Mobile Accessories":       { min: 50,    max: 2500 },
+  "Laptops & Computers":      { min: 2999,  max: 45000 },  // researched
+  "Computer Accessories":     { min: 80,    max: 8000 },
+  "TV & Home Entertainment":  { min: 2000,  max: 100000 }, // researched
+  "Audio & Headphones":       { min: 100,   max: 15000 },
+  "Cameras & Photography":    { min: 300,   max: 35000 },
+  "Smart Home & Security":    { min: 150,   max: 8000 },
+  "Gaming":                   { min: 200,   max: 15000 },
+  "Networking":               { min: 150,   max: 5000 },
+  "Solar & Renewable Energy": { min: 500,   max: 50000 },
+  "Batteries & Power":        { min: 100,   max: 5000 },
+  "Digital Products":         { min: 20,    max: 1500 },
+  "Fashion - Clothing":       { min: 100,   max: 4000 },
+  "Shoes & Sneakers":         { min: 200,   max: 5000 },
+  "Bags & Luggage":           { min: 150,   max: 6000 },
+  "Jewellery & Watches":      { min: 100,   max: 15000 },
+  "Kitchen Appliances":       { min: 400,   max: 40000 },  // researched
+  "Home Appliances":          { min: 400,   max: 40000 },  // researched
+  "Furniture":                { min: 500,   max: 45000 },
+  "Home & Décor":             { min: 50,    max: 5000 },
+  "DIY & Hardware":           { min: 100,   max: 8000 },
+  "Cleaning & Household":     { min: 20,    max: 1500 },
+  "Electrical & Plumbing":    { min: 50,    max: 5000 },
+  "Garden & Outdoor":         { min: 100,   max: 8000 },
+  "Construction":             { min: 100,   max: 10000 },
+  "Sports & Fitness":         { min: 100,   max: 12000 },
+  "Automotive":               { min: 100,   max: 8000 },
+  "Travel":                   { min: 100,   max: 4000 },
+  "Safety & Security":        { min: 50,    max: 5000 },
+  "Agriculture":              { min: 100,   max: 15000 },
+  "Beauty & Personal Care":   { min: 50,    max: 2000 },
+  "Health & Wellness":        { min: 100,   max: 5000 },
+  "Baby & Maternity":         { min: 100,   max: 6000 },
+  "Pet Products":             { min: 50,    max: 4000 },
+  "Office Supplies":          { min: 20,    max: 3000 },
+  "School Supplies":          { min: 15,    max: 1000 },
+  "Toys & Games":             { min: 50,    max: 3000 },
+  "Grocery & Food":           { min: 15,    max: 800 },
+  "Industrial & Business":    { min: 500,   max: 40000 },
+};
+
+// Same idea for the 7 bulk-generated (non-CSV) categories -- their
+// original ranges (BULK_CATEGORY_SPECS above) were reasonable guesses
+// made before any real research; these replace them with the same
+// researched/informed figures used for the CSV catalogue's equivalent
+// categories, so a bulk-generated "Smartphone"-adjacent Electronics
+// item and a CSV-imported Smartphone land in comparable, realistic
+// territory rather than two different guessed ranges.
+export const BULK_CATEGORY_PRICE_BANDS: Record<string, { min: number; max: number }> = {
+  "Electronics":       { min: 100,  max: 70000 },
+  "Fashion":           { min: 100,  max: 5000 },
+  "Home & Garden":     { min: 100,  max: 40000 },
+  "Health & Beauty":   { min: 50,   max: 3000 },
+  "Sports":            { min: 100,  max: 12000 },
+  "Books & Media":     { min: 15,   max: 1000 },
+  "Vehicle Parts & Equipment": { min: 100, max: 15000 },
+};

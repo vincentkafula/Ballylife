@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { pool, hasDb } from "./pool";
-import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES, generateBulkProducts, CSV_CATEGORY_MAP } from "./seedData";
+import { CATEGORIES, SELLERS, PRODUCTS, COUPONS, WAREHOUSES, SUPPLIERS, SUPPLIER_PRODUCTS, TAX_RATES, DUTY_RATES, REVENUE_AUTHORITIES, SHIPPING_COMPANIES, CREDIT_PROVIDERS, VEHICLE_DUTY_ZM, VEHICLE_SUPPLIER_PRODUCTS, VEHICLE_PARTS_SUPPLIER_PRODUCTS, FX_RATES, generateBulkProducts, CSV_CATEGORY_MAP, CSV_CATEGORY_PRICE_BANDS, BULK_CATEGORY_PRICE_BANDS } from "./seedData";
 import { parseCsv } from "../utils/csv";
 import { buildAdvancedDescription } from "./seedData";
 
@@ -47,6 +47,7 @@ export async function migrate(): Promise<void> {
     await seedBulkProducts();
     await seedCsvCatalogue();
     await upgradeProductDescriptions();
+    await recalibrateProductPrices();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
@@ -134,6 +135,7 @@ export async function migrate(): Promise<void> {
   await seedBulkProducts();
   await seedCsvCatalogue();
   await upgradeProductDescriptions();
+  await recalibrateProductPrices();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
@@ -711,6 +713,90 @@ async function upgradeProductDescriptions(): Promise<void> {
     if ((offset / BATCH_SIZE) % 40 === 0) console.log(`[db]   ...${totalUpdated} descriptions upgraded so far`);
   }
   console.log(`[db] Upgraded ${totalUpdated} product descriptions in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
+}
+
+/**
+ * Recalibrates prices for every bulk-generated and CSV-imported product
+ * (never the ~24 original hand-curated ones -- gated to sku LIKE
+ * 'BLK-%'/'SKU-%' only, which those don't match) from the essentially
+ * uniform-random noise they started with into realistic, researched
+ * per-category ranges (CSV_CATEGORY_PRICE_BANDS / BULK_CATEGORY_PRICE_
+ * BANDS in seedData.ts). Uses each product's existing rank/percentile
+ * position within its category (not its old absolute price, which
+ * carried no real signal) so relative ordering and variety survive the
+ * recalibration -- a product that was priced toward the top of its
+ * category before still lands toward the top of the new realistic
+ * range, just at a realistic number instead of a random one. A small
+ * +/-4% jitter avoids a perfectly smooth price ladder. Any product that
+ * had a compare-at ("was") price keeps having one, recomputed relative
+ * to its new price rather than left stale against the old one.
+ * Gated on Smartphones' minimum price already being realistic (>=
+ * R1,000) so this only runs once.
+ */
+async function recalibrateProductPrices(): Promise<void> {
+  const { rows: gateRows } = await pool!.query(
+    `SELECT MIN(price)::numeric AS min_price FROM mkt_products WHERE category_id = 'cat-csv-smartphones'`
+  );
+  if (gateRows[0]?.min_price !== null && Number(gateRows[0]?.min_price) >= 1000) {
+    console.log("[db] Product prices already recalibrated — skipping.");
+    return;
+  }
+
+  console.log("[db] Recalibrating product prices to realistic researched bands...");
+  const startedAt = Date.now();
+
+  const bandsByCategoryId: Record<string, { min: number; max: number }> = {};
+  for (const [name, info] of Object.entries(CSV_CATEGORY_MAP)) {
+    const band = CSV_CATEGORY_PRICE_BANDS[name];
+    if (band) bandsByCategoryId[info.id] = band;
+  }
+  const bulkCategoryIdToName: Record<string, string> = {
+    "cat-01": "Electronics", "cat-02": "Fashion", "cat-03": "Home & Garden", "cat-04": "Health & Beauty",
+    "cat-05": "Sports", "cat-06": "Books & Media", "cat-08": "Vehicle Parts & Equipment",
+  };
+  for (const [categoryId, name] of Object.entries(bulkCategoryIdToName)) {
+    bandsByCategoryId[categoryId] = BULK_CATEGORY_PRICE_BANDS[name];
+  }
+
+  const BATCH_SIZE = 500;
+  let totalUpdated = 0;
+  for (const [categoryId, band] of Object.entries(bandsByCategoryId)) {
+    const { rows } = await pool!.query(
+      `SELECT id, (compare_at_price IS NOT NULL) AS had_compare FROM mkt_products WHERE category_id = $1 AND (sku LIKE 'BLK-%' OR sku LIKE 'SKU-%') ORDER BY price ASC`,
+      [categoryId]
+    );
+    const n = rows.length;
+    if (n === 0) continue;
+
+    for (let start = 0; start < n; start += BATCH_SIZE) {
+      const batch = rows.slice(start, start + BATCH_SIZE);
+      const values: string[] = [];
+      const params: unknown[] = [];
+      batch.forEach((r, i) => {
+        const rank = start + i;
+        const percentile = n > 1 ? rank / (n - 1) : 0.5;
+        const jitter = 1 + (Math.random() - 0.5) * 0.08; // +/-4%, avoids a perfectly smooth price ladder
+        let newPrice = (band.min + percentile * (band.max - band.min)) * jitter;
+        newPrice = Math.max(band.min, Math.min(band.max, newPrice));
+        newPrice = Math.round(newPrice * 100) / 100;
+        // Computed in JS rather than SQL's random() -- pg-mem (the test
+        // database) doesn't implement random() at all, and this is more
+        // directly testable anyway.
+        const newCompareAtPrice = r.had_compare ? Math.round(newPrice * (1 + (0.1 + Math.random() * 0.2)) * 100) / 100 : null;
+        values.push(`($${params.length + 1}::uuid,$${params.length + 2}::numeric,$${params.length + 3}::numeric)`);
+        params.push(r.id, newPrice, newCompareAtPrice);
+      });
+      await pool!.query(
+        `UPDATE mkt_products SET price = v.price, compare_at_price = v.compare_at_price
+         FROM (VALUES ${values.join(",")}) AS v(id, price, compare_at_price)
+         WHERE mkt_products.id = v.id`,
+        params
+      );
+    }
+    totalUpdated += n;
+    console.log(`[db]   ...recalibrated ${n} products in category ${categoryId}`);
+  }
+  console.log(`[db] Recalibrated ${totalUpdated} product prices in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
 }
 
 async function seedVehiclesCategoryAndDuty(): Promise<void> {
