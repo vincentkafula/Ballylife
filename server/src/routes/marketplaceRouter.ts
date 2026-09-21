@@ -1676,6 +1676,74 @@ router.get("/admin/customers", requireAuth, requireRole(...MANAGER_ROLES), async
   res.json({ success: true, data: rows.map(u => ({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role, lastLogin: u.last_login, createdAt: u.created_at })), meta: { total: rows.length } });
 });
 
+// General user list across every role, not just customers -- /admin/customers
+// stayed narrowly scoped (existing callers depend on it returning
+// customers only), so this is additive rather than a change to it.
+// View-only: role changes aren't exposed here deliberately, since
+// changing a role interacts with token_version-based revocation
+// (middleware/auth.ts, Phase 3) in ways that need a real decision --
+// should changing a role force that account to re-authenticate
+// immediately (bump token_version) or let its current session finish
+// at the old role? -- rather than a default picked unilaterally while
+// building a list view.
+router.get("/admin/users", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { role, search } = req.query as Record<string, string>;
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (role) { params.push(role); conditions.push(`role = $${params.length}`); }
+  if (search) { params.push(`%${search}%`); conditions.push(`(username ILIKE $${params.length} OR name ILIKE $${params.length} OR email ILIKE $${params.length})`); }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const { rows } = await pool!.query(
+    `SELECT id, username, name, email, role, oauth_provider, last_login, created_at FROM users ${where} ORDER BY created_at DESC LIMIT 500`,
+    params
+  );
+  res.json({
+    success: true,
+    data: rows.map(u => ({
+      id: u.id, username: u.username, name: u.name, email: u.email, role: u.role,
+      oauthProvider: u.oauth_provider, lastLogin: u.last_login, createdAt: u.created_at,
+    })),
+    meta: { total: rows.length },
+  });
+});
+
+// Audit log viewer (Phase 5) -- mkt_audit_log has been written to since
+// Phase 3 (settlement status changes, refund creation) but nothing
+// could read it back until now; a log nobody can view is close to not
+// having one. Filterable by entity_type/entity_id so it's usable both
+// as a general feed and as "show me everything that happened to this
+// one settlement/refund."
+router.get("/admin/audit-log", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { entityType, entityId, page: pg, limit: lim } = req.query as Record<string, string>;
+  const page = Math.max(1, Number(pg) || 1);
+  const limit = Math.min(100, Number(lim) || 50);
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (entityType) { params.push(entityType); conditions.push(`entity_type = $${params.length}`); }
+  if (entityId) { params.push(entityId); conditions.push(`entity_id::text = $${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const { rows: countRows } = await pool!.query(`SELECT COUNT(*)::int AS total FROM mkt_audit_log ${where}`, params);
+  const total = countRows[0].total;
+
+  params.push(limit, (page - 1) * limit);
+  const { rows } = await pool!.query(
+    `SELECT al.*, u.username AS actor_username FROM mkt_audit_log al
+     LEFT JOIN users u ON u.id = al.actor_id
+     ${where} ORDER BY al.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
+  res.json({
+    success: true,
+    data: rows.map(r => ({
+      id: r.id, actorId: r.actor_id, actorUsername: r.actor_username, actorRole: r.actor_role,
+      entityType: r.entity_type, entityId: r.entity_id, action: r.action,
+      before: r.before, after: r.after, createdAt: r.created_at,
+    })),
+    meta: { page, limit, total, pages: Math.ceil(total / limit) },
+  });
+});
+
 // ── REPORTS (CSV export) ─────────────────────────────────────────────────────
 function toCsv(rows: Record<string, unknown>[]): string {
   if (!rows.length) return "";

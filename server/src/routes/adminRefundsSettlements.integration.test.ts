@@ -147,3 +147,75 @@ describe("POST /api/marketplace/admin/orders/:id/refund", () => {
     expect(overRes.body.error).toMatch(/nothing left to refund/i);
   });
 });
+
+describe("GET /api/marketplace/admin/audit-log (Phase 5)", () => {
+  it("rejects a non-admin", async () => {
+    const res = await request(app).get("/api/marketplace/admin/audit-log").set("Authorization", `Bearer ${customerToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("actually captured the settlement status change and the refund from the tests above -- not just accepted them", async () => {
+    const res = await request(app).get("/api/marketplace/admin/audit-log").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const settlementEntry = res.body.data.find((e: { entityType: string; action: string }) => e.entityType === "settlement" && e.action === "status_change");
+    expect(settlementEntry).toBeTruthy();
+    expect(settlementEntry.actorUsername).toBeTruthy(); // joined from users, not just a bare id
+    expect(settlementEntry.before.sellerPayoutStatus ?? settlementEntry.before.seller_payout_status).not.toBe("paid");
+    expect(settlementEntry.after.seller_payout_status ?? settlementEntry.after.sellerPayoutStatus).toBe("paid");
+
+    const refundEntries = res.body.data.filter((e: { entityType: string }) => e.entityType === "refund");
+    expect(refundEntries.length).toBe(2); // the partial refund and the whole-order refund, both from the describe block above
+  });
+
+  it("filters correctly by entityType and entityId", async () => {
+    const allRes = await request(app).get("/api/marketplace/admin/audit-log").set("Authorization", `Bearer ${adminToken}`);
+    const oneRefund = allRes.body.data.find((e: { entityType: string }) => e.entityType === "refund");
+
+    const filteredRes = await request(app)
+      .get(`/api/marketplace/admin/audit-log?entityType=refund&entityId=${oneRefund.entityId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(filteredRes.status).toBe(200);
+    expect(filteredRes.body.data.length).toBe(1);
+    expect(filteredRes.body.data[0].entityId).toBe(oneRefund.entityId);
+
+    const wrongTypeRes = await request(app)
+      .get(`/api/marketplace/admin/audit-log?entityType=settlement&entityId=${oneRefund.entityId}`)
+      .set("Authorization", `Bearer ${adminToken}`);
+    expect(wrongTypeRes.body.data.length).toBe(0); // same id, wrong entity_type -- must not match
+  });
+});
+
+describe("GET /api/marketplace/admin/users (Phase 5)", () => {
+  it("rejects a non-admin", async () => {
+    const res = await request(app).get("/api/marketplace/admin/users").set("Authorization", `Bearer ${customerToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("lists users across every role, not just customers", async () => {
+    const res = await request(app).get("/api/marketplace/admin/users").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    const roles = new Set(res.body.data.map((u: { role: string }) => u.role));
+    expect(roles.has("customer")).toBe(true);
+    expect(roles.has("seller")).toBe(true); // the seller account set up in beforeAll
+  });
+
+  it("filters by role", async () => {
+    const res = await request(app).get("/api/marketplace/admin/users?role=seller").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    for (const u of res.body.data) expect(u.role).toBe("seller");
+  });
+
+  it("filters by search across username/name/email", async () => {
+    const res = await request(app).get("/api/marketplace/admin/users?search=sellerowner2").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.some((u: { username: string }) => u.username === "sellerowner2")).toBe(true);
+  });
+
+  it("never returns a password hash", async () => {
+    const res = await request(app).get("/api/marketplace/admin/users").set("Authorization", `Bearer ${adminToken}`);
+    for (const u of res.body.data) expect(u.passwordHash ?? u.password_hash).toBeUndefined();
+  });
+});
