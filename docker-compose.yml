@@ -1,0 +1,68 @@
+name: ballylife
+
+# Local development stack only -- production runs on Railway as three
+# separate services (see the three Dockerfiles + Railway's own
+# migration-on-boot behavior, unchanged by this file). This exists so a
+# new developer can run `docker compose up` and have a working stack
+# without touching Railway at all.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ballylife
+      POSTGRES_PASSWORD: ballylife
+      POSTGRES_DB: ballylife
+    ports:
+      - "5432:5432"
+    volumes:
+      - ballylife-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ballylife"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./server
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgres://ballylife:ballylife@postgres:5432/ballylife
+      PGSSL: "false"
+      NODE_ENV: development
+      PORT: "3001"
+      MARKETPLACE_JWT_SECRET: ${MARKETPLACE_JWT_SECRET:-dev-only-change-me}
+      MARKETPLACE_ALLOWED_ORIGINS: http://localhost:5173
+      MARKETPLACE_PUBLIC_URL: http://localhost:5173
+      MARKETPLACE_API_PUBLIC_URL: http://localhost:3001
+      # PayFast, SMTP, and Google/Facebook sign-in are all optional --
+      # each feature no-ops or 503s gracefully without its variables
+      # (see server/.env.example), so they're intentionally left unset
+      # here rather than requiring a real merchant/SMTP/OAuth account
+      # just to run the stack locally. Set these on the host and add
+      # `env_file: server/.env` below if you need to test one of those
+      # flows against real credentials.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_URL: http://localhost:3001
+    ports:
+      - "5173:8080"
+    depends_on:
+      - backend
+
+volumes:
+  ballylife-postgres-data:

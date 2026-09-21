@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
 import { submitOrderPayment, getOrderTransactions, refundOrder } from "../services/mktPay";
@@ -92,6 +93,21 @@ async function requireCreditOwner(req: Request, res: Response, next: NextFunctio
 }
 
 const router: ReturnType<typeof Router> = Router();
+
+// index.ts's general 300/min limiter covers every route by default, but
+// two here carry a sharper risk than average browsing traffic and get
+// their own tighter cap on top of it, the same reasoning /api/auth
+// already gets a tighter limit than the general one:
+// - orders/track is unauthenticated and takes an order number + email --
+//   an enumeration surface (guessing order numbers against a known or
+//   guessed email) that a generous shared limit doesn't specifically
+//   discourage.
+// - POST /orders actually moves money (creates a real order, triggers
+//   the PayFast flow) -- worth capping tighter than general API usage
+//   even though it requires a logged-in account, as defense in depth
+//   against a compromised or scripted account.
+const orderTrackLimiter = rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false });
+const orderCreateLimiter = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 // ─── Row → API shape mappers (snake_case columns → camelCase JSON) ──────────
 const mapCategory = (r: any) => ({
@@ -567,7 +583,7 @@ router.post("/payfast/notify", async (req: Request, res: Response): Promise<void
 // order at all. Returns customer-safe fields only: no supplier names, no
 // cost/margin figures, no internal warehouse identifiers — just enough to
 // show a timeline.
-router.get("/orders/track", async (req: Request, res: Response): Promise<void> => {
+router.get("/orders/track", orderTrackLimiter, async (req: Request, res: Response): Promise<void> => {
   const { orderNumber, email } = req.query as Record<string, string>;
   if (!orderNumber || !email) { res.status(400).json({ success: false, error: "orderNumber and email are required" }); return; }
 
@@ -782,7 +798,7 @@ router.post("/orders/:id/request-return", requireAuth, async (req: Request, res:
   res.json({ success: true, data: mapOrder(updated[0]) });
 });
 
-router.post("/orders", requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.userId; // always the signed-in customer, never trusted from the body
   const { addressId, paymentMethod } = req.body;
   const [{ rows: cartRows }, { rows: userRows }] = await Promise.all([

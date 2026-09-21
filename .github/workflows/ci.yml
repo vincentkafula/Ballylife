@@ -26,6 +26,11 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Audit production dependencies (blocking on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies (informational -- dev tooling vulns don't ship, so this doesn't fail the build)
+        if: always()
+        run: npm audit || true
 
   frontend:
     runs-on: ubuntu-latest
@@ -40,3 +45,19 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.json
       - name: Build
         run: npm run build
+      - name: Audit production dependencies (blocking on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies (informational)
+        if: always()
+        run: npm audit || true
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for committed secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
