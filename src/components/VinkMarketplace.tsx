@@ -1128,7 +1128,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
     <div className="flex-1 overflow-y-auto" style={{ background: "#FAF6EC" }}>
       {/* Back bar */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100">
-        <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-gray-100"><ArrowLeft className="w-4 h-4 text-gray-700" /></button>
+        <button onClick={onBack} aria-label="Back" className="p-1.5 rounded-lg hover:bg-gray-100"><ArrowLeft className="w-4 h-4 text-gray-700" /></button>
         <p className="text-sm font-semibold text-gray-900 flex-1 truncate">{p.name as string}</p>
         <button onClick={() => onWishlist(p.id as string)}>
           <Heart className={`w-5 h-5 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-400"}`} />

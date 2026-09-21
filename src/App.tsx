@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { Toaster } from "sonner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { InstallPrompt } from "./components/InstallPrompt";
+import { OfflineBanner } from "./components/OfflineBanner";
 
 const VinkMarketplace = lazy(() =>
   import("./components/VinkMarketplace").then((m) => ({ default: m.VinkMarketplace }))
@@ -17,6 +18,7 @@ const VinkMarketplace = lazy(() =>
 export default function App() {
   return (
     <>
+      <OfflineBanner />
       <ErrorBoundary label="Marketplace">
         <Suspense fallback={null}>
           <VinkMarketplace />

@@ -220,7 +220,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
       <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <img src={ballylifeLogo} alt="Ballylife" className="h-7 w-auto" />
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
+          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
         </div>
 
         {tab !== "forgot" && tab !== "reset" && (
