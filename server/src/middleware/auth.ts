@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { pool } from "../db/pool";
 
 // Own JWT secret — deliberately NOT shared with VINK-GRUP-LIMITED's
 // middleware/auth.ts. A marketplace token must never be valid against
@@ -30,6 +31,7 @@ export interface MktAuthPayload {
   userId: string;
   username: string;
   role: "customer" | "seller" | "marketplace_admin" | "supplier" | "revenue_authority" | "shipping_company" | "credit_provider";
+  tokenVersion: number;
 }
 
 declare global {
@@ -40,7 +42,21 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+// Every request checks the JWT's own tokenVersion claim against
+// users.token_version -- one extra indexed lookup per authenticated
+// request. Acceptable at current traffic; revisit with a cache (e.g.
+// keyed on userId, short TTL) if it ever isn't. This is what makes
+// bumping token_version (on password change today; role changes or a
+// "log out everywhere" action are natural future triggers) actually
+// invalidate every previously-issued token instantly, rather than
+// waiting up to 8h for them to expire on their own.
+async function isTokenVersionValid(payload: MktAuthPayload): Promise<boolean> {
+  if (!pool) return true; // no DB configured (shouldn't happen outside tests) -- don't lock everyone out over it
+  const { rows } = await pool.query<{ token_version: number }>("SELECT token_version FROM users WHERE id = $1", [payload.userId]);
+  return rows.length > 0 && rows[0].token_version === payload.tokenVersion;
+}
+
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     res.status(401).json({ success: false, error: "Missing or invalid Authorization header" });
@@ -49,6 +65,10 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   try {
     const token = header.slice(7);
     const payload = jwt.verify(token, JWT_SECRET) as MktAuthPayload;
+    if (!(await isTokenVersionValid(payload))) {
+      res.status(401).json({ success: false, error: "Token expired or invalid" });
+      return;
+    }
     req.user = payload;
     next();
   } catch {
@@ -56,11 +76,14 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 }
 
-export function optionalAuth(req: Request, _res: Response, next: NextFunction): void {
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   if (header?.startsWith("Bearer ")) {
     try {
-      req.user = jwt.verify(header.slice(7), JWT_SECRET) as MktAuthPayload;
+      const payload = jwt.verify(header.slice(7), JWT_SECRET) as MktAuthPayload;
+      if (await isTokenVersionValid(payload)) req.user = payload;
+      // A revoked token on an optional-auth route just proceeds as
+      // logged-out, same as an invalid/expired one already did.
     } catch {
       // Invalid/expired token on an optional-auth route — proceed as
       // logged-out rather than rejecting.

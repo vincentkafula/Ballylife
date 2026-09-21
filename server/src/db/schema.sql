@@ -679,3 +679,32 @@ ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS credit_decided_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_provider TEXT; -- 'google' | 'facebook' | NULL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS oauth_id TEXT;       -- the provider's own user id (Google 'sub', Facebook 'id')
 CREATE UNIQUE INDEX IF NOT EXISTS users_oauth_identity_idx ON users (oauth_provider, oauth_id) WHERE oauth_provider IS NOT NULL;
+
+-- Token revocation (Phase 3, migration-plan.md item 3). Bumped on
+-- password change so every previously-issued JWT for this user stops
+-- being accepted (requireAuth compares the JWT's own tokenVersion claim
+-- against this column on every request) without needing a separate
+-- denylist table. Every existing token keeps working the moment this
+-- column is added (DEFAULT 1, and every JWT-signing call site now signs
+-- tokenVersion: user.token_version, so a freshly-issued token already
+-- carries 1) -- this is purely additive, nothing existing breaks.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1;
+
+-- Audit trail for settlement/refund status changes (Phase 3,
+-- migration-plan.md item 1). Append-only by convention (application
+-- code only ever INSERTs here, never UPDATEs/DELETEs) -- addresses the
+-- Tampering/Repudiation gap in docs/threat-model.md, where a mistaken
+-- payout-status flip previously overwrote the prior state with no
+-- record it had ever been different.
+CREATE TABLE IF NOT EXISTS mkt_audit_log (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id    UUID NOT NULL,
+  actor_role  TEXT NOT NULL,
+  entity_type TEXT NOT NULL, -- 'settlement' | 'refund'
+  entity_id   UUID NOT NULL,
+  action      TEXT NOT NULL, -- 'status_change' | 'created'
+  before      JSONB,
+  after       JSONB,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON mkt_audit_log(entity_type, entity_id);

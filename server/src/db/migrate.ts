@@ -48,6 +48,7 @@ export async function migrate(): Promise<void> {
     await seedCsvCatalogue();
     await upgradeProductDescriptions();
     await recalibrateProductPrices();
+    await addSettlementUniqueConstraint();
     await seedVehiclesCategoryAndDuty();
     await seedVehicleListings();
     await seedVehiclePartsCategoryAndListings();
@@ -136,6 +137,7 @@ export async function migrate(): Promise<void> {
   await seedCsvCatalogue();
   await upgradeProductDescriptions();
   await recalibrateProductPrices();
+  await addSettlementUniqueConstraint();
   await seedVehiclesCategoryAndDuty();
   await seedVehicleListings();
   await seedVehiclePartsCategoryAndListings();
@@ -797,6 +799,72 @@ async function recalibrateProductPrices(): Promise<void> {
     console.log(`[db]   ...recalibrated ${n} products in category ${categoryId}`);
   }
   console.log(`[db] Recalibrated ${totalUpdated} product prices in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
+}
+
+/**
+ * Adds UNIQUE(order_id, product_id) to mkt_order_line_settlements
+ * (docs/migration-plan.md item 5) -- defensively, not blindly, since a
+ * constraint that fails to apply would crash every future boot the
+ * same way until fixed. Checks for existing duplicate pairs first (the
+ * exact check documented in the migration plan) and, if any exist,
+ * logs them clearly and skips adding the constraint rather than
+ * crashing the app over data that needs a human to resolve. Re-running
+ * this once the constraint already exists is a no-op -- not via a
+ * pre-check against a system catalog (pg_constraint / information_
+ * schema.table_constraints both failed to reflect a freshly-added
+ * constraint under pg-mem, the test database, confirmed directly
+ * before choosing a different approach), but by attempting the ALTER
+ * and treating a Postgres "already exists" error as the expected
+ * no-op case -- no check-then-act race, and directly testable.
+ */
+async function addSettlementUniqueConstraint(): Promise<void> {
+  // Duplicate check computed in JS rather than SQL's GROUP BY ... HAVING
+  // COUNT(*) -- pg-mem (the test database) doesn't fully support HAVING
+  // over an aggregate, a known limitation hit earlier in this codebase
+  // for the same reason (see seedCsvCatalogue's slug-uniqueness check).
+  // Completely standard SQL on real Postgres; this form is chosen so
+  // the check is directly, fully testable rather than only trusted to
+  // work in production.
+  const { rows: allPairs } = await pool!.query(
+    `SELECT order_id, product_id FROM mkt_order_line_settlements`
+  );
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const r of allPairs) {
+    const key = `${r.order_id}:${r.product_id}`;
+    if (seen.has(key)) dupes.add(key);
+    seen.add(key);
+  }
+  if (dupes.size > 0) {
+    console.error(
+      `[db] Found ${dupes.size} duplicate (order_id, product_id) pair(s) in mkt_order_line_settlements — ` +
+      `skipping the unique constraint until these are resolved manually. Duplicates:`,
+      Array.from(dupes)
+    );
+    return;
+  }
+
+  // Attempting the ALTER directly and treating "already exists" as a
+  // normal no-op is more robust than a pre-check against a system
+  // catalog (pg_constraint / information_schema.table_constraints) --
+  // no check-then-act race, and it doesn't depend on those catalogs
+  // being queryable (pg-mem's, notably, don't reliably reflect a
+  // constraint added via ALTER TABLE, confirmed directly before
+  // choosing this approach instead of trusting one that couldn't be
+  // tested at all).
+  try {
+    await pool!.query(
+      `ALTER TABLE mkt_order_line_settlements ADD CONSTRAINT uq_settlement_order_product UNIQUE (order_id, product_id)`
+    );
+    console.log("[db] Added UNIQUE(order_id, product_id) constraint to mkt_order_line_settlements.");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/already exists/i.test(message)) {
+      console.log("[db] Settlement unique constraint already present — skipping.");
+      return;
+    }
+    throw err; // a genuinely unexpected failure should still surface, not be swallowed silently
+  }
 }
 
 async function seedVehiclesCategoryAndDuty(): Promise<void> {

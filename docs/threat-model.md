@@ -9,7 +9,7 @@ here is aspirational.
 | Threat | Mitigation | Status |
 |---|---|---|
 | Forged JWT | HMAC-signed, `MARKETPLACE_JWT_SECRET` (`middleware/auth.ts`) | **Mitigated.** Fails closed in production since Phase 1 (throws at boot if secret missing — see `docs/architecture.md`). |
-| Forged PayFast webhook | Two-layer: signature check (`payfastProcessor.ts: verifyItnSignature`) + server-to-server `confirmWithPayfast` round-trip against PayFast's own servers | **Mitigated**, with a documented gap: no IP-allowlist as a third layer yet (see the in-code comment at `marketplaceRouter.ts:520`, and Phase 0's LOW finding). |
+| Forged PayFast webhook | Two-layer: signature check (`payfastProcessor.ts: verifyItnSignature`) + server-to-server `confirmWithPayfast` round-trip against PayFast's own servers | **Mitigated, and deliberately left at two layers.** A third IP-based layer was researched in Phase 3 and specifically *not* added — PayFast's IPs changed with their 2025 AWS migration and have drifted since, with a documented real-world case of a hardcoded list silently rejecting legitimate payments elsewhere. See `docs/migration-plan.md` item 2. |
 | Forged Google/Facebook identity | Google: real JWKS signature verification via `google-auth-library`. Facebook: token validated by calling Facebook's own Graph API, not trusted client-side | **Mitigated.** Neither route trusts a client-supplied payload without an external round-trip. |
 | Impersonating another user via `:userId` path params | `requireSelf` middleware on cart/wishlist/address routes | **Mitigated** for those routes. **Gap**: `requireSelf`'s presence was verified for cart (Phase 0 grep); not individually re-verified here for every `:userId` route in `customers`, `sellers/by-user`, etc. — worth an explicit pass. |
 
@@ -63,6 +63,6 @@ here is aspirational.
 
 1. **Append-only audit log for settlement/refund status changes** — larger effort, correctly deferred to a later phase, not urgent at current scale.
 2. **Order-tracking lockout** — 10/min rate limit exists (Phase 1), but no lockout after repeated misses against the same order number; low priority given the rate limit already caps the practical attack rate.
-3. **PayFast IP-allowlist** (carried over from Phase 0/1 as a documented, deliberate LOW-severity deferral) — the code's own comment already flags this; still not done.
+3. **PayFast IP-allowlist** — researched in Phase 3 (docs/migration-plan.md item 2): actively researching this changed the recommendation from "add it" to "don't." PayFast's IPs changed with their 2025 AWS migration and have drifted since, with a documented real-world case of a hardcoded list silently rejecting legitimate payments elsewhere. The existing two-layer verification doesn't have that failure mode and is already solid; a third, IP-based layer would trade a currently-reliable check for a less reliable one unless done via live DNS resolution, which needs further confirmation from PayFast's own docs before implementing.
 
 (Two items originally listed here — the ownership-check question and stack-trace exposure — were verified during this phase, not deferred: both check out clean. See Elevation of Privilege and Information Disclosure, above.)

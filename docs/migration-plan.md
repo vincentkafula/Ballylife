@@ -34,18 +34,44 @@ row-level-security lockdown is more machinery than this needs yet.
 
 **Effort**: small. **Risk**: none to existing behavior (pure addition).
 
-## 2. PayFast IP-allowlist (closes the last documented layer)
+## 2. PayFast IP-allowlist — researched in Phase 3, conclusion changed: don't hardcode one
 
-Add a small allowlist check in `payfastProcessor.ts` before (not instead of)
-the existing signature + confirm-round-trip checks. PayFast publishes their
-IP ranges — `TODO(verify)`: pull the current list from PayFast's own
-integration docs at implementation time rather than hardcoding ranges from
-memory here, since IP ranges are exactly the kind of thing that goes stale
-silently.
+Phase 0 flagged this as a small, low-effort addition. Actually researching
+it (rather than assuming) changed that conclusion.
 
-**Effort**: small. **Risk**: low, as long as the ranges are kept current —
-a stale allowlist would start rejecting real PayFast traffic, so this needs
-a "how to update" note in the README, not just the code.
+PayFast migrated their payment API from on-premises to AWS by 31 July 2025,
+which changed their outbound IPs. Real-world evidence from the WooCommerce
+PayFast plugin's issue tracker: a hardcoded IP list there was missing 19 of
+81 documented addresses, causing legitimate ITNs to be silently rejected
+and paid orders to auto-cancel — a customer was charged and their order
+still failed. A separate support thread shows PayFast extending their
+range again afterward (adding `197.97.145.144/28` and others) with
+integrators having to catch up. This is not a one-time staleness risk,
+it's an ongoing one.
+
+**Revised recommendation: don't add a static hardcoded list.** The
+existing two-layer verification (signature check + server-to-server
+`confirmWithPayfast` round-trip against PayFast's own servers) doesn't
+depend on IPs at all and doesn't have this staleness failure mode — it's
+already solid without a third layer that introduces a new way to reject
+real payments. If a third layer is still wanted later, the pattern PayFast
+integrators actually use is DNS-based, not a static list: resolve
+PayFast's published hostnames (their support docs list
+`payment.payfast.io`, `api.payfast.io`, `api.payfast.co.za`, among others)
+at request time or on a refresh interval, the same "hostname lookup can
+only widen the accepted set, never shrink it" approach the WooCommerce
+plugin settled on after their incident.
+
+`TODO(verify)`: this research did not turn up which of PayFast's several
+hostnames is specifically the ITN *sender* (vs. ones Ballylife would call
+outbound to reach their API) — that distinction matters and needs
+confirming against PayFast's own current integration docs, not a third
+party's plugin code, before implementing even the DNS-based version.
+
+**Effort**: none right now (deliberately not implemented). **Risk of the
+original plan, now avoided**: a stale static list would have been a
+regression — trading a currently-solid two-layer check for a three-layer
+one that's worse in practice.
 
 ## 3. Token revocation (closes the Elevation-of-Privilege gap on role changes)
 

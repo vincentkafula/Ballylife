@@ -139,3 +139,75 @@ describe("Google/Facebook sign-in -- not configured (this file's real, current e
     expect(res.body.success).toBe(false);
   });
 });
+
+describe("Token revocation via token_version (Phase 3)", () => {
+  it("a freshly-issued token works on a protected route", async () => {
+    const reg = await request(app).post("/api/auth/register").send({
+      username: "revoketest1", password: "SecurePass123", name: "Revoke Test", email: "revoketest1@example.com", role: "customer",
+    });
+    const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${reg.body.data.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.username).toBe("revoketest1");
+  });
+
+  it("changing password invalidates the old token but the newly-returned token still works", async () => {
+    const reg = await request(app).post("/api/auth/register").send({
+      username: "revoketest2", password: "OldPass123", name: "Revoke Test 2", email: "revoketest2@example.com", role: "customer",
+    });
+    const oldToken = reg.body.data.token;
+
+    const changeRes = await request(app).post("/api/auth/change-password")
+      .set("Authorization", `Bearer ${oldToken}`)
+      .send({ currentPassword: "OldPass123", newPassword: "NewPass456" });
+    expect(changeRes.status).toBe(200);
+    const newToken = changeRes.body.data.token;
+    expect(newToken).toBeTruthy();
+    expect(newToken).not.toBe(oldToken);
+
+    // The old token -- still cryptographically valid, unexpired -- is
+    // now rejected because its tokenVersion no longer matches the row.
+    const oldTokenRes = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${oldToken}`);
+    expect(oldTokenRes.status).toBe(401);
+
+    // The token handed back in the same response still works -- the
+    // user's own current session isn't logged out by their own change.
+    const newTokenRes = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${newToken}`);
+    expect(newTokenRes.status).toBe(200);
+  });
+
+  it("resetting password via the forgot-password flow invalidates any existing token", async () => {
+    const reg = await request(app).post("/api/auth/register").send({
+      username: "revoketest3", password: "OldPass123", name: "Revoke Test 3", email: "revoketest3@example.com", role: "customer",
+    });
+    const oldToken = reg.body.data.token;
+    const userId = reg.body.data.user.id;
+
+    // password_reset_tokens stores only the SHA-256 hash of the raw
+    // token (correctly -- same reason password_hash isn't the raw
+    // password), so there's no way to recover a route-generated raw
+    // token from the DB, same constraint the existing forgot-password
+    // test above already works around. Rather than stop short of
+    // testing the actual reset-password route, insert a token whose
+    // raw/hash pair is known, exercising the real route end-to-end
+    // instead of only checking that *a* token record was created.
+    const crypto = await import("crypto");
+    const rawToken = "test-raw-reset-token-12345";
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    await pool.query(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '1 hour')`,
+      [userId, tokenHash]
+    );
+
+    const before = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${oldToken}`);
+    expect(before.status).toBe(200); // still valid before the reset completes
+
+    const resetRes = await request(app).post("/api/auth/reset-password").send({ token: rawToken, newPassword: "BrandNewPass789" });
+    expect(resetRes.status).toBe(200);
+
+    const after = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${oldToken}`);
+    expect(after.status).toBe(401); // the pre-reset token no longer works
+
+    const loginWithNewPassword = await request(app).post("/api/auth/login").send({ username: "revoketest3", password: "BrandNewPass789" });
+    expect(loginWithNewPassword.status).toBe(200);
+  });
+});

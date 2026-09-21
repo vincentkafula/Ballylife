@@ -92,6 +92,25 @@ async function requireCreditOwner(req: Request, res: Response, next: NextFunctio
   next();
 }
 
+// Append-only audit trail for settlement/refund changes (docs/migration-
+// plan.md item 1) -- addresses the Tampering/Repudiation gap in
+// docs/threat-model.md, where a status flip previously overwrote the
+// prior state with no record it had ever been different. Takes either
+// `pool` or an in-transaction `client` so callers already inside a
+// BEGIN/COMMIT (like the refund route) can log atomically with the
+// change itself, rather than as a separate, possibly-inconsistent write.
+async function writeAuditLog(
+  db: { query: (text: string, params?: unknown[]) => Promise<unknown> },
+  actorId: string, actorRole: string, entityType: string, entityId: string, action: string,
+  before: unknown, after: unknown
+): Promise<void> {
+  await db.query(
+    `INSERT INTO mkt_audit_log (actor_id, actor_role, entity_type, entity_id, action, before, after)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [actorId, actorRole, entityType, entityId, action, JSON.stringify(before), JSON.stringify(after)]
+  );
+}
+
 const router: ReturnType<typeof Router> = Router();
 
 // index.ts's general 300/min limiter covers every route by default, but
@@ -528,15 +547,16 @@ router.post("/cart/:userId/coupon", requireAuth, requireSelf, async (req: Reques
 // 5xx here would just cause a hammering retry loop for a problem on our
 // side, not theirs.
 //
-// Signature check is the first of PayFast's two recommended layers — a
-// source-IP allowlist against PayFast's published ranges (or the second
-// POST-back to their /eng/query/validate endpoint) isn't implemented
-// here yet; add one before relying on this for real payments.
 // Signature check is the first of PayFast's two recommended layers; the
 // server-to-server confirmWithPayfast round-trip below is the second —
 // together they mean a forged request can't be accepted just by
 // replicating the signature formula, it has to actually be echoed back
-// as valid by PayFast's own servers.
+// as valid by PayFast's own servers. A third, IP-based layer was
+// researched and deliberately not added (docs/migration-plan.md item 2):
+// PayFast's IPs changed with their 2025 AWS migration and have drifted
+// since, with a documented real-world case elsewhere of a hardcoded
+// list silently rejecting legitimate payments. These two layers don't
+// have that staleness failure mode and are trusted as sufficient.
 router.post("/payfast/notify", async (req: Request, res: Response): Promise<void> => {
   try {
     const body = req.body as Record<string, string>;
@@ -701,6 +721,7 @@ router.post("/admin/orders/:id/refund", requireAuth, requireRole(...MANAGER_ROLE
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [order.id, productId ?? null, refundQuantity, amount, reason ?? null, processorRefundStatus, processorRefundRef, req.user!.userId]
     );
+    await writeAuditLog(client, req.user!.userId, req.user!.role, "refund", refundRows[0].id, "created", null, refundRows[0]);
 
     const newRefundedTotal = +(Number(order.refunded_amount ?? 0) + amount).toFixed(2);
     const fullyRefunded = newRefundedTotal >= Number(order.total_amount) - 0.01;
@@ -1462,7 +1483,7 @@ router.post("/sellers/register", async (req: Request, res: Response): Promise<vo
       [sellerId, user.id, storeName, slug, description ?? "", email, phone ?? "", taxId ?? null, JSON.stringify(applicationData ?? {})]
     );
     await client.query("COMMIT");
-    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.status(201).json({
       success: true, token,
       user: { id: user.id, username: user.username, name: user.name, email: user.email, role: user.role },
@@ -2575,6 +2596,9 @@ router.get("/admin/settlements", requireAuth, requireRole(...MANAGER_ROLES), asy
 
 router.patch("/admin/settlements/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { supplierPayoutStatus, sellerPayoutStatus, supplierPayoutReference, sellerPayoutReference } = req.body;
+  const { rows: beforeRows } = await pool!.query(`SELECT * FROM mkt_order_line_settlements WHERE id::text = $1`, [req.params.id]);
+  if (!beforeRows.length) { res.status(404).json({ success: false, error: "Settlement not found" }); return; }
+  const before = beforeRows[0];
   const sets: string[] = []; const vals: unknown[] = [];
   if (supplierPayoutStatus !== undefined) {
     vals.push(supplierPayoutStatus); sets.push(`supplier_payout_status = $${vals.length}`);
@@ -2590,6 +2614,7 @@ router.patch("/admin/settlements/:id", requireAuth, requireRole(...MANAGER_ROLES
   vals.push(req.params.id);
   const { rows } = await pool!.query(`UPDATE mkt_order_line_settlements SET ${sets.join(", ")} WHERE id::text = $${vals.length} RETURNING *`, vals);
   if (!rows.length) { res.status(404).json({ success: false, error: "Settlement not found" }); return; }
+  await writeAuditLog(pool!, req.user!.userId, req.user!.role, "settlement", rows[0].id, "status_change", before, rows[0]);
   res.json({ success: true, data: mapSettlement(rows[0]) });
 });
 

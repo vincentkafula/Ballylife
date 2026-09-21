@@ -89,7 +89,7 @@ router.post("/google", async (req: Request, res: Response): Promise<void> => {
 
     const user = await findOrCreateOauthUser("google", payload.sub, payload.email, payload.name ?? "");
     await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
-    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.json({ success: true, data: { token, user: mapUser(user) } });
   } catch (err) {
     console.error("[auth] Google sign-in failed:", err);
@@ -124,7 +124,7 @@ router.post("/facebook", async (req: Request, res: Response): Promise<void> => {
 
     const user = await findOrCreateOauthUser("facebook", profile.id, profile.email, profile.name ?? "");
     await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
-    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.json({ success: true, data: { token, user: mapUser(user) } });
   } catch (err) {
     console.error("[auth] Facebook sign-in failed:", err);
@@ -157,7 +157,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     [username, passwordHash, name, email]
   );
   const user = rows[0];
-  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
   res.status(201).json({ success: true, data: { token, user: mapUser(user) } });
 });
 
@@ -177,7 +177,7 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
   }
 
   await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
-  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
   res.json({ success: true, data: { token, user: mapUser(user) } });
 });
 
@@ -208,8 +208,22 @@ router.post("/change-password", requireAuth, async (req: Request, res: Response)
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await pool!.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, user.id]);
-  res.json({ success: true, message: "Password updated successfully" });
+  // Bumping token_version invalidates every other token issued for this
+  // account (e.g. a session on another device) the moment this request
+  // completes -- the whole point of a password change, security-wise.
+  // Re-signing a fresh token for *this* response means the current
+  // session doesn't get logged out from under the user for the same
+  // reason; only sessions elsewhere are affected.
+  const { rows: updatedRows } = await pool!.query(
+    `UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2 RETURNING *`,
+    [passwordHash, user.id]
+  );
+  const updatedUser = updatedRows[0];
+  const token = jwt.sign(
+    { userId: updatedUser.id, username: updatedUser.username, role: updatedUser.role, tokenVersion: updatedUser.token_version },
+    JWT_SECRET, { expiresIn: JWT_EXPIRES }
+  );
+  res.json({ success: true, message: "Password updated successfully", data: { token } });
 });
 
 // ── Forgot password ─────────────────────────────────────────────────────
@@ -262,7 +276,10 @@ router.post("/reset-password", async (req: Request, res: Response): Promise<void
   const resetRow = rows[0];
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await pool!.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, resetRow.user_id]);
+  // Bumps token_version too -- a forgot-password reset is exactly the
+  // case where any existing session (possibly the compromised one that
+  // prompted the reset) should stop working, not just the password.
+  await pool!.query(`UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2`, [passwordHash, resetRow.user_id]);
   await pool!.query(`UPDATE password_reset_tokens SET used_at = now() WHERE id = $1`, [resetRow.id]);
   res.json({ success: true, message: "Password reset successfully — you can now sign in with your new password." });
 });
