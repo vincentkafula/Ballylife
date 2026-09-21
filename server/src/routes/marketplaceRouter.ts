@@ -9,6 +9,7 @@ import { verifyItnSignature, confirmWithPayfast } from "../services/payfastProce
 import { sendOrderConfirmationEmail } from "../services/emailService";
 import { parseCsv } from "../utils/csv";
 import { calculateVat, convertToZar, calculatePercentageDuty, calculateZmVehicleDuty, calculatePlatformFee, calculateSellerPayout, zmVehicleAgeBand, round2 } from "../utils/pricing";
+import { logger } from "../utils/logger";
 import { checkVehicleCompliance } from "../utils/compliance";
 import { SUPPLIER_ORDER_TRANSITIONS, CUSTOMS_RECORD_TRANSITIONS, canTransition, allowedNextStates } from "../utils/stateMachine";
 import { recalcCartTotals } from "../utils/cart";
@@ -561,13 +562,13 @@ router.post("/payfast/notify", async (req: Request, res: Response): Promise<void
   try {
     const body = req.body as Record<string, string>;
     if (!verifyItnSignature(body)) {
-      console.error("[payfast] ITN signature mismatch — rejecting", { m_payment_id: body?.m_payment_id });
+      logger.warn("payfast.itn_signature_mismatch", { paymentId: body?.m_payment_id });
       res.status(400).send("invalid signature");
       return;
     }
     const rawBody = (req as Request & { rawBody?: string }).rawBody;
     if (!rawBody || !(await confirmWithPayfast(rawBody))) {
-      console.error("[payfast] Validate callback did not confirm — rejecting", { m_payment_id: body?.m_payment_id });
+      logger.warn("payfast.itn_not_confirmed_by_payfast", { paymentId: body?.m_payment_id });
       res.status(400).send("not confirmed by payfast");
       return;
     }
@@ -579,7 +580,7 @@ router.post("/payfast/notify", async (req: Request, res: Response): Promise<void
       `UPDATE mkt_pay_transactions SET status = $1, webhook_received_at = now() WHERE processor_ref = $2 RETURNING order_id`,
       [newStatus, processorRef]
     );
-    if (!txRows.length) { console.error("[payfast] No matching transaction for", processorRef); res.status(200).send("OK"); return; }
+    if (!txRows.length) { logger.error("payfast.itn_no_matching_transaction", { processorRef }); res.status(200).send("OK"); return; }
     const orderId = txRows[0].order_id;
 
     if (newStatus === "confirmed") {
@@ -589,7 +590,7 @@ router.post("/payfast/notify", async (req: Request, res: Response): Promise<void
     }
     res.status(200).send("OK");
   } catch (err) {
-    console.error("[payfast] ITN handling failed:", err);
+    logger.error("payfast.itn_handling_failed", { error: err instanceof Error ? err.message : String(err) });
     res.status(200).send("OK"); // still 200 -- see comment above on why
   }
 });

@@ -7,7 +7,7 @@ import authRouter from "./routes/authRouter";
 import marketplaceRouter from "./routes/marketplaceRouter";
 import geoRouter from "./routes/geoRouter";
 import { migrate } from "./db/migrate";
-import { hasDb } from "./db/pool";
+import { hasDb, pool } from "./db/pool";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -52,8 +52,28 @@ app.use(rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHea
 // login attempts cheap; this caps login/register attempts specifically.
 app.use("/api/auth", rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false }));
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", db: hasDb, service: "ballylife-backend" });
+const startedAt = Date.now();
+app.get("/health", async (_req, res) => {
+  // Deliberately still always 200 -- this endpoint doubles as Railway's
+  // own container healthcheck (server/Dockerfile's HEALTHCHECK), and
+  // changing that to fail on a transient DB blip risks an unwanted
+  // restart loop rather than the observability improvement this is
+  // meant to be. dbReachable is enrichment for a human or monitoring
+  // tool to read, not a signal for the orchestrator to act on.
+  let dbReachable = false;
+  if (hasDb && pool) {
+    try {
+      await pool.query("SELECT 1");
+      dbReachable = true;
+    } catch {
+      dbReachable = false;
+    }
+  }
+  res.json({
+    status: "ok", db: hasDb, dbReachable, service: "ballylife-backend",
+    uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.use("/api/auth", authRouter);
