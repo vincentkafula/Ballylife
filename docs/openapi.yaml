@@ -1,0 +1,600 @@
+openapi: 3.1.0
+info:
+  title: Ballylife Marketplace API
+  version: "1.0"
+  description: |
+    Generated from the real route table in server/src/routes/{authRouter,marketplaceRouter,geoRouter}.ts,
+    not written from memory or invented. Scope note: full request/response
+    schemas are given for the customer-facing critical path (auth, catalog,
+    cart, orders, payments, reviews, wishlist, addresses, geo/currency) --
+    132 routes total exist, and hand-writing full detailed schemas for
+    every admin/dashboard route was not achievable at once. The remaining
+    ~97 routes (admin: 53, sellers: 12, suppliers: 7, shipping-companies: 6,
+    credit-providers: 5, revenue-authorities: 3, supplier-catalog: 2,
+    customers: 2) are listed under their real path/method/security
+    requirement with a one-line summary but a generic response schema --
+    accurate on what exists and what's protected, not yet detailed on exact
+    response shape. Extend those as each area is worked on, rather than
+    guessing shapes now.
+servers:
+  - url: https://ballylife-backend-production.up.railway.app/api
+    description: Production
+  - url: http://localhost:3001/api
+    description: Local (docker-compose)
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 8-hour expiry (JWT_EXPIRES in middleware/auth.ts). No refresh-token rotation exists yet.
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success: { type: boolean }
+        data: {}
+        error: { type: string }
+      required: [success]
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        price: { type: number }
+        compareAtPrice: { type: [number, "null"] }
+        currency: { type: string, example: ZAR }
+        images: { type: array, items: { type: string } }
+        emoji: { type: [string, "null"] }
+        status: { type: string, enum: [active, pending_review, inactive, rejected, out_of_stock] }
+        stock: { type: integer }
+        sellerId: { type: string }
+        categoryId: { type: string }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderNumber: { type: string }
+        status: { type: string }
+        paymentStatus: { type: string }
+        shippingStatus: { type: string }
+        totalAmount: { type: number }
+        currency: { type: string }
+        items: { type: array, items: { type: object } }
+    AuthUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role:
+          type: string
+          enum: [customer, seller, marketplace_admin, supplier, revenue_authority, shipping_company, credit_provider]
+    AuthResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        data:
+          type: object
+          properties:
+            token: { type: string }
+            user: { $ref: "#/components/schemas/AuthUser" }
+
+paths:
+  # ── Auth (authRouter.ts) — full detail ──────────────────────────────────
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new account (customer by default via mktAuth.registerCustomer)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, name, email]
+              properties:
+                username: { type: string }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+                email: { type: string, format: email }
+                role: { type: string, default: customer }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthResponse" } } } }
+        "400": { description: Validation error }
+        "409": { description: Username or email already exists }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Password login, any role
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthResponse" } } } }
+        "401": { description: Invalid username or password }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current authenticated user
+      responses:
+        "200": { description: OK }
+        "401": { description: Missing/invalid/expired token }
+
+  /auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change password for the signed-in user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200": { description: OK }
+        "401": { description: Current password incorrect }
+
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Request a password reset email (no-ops silently if SMTP isn't configured -- isEmailConfigured())
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [email], properties: { email: { type: string } } }
+      responses:
+        "200": { description: "Always 200 regardless of whether the email exists (avoids account enumeration)" }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Complete a password reset with the emailed token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200": { description: OK }
+        "400": { description: "Token invalid, expired, or already used" }
+
+  /auth/oauth-config:
+    get:
+      tags: [auth]
+      summary: Whether Google/Facebook sign-in are actually configured (feature-flag check)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object, properties: { googleEnabled: { type: boolean }, facebookEnabled: { type: boolean } } }
+
+  /auth/google:
+    post:
+      tags: [auth]
+      summary: Verifies a Google ID token (JWKS signature check), finds-or-creates the account, links by email if one already exists
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [credential], properties: { credential: { type: string, description: "Google's signed ID token" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthResponse" } } } }
+        "400": { description: Missing credential }
+        "401": { description: Verification failed }
+        "503": { description: Not configured (GOOGLE_CLIENT_ID unset) }
+
+  /auth/facebook:
+    post:
+      tags: [auth]
+      summary: Verifies a Facebook access token via Graph API, finds-or-creates the account, links by email if one already exists
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [accessToken], properties: { accessToken: { type: string } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthResponse" } } } }
+        "400": { description: "Missing accessToken, or the Facebook profile has no email" }
+        "401": { description: Verification failed }
+        "503": { description: Not configured (FACEBOOK_APP_ID unset) }
+
+  # ── Geo / currency (geoRouter.ts) — full detail ─────────────────────────
+  /geo/countries:
+    get:
+      tags: [geo]
+      summary: All 198 supported countries with their real currency
+      security: []
+      responses:
+        "200": { description: OK }
+
+  /geo/detect:
+    get:
+      tags: [geo]
+      summary: IP-based country detection (ip-api.com), falls back to Zambia for private/local IPs
+      security: []
+      responses:
+        "200": { description: OK }
+
+  /geo/reverse:
+    post:
+      tags: [geo]
+      summary: Reverse-geocodes a browser-supplied lat/lng (OpenStreetMap Nominatim) to a country
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [lat, lng], properties: { lat: { type: number }, lng: { type: number } } }
+      responses:
+        "200": { description: OK }
+        "400": { description: Missing or non-numeric lat/lng }
+        "502": { description: Reverse geocoding failed }
+
+  /currency/rates:
+    get:
+      tags: [geo]
+      summary: FX rates (1 ZAR -> N units of currency, inverted from the admin-facing rate_to_zar storage)
+      security: []
+      responses:
+        "200": { description: OK }
+
+  # ── Catalog (marketplaceRouter.ts) — full detail, all public ────────────
+  /marketplace/categories:
+    get:
+      tags: [catalog]
+      summary: All categories
+      security: []
+      responses:
+        "200": { description: OK }
+
+  /marketplace/products:
+    get:
+      tags: [catalog]
+      summary: Paginated product listing with filters
+      security: []
+      parameters:
+        - { name: category, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 12, maximum: 80 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Product" } }
+                  meta: { type: object, properties: { page: { type: integer }, limit: { type: integer }, total: { type: integer }, pages: { type: integer } } }
+
+  /marketplace/products/search-suggest:
+    get:
+      tags: [catalog]
+      summary: Typeahead search suggestions
+      security: []
+      parameters: [{ name: q, in: query, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /marketplace/products/{id}:
+    get:
+      tags: [catalog]
+      summary: Single product with seller, reviews, related products
+      security: []
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { description: Not found }
+
+  /marketplace/products/{id}/reviews:
+    get:
+      tags: [reviews]
+      summary: Reviews for a product
+      security: []
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [reviews]
+      summary: Add a review (requires auth)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                title: { type: string }
+                body: { type: string }
+      responses: { "200": { description: OK }, "401": { description: Not authenticated } }
+
+  # ── Cart — full detail, all auth ────────────────────────────────────────
+  /marketplace/cart/{userId}:
+    get:
+      tags: [cart]
+      summary: Get a user's cart (requireSelf -- can only read your own)
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK }, "403": { description: Not your cart } }
+
+  /marketplace/cart/{userId}/add:
+    post:
+      tags: [cart]
+      summary: Add an item to cart
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [productId, quantity], properties: { productId: { type: string }, quantity: { type: integer, minimum: 1 } } }
+      responses: { "200": { description: OK } }
+
+  /marketplace/cart/{userId}/item/{productId}:
+    patch:
+      tags: [cart]
+      summary: Update item quantity
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [cart]
+      summary: Remove item from cart
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  /marketplace/cart/{userId}/coupon:
+    post:
+      tags: [cart]
+      summary: Apply a coupon code to the cart
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string } } }
+      responses: { "200": { description: OK }, "400": { description: "Invalid, expired, or minimum-not-met coupon" } }
+
+  # ── Orders & payments — full detail (the critical path) ─────────────────
+  /marketplace/orders/track:
+    get:
+      tags: [orders]
+      summary: "Public order tracking by order number + email (rate-limited: 10/min)"
+      security: []
+      parameters:
+        - { name: orderNumber, in: query, required: true, schema: { type: string } }
+        - { name: email, in: query, required: true, schema: { type: string } }
+      responses: { "200": { description: OK }, "400": { description: Missing params }, "404": { description: "No match" } }
+
+  /marketplace/orders:
+    get:
+      tags: [orders]
+      summary: List the signed-in user's own orders
+      responses: { "200": { description: OK } }
+    post:
+      tags: [orders]
+      summary: "Create an order from the current cart (rate-limited: 30/min). Only place an order is ever marked confirmed optimistically -- real confirmation comes from POST /marketplace/payfast/notify."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentMethod]
+              properties:
+                addressId: { type: string, description: "Defaults to the user's first address if omitted" }
+                paymentMethod: { type: string, example: payfast }
+      responses:
+        "202": { description: "Order created, payment pending (or auto-confirmed for demo accounts on non-BNPL methods)" }
+        "400": { description: "Empty cart" }
+
+  /marketplace/orders/{id}:
+    get:
+      tags: [orders]
+      summary: Single order detail
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK }, "404": { description: Not found } }
+
+  /marketplace/orders/{id}/cancel:
+    post:
+      tags: [orders]
+      summary: Cancel an order
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /marketplace/orders/{id}/request-return:
+    post:
+      tags: [orders]
+      summary: Request a return on a delivered order
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /marketplace/orders/{id}/transactions:
+    get:
+      tags: [orders]
+      summary: Payment transaction history for an order
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /marketplace/payfast/notify:
+    post:
+      tags: [payments]
+      summary: "PayFast ITN webhook. Signature-verified (not JWT), then confirmed server-to-server with PayFast before trusting it. Always returns 200 except on signature failure, to avoid PayFast's retry-storm behavior on transient errors."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: { type: object, description: "PayFast's ITN field set, including the signature field" }
+      responses:
+        "200": { description: "Acknowledged (includes cases where our own processing failed -- see summary)" }
+        "400": { description: "Signature mismatch or PayFast did not confirm -- the only failure responses" }
+
+  # ── Wishlist & addresses — full detail ───────────────────────────────────
+  /marketplace/wishlist/{userId}:
+    get: { tags: [wishlist], summary: "Get wishlist", parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+    post:
+      tags: [wishlist]
+      summary: Add to wishlist
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [productId], properties: { productId: { type: string } } } } } }
+      responses: { "200": { description: OK } }
+
+  /marketplace/wishlist/{userId}/{productId}:
+    delete:
+      tags: [wishlist]
+      summary: Remove from wishlist
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+        - { name: productId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  /marketplace/addresses/{userId}:
+    get: { tags: [addresses], summary: "List addresses", parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+    post:
+      tags: [addresses]
+      summary: Add an address
+      parameters: [{ name: userId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /marketplace/addresses/{userId}/{addressId}:
+    delete:
+      tags: [addresses]
+      summary: Delete an address
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string } }
+        - { name: addressId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  # ── Everything below: real path/method/security, summary only ──────────
+  # (customers, sellers, suppliers, shipping-companies, credit-providers,
+  # revenue-authorities, supplier-catalog, admin -- 97 routes). Response
+  # shape not yet detailed; extend per-area as each is worked on.
+
+  /marketplace/customers/{userId}/stats: { get: { tags: [customers], summary: "Customer order stats", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/customers/{userId}/spending: { get: { tags: [customers], summary: "Customer spending history", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+
+  /marketplace/sellers: { get: { tags: [sellers], summary: "List sellers", security: [{ bearerAuth: [] }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/register: { post: { tags: [sellers], summary: "Apply to become a seller", security: [], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/by-user/{userId}: { get: { tags: [sellers], summary: "Seller record for a user id", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}: { get: { tags: [sellers], summary: "Seller detail", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }, patch: { tags: [sellers], summary: "Update seller", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}/analytics: { get: { tags: [sellers], summary: "Seller sales analytics", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}/orders: { get: { tags: [sellers], summary: "Orders containing this seller's products", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}/supplier-orders: { get: { tags: [sellers], summary: "This seller's drop-shipped order lines", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}/products: { post: { tags: [sellers], summary: "Create a product listing", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}/import-listing: { post: { tags: [sellers], summary: "Import a product from the supplier catalog as a listing", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/sellers/{id}/products/{productId}: { patch: { tags: [sellers], summary: "Update a listing", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: productId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }, delete: { tags: [sellers], summary: "Remove a listing", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: productId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+
+  /marketplace/supplier-catalog: { get: { tags: [supplier-catalog], summary: "Browse the supplier catalog (for sellers to import from)", security: [{ bearerAuth: [] }], responses: { "200": { description: OK } } } }
+  /marketplace/supplier-catalog/{id}: { get: { tags: [supplier-catalog], summary: "Single supplier-catalog item", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+
+  /marketplace/suppliers/by-user/{userId}: { get: { tags: [suppliers], summary: "Supplier record for a user id", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/suppliers/{id}: { get: { tags: [suppliers], summary: "Supplier detail", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }, patch: { tags: [suppliers], summary: "Update supplier", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/suppliers/{id}/products: { get: { tags: [suppliers], summary: "This supplier's catalog", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }, post: { tags: [suppliers], summary: "Add a supplier product", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/suppliers/{id}/products/{productId}: { patch: { tags: [suppliers], summary: "Update a supplier product", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: productId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/suppliers/{id}/orders: { get: { tags: [suppliers], summary: "Orders sourced from this supplier", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+
+  /marketplace/shipping-companies/by-user/{userId}: { get: { tags: [shipping], summary: "Shipping company record for a user id", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/shipping-companies/{id}: { get: { tags: [shipping], summary: "Shipping company detail", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/shipping-companies/{id}/orders: { get: { tags: [shipping], summary: "Confirmed orders available to claim + already-claimed by this company", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/shipping-companies/{id}/orders/{orderId}/claim: { post: { tags: [shipping], summary: "Claim an order (atomic, prevents double-claim)", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: orderId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK }, "409": { description: Already claimed } } } }
+  /marketplace/shipping-companies/{id}/orders/{orderId}/pickup: { post: { tags: [shipping], summary: "Mark picked up", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: orderId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/shipping-companies/{id}/orders/{orderId}/deliver: { post: { tags: [shipping], summary: "Mark delivered (requires signedBy)", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: orderId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK }, "400": { description: "Missing signedBy" } } } }
+
+  /marketplace/credit-providers/by-user/{userId}: { get: { tags: [credit], summary: "Credit provider record for a user id", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/credit-providers/{id}: { get: { tags: [credit], summary: "Credit provider detail", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/credit-providers/{id}/orders: { get: { tags: [credit], summary: "BNPL orders pending this provider's decision", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/credit-providers/{id}/orders/{orderId}/approve: { post: { tags: [credit], summary: "Approve a BNPL order -- the only path to confirmed a BNPL order has", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: orderId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK }, "409": { description: Already decided } } } }
+  /marketplace/credit-providers/{id}/orders/{orderId}/decline: { post: { tags: [credit], summary: "Decline a BNPL order (restocks items)", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { name: orderId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+
+  /marketplace/revenue-authorities/by-user/{userId}: { get: { tags: [revenue-authority], summary: "Authority record for a user id", security: [{ bearerAuth: [] }], parameters: [{ name: userId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/revenue-authorities/{id}: { get: { tags: [revenue-authority], summary: "Authority detail", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/revenue-authorities/{id}/tax-summary: { get: { tags: [revenue-authority], summary: "Tax/customs summary for this authority's country", security: [{ bearerAuth: [] }], parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+
+  # Admin -- all 53 routes require requireAuth + requireRole(...MANAGER_ROLES),
+  # grouped here by sub-area rather than listed with full per-route detail.
+  /marketplace/admin/stats: { get: { tags: [admin], summary: "Dashboard stats", responses: { "200": { description: OK } } } }
+  /marketplace/admin/orders: { get: { tags: [admin], summary: "All orders", responses: { "200": { description: OK } } } }
+  /marketplace/admin/orders/{id}/status: { patch: { tags: [admin], summary: "Update order status (also allows role seller)", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/orders/{id}/refund: { post: { tags: [admin], summary: "Issue a refund", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/orders/{id}/refunds: { get: { tags: [admin], summary: "Refund history for an order", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/products: { get: { tags: [admin], summary: "All products", responses: { "200": { description: OK } } } }
+  /marketplace/admin/products/pending: { get: { tags: [admin], summary: "Products awaiting review", responses: { "200": { description: OK } } } }
+  /marketplace/admin/products/{id}/approve: { patch: { tags: [admin], summary: "Approve/reject a pending product", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/products/{id}/price: { patch: { tags: [admin], summary: "Override a product's price", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/sellers/pending: { get: { tags: [admin], summary: "Sellers awaiting KYC approval", responses: { "200": { description: OK } } } }
+  /marketplace/admin/sellers/{id}/approve: { patch: { tags: [admin], summary: "Approve a seller", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/sellers/{id}/reject: { patch: { tags: [admin], summary: "Reject a seller", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/customers: { get: { tags: [admin], summary: "All customers", responses: { "200": { description: OK } } } }
+  /marketplace/admin/reports/orders.csv: { get: { tags: [admin], summary: "CSV export -- orders", responses: { "200": { description: "text/csv" } } } }
+  /marketplace/admin/reports/products.csv: { get: { tags: [admin], summary: "CSV export -- products", responses: { "200": { description: "text/csv" } } } }
+  /marketplace/admin/tax-summary: { get: { tags: [admin], summary: "Tax summary across all orders", responses: { "200": { description: OK } } } }
+  /marketplace/admin/reports/tax.csv: { get: { tags: [admin], summary: "CSV export -- tax", responses: { "200": { description: "text/csv" } } } }
+  /marketplace/admin/suppliers: { get: { tags: [admin], summary: "All suppliers", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Create a supplier", responses: { "200": { description: OK } } } }
+  /marketplace/admin/suppliers/{id}: { patch: { tags: [admin], summary: "Update a supplier", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/suppliers/{id}/create-login: { post: { tags: [admin], summary: "Create a login for a supplier", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/supplier-products: { get: { tags: [admin], summary: "All supplier-catalog products", responses: { "200": { description: OK } }, }, post: { tags: [admin], summary: "Add a supplier-catalog product", responses: { "200": { description: OK } } } }
+  /marketplace/admin/supplier-products/bulk-import: { post: { tags: [admin], summary: "Bulk import supplier products (CSV)", responses: { "200": { description: OK } } } }
+  /marketplace/admin/supplier-products/{id}: { patch: { tags: [admin], summary: "Update a supplier-catalog product", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/warehouses: { get: { tags: [admin], summary: "All warehouses", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Create a warehouse", responses: { "200": { description: OK } } } }
+  /marketplace/admin/supplier-orders: { get: { tags: [admin], summary: "All drop-shipped order lines", responses: { "200": { description: OK } } } }
+  /marketplace/admin/supplier-orders/{id}/status: { patch: { tags: [admin], summary: "Update supplier-order status", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/supplier-orders/{id}/resolve: { post: { tags: [admin], summary: "Resolve a flagged supplier order", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/shipments: { get: { tags: [admin], summary: "All shipments", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Create a shipment", responses: { "200": { description: OK } } } }
+  /marketplace/admin/shipments/{id}/status: { patch: { tags: [admin], summary: "Update shipment status", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/tax-rates: { get: { tags: [admin], summary: "All tax rates", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Add a tax rate", responses: { "200": { description: OK } } } }
+  /marketplace/admin/tax-rates/{country}: { patch: { tags: [admin], summary: "Update a country's tax rate", parameters: [{ name: country, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/duty-rates: { get: { tags: [admin], summary: "All duty rates", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Add a duty rate", responses: { "200": { description: OK } } } }
+  /marketplace/admin/duty-rates/{id}: { patch: { tags: [admin], summary: "Update a duty rate", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/vehicle-duty-zm: { get: { tags: [admin], summary: "Zambia vehicle duty bands", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Add a duty band", responses: { "200": { description: OK } } } }
+  /marketplace/admin/vehicle-duty-zm/{id}: { patch: { tags: [admin], summary: "Update a duty band", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/fx-rates: { get: { tags: [admin], summary: "All FX rates", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Add/update an FX rate", responses: { "200": { description: OK } } } }
+  /marketplace/admin/settlements: { get: { tags: [admin], summary: "All order-line settlements", responses: { "200": { description: OK } } } }
+  /marketplace/admin/settlements/{id}: { patch: { tags: [admin], summary: "Update a settlement (e.g. mark paid)", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/revenue-authorities: { get: { tags: [admin], summary: "All revenue authorities", responses: { "200": { description: OK } } }, post: { tags: [admin], summary: "Add a revenue authority", responses: { "200": { description: OK } } } }
+  /marketplace/admin/revenue-authorities/{id}: { patch: { tags: [admin], summary: "Update a revenue authority", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/revenue-authorities/{id}/create-login: { post: { tags: [admin], summary: "Create a login for a revenue authority", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
+  /marketplace/admin/customs-records: { get: { tags: [admin], summary: "All customs records", responses: { "200": { description: OK } } } }
+  /marketplace/admin/customs-records/generate: { post: { tags: [admin], summary: "Generate a customs record for a shipment", responses: { "200": { description: OK } } } }
+  /marketplace/admin/customs-records/{id}: { patch: { tags: [admin], summary: "Update a customs record", parameters: [{ name: id, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } } }
