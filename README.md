@@ -26,8 +26,14 @@ with different root/start settings.
      VINK-GRUP-LIMITED's own JWT secret
    - `MARKETPLACE_ALLOWED_ORIGINS` — the frontend's Railway URL, once you
      know it (step 2). Comma-separated if there's more than one.
-4. Deploy. On first boot it creates its schema and seeds a handful of
-   starter product categories. Check `/health`.
+4. Deploy. On first boot it applies its schema and seeds the full
+   catalog (~200,000 products across 40+ categories, all 54 African
+   countries plus every other country in the world for the currency
+   selector, and more) — see `docs/erd.md` for what actually ends up in
+   the database and `docs/architecture.md` for the full system picture.
+   This takes longer than a typical first boot; check Railway's deploy
+   logs rather than assuming a slow health check means something's
+   wrong. Check `/health` once it settles.
 
 ## 2. Deploy the frontend
 
@@ -45,6 +51,50 @@ this frontend's deployed URL. Every "Marketplace" entry point in that app
 now opens this app in a new tab/redirect instead of mounting an in-app
 component.
 
+## Local development
+
+`docker compose up` runs the whole stack (Postgres + backend + frontend)
+locally, self-migrating the same way production does. See
+`docker-compose.yml` and `server/.env.example` / `.env.example` (root)
+for every environment variable either service actually reads. Not
+independently verified end-to-end in the environment this was built in
+(no Docker daemon available there) — every port and variable was checked
+by hand against the real Dockerfiles and source instead; worth a real
+`docker compose up` test before relying on it for onboarding a new
+developer.
+
+## Google / Facebook sign-in
+
+Built and tested, inactive until real credentials exist — same
+situation as payments above. See `server/.env.example` for
+`GOOGLE_CLIENT_ID` / `FACEBOOK_APP_ID` (backend) and
+`VITE_GOOGLE_CLIENT_ID` / `VITE_FACEBOOK_APP_ID` (frontend, root
+`.env.example`), and `GET /api/auth/oauth-config` to check current
+status without digging through Railway's dashboard.
+
+## Further documentation
+
+`docs/` has the rest: `architecture.md` (C4 diagrams, what's actually
+deployed), `erd.md` (every table, plus an honest writeup of what the
+settlement design is and isn't), `openapi.yaml` (the real API contract),
+`threat-model.md` (STRIDE, each finding tied to real code),
+`migration-plan.md` (concrete next steps for the gaps threat-model.md
+found), `production-readiness.md` (the backup gap that needs fixing —
+see below — plus IaC/observability/load-testing findings), and
+`pentest-checklist.md` (grounded in the threat model, not written
+independently of it).
+
+## ⚠️ Before this takes real traffic: enable database backups
+
+Checked directly against Railway's live service config: **no backup
+protection exists right now** — no scheduled snapshots, no
+point-in-time recovery, nothing beyond Railway's baseline volume
+durability. This can't be fixed from a commit; it's a Railway dashboard
+action. Full steps (5 minutes, no downtime) are in
+`docs/production-readiness.md`. Do this before the payment credentials
+above, not after — an unrecoverable database matters more than a
+placeholder payment processor.
+
 ## What's genuinely independent vs. what to still decide
 
 **Independent (done):**
@@ -57,14 +107,27 @@ component.
   velocity-check pattern as Vink's, ported and adapted.
 
 **Needs a decision before this takes real money:**
-- **Payments.** `server/src/services/mktPay.ts` ships with one processor,
-  `"manual"` — it accepts any charge and marks it `submitted`/pending,
-  with no automated confirmation. That's a deliberate placeholder, not a
-  payment gateway. Before going live, add a real processor (Stripe,
-  Paystack, Flutterwave, PayFast, whichever fits) as a second
-  `MktPayProcessor` in that file — the interface is already there, same
-  shape VinkPay uses, so nothing in the order/checkout flow needs to
-  change once it's added.
+- **Payments.** The code is genuinely complete, not a placeholder --
+  `server/src/services/payfastProcessor.ts` implements real PayFast
+  signature verification, a server-to-server confirmation round-trip,
+  and the ITN webhook handler (`POST /api/marketplace/payfast/notify`)
+  that actually confirms orders. **But it is not active in production
+  right now** -- checked directly against Railway's live environment
+  variables: `PAYFAST_MERCHANT_ID`, `PAYFAST_MERCHANT_KEY`,
+  `PAYFAST_PASSPHRASE`, `PAYFAST_MODE`, `MARKETPLACE_PUBLIC_URL`, and
+  `MARKETPLACE_API_PUBLIC_URL` are all currently unset, so
+  `payfastProcessor.isConfigured()` returns `false` and every payment
+  (even ones with `paymentMethod: "payfast"` or `"card"`) silently
+  falls back to the `manual` processor, which just records the charge
+  as pending with no automated confirmation. See
+  `server/.env.example` for all six variables and where to get them
+  from your PayFast merchant account. Setting them is the single
+  highest-priority item to make this a real, live storefront --
+  everything downstream of checkout (order confirmation emails, the
+  webhook, refunds) is already built and tested against them.
+  `bank_transfer` and `wallet` payment methods stay on the manual
+  processor either way -- add a second `MktPayProcessor` for those if
+  you want them automated too, same interface PayFast implements.
 
 ## Known leftover in VINK-GRUP-LIMITED
 
