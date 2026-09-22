@@ -199,18 +199,20 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">All Orders</span></div>
                 {orders.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No orders yet.</p> : (
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-                      <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Date</th>
-                      <th className="px-4 py-2 font-medium">Items</th><th className="px-4 py-2 font-medium">Amount</th>
-                      <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Actions</th>
-                    </tr></thead>
-                    <tbody>
-                      {orders.map((o, i) => (
-                        <OrderRow key={i} order={o} onChanged={load} />
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                        <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Date</th>
+                        <th className="px-4 py-2 font-medium">Items</th><th className="px-4 py-2 font-medium">Amount</th>
+                        <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {orders.map((o, i) => (
+                          <OrderRow key={i} order={o} onChanged={load} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             )}

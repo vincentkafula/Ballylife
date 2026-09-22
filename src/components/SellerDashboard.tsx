@@ -143,17 +143,19 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
                   <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Orders containing your products</span></div>
                   {orders.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No orders yet.</p> : (
-                    <table className="w-full text-sm">
-                      <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-                        <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
-                        <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
-                      </tr></thead>
-                      <tbody>
-                        {orders.map((o, i) => (
-                          <SellerOrderRow key={i} order={o} onUpdated={load} />
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                          <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
+                          <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+                        </tr></thead>
+                        <tbody>
+                          {orders.map((o, i) => (
+                            <SellerOrderRow key={i} order={o} onUpdated={load} />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
                 <ImportPipeline supplierOrders={supplierOrders} />
@@ -249,27 +251,29 @@ function ImportPipeline({ supplierOrders }: { supplierOrders: R[] }) {
       {supplierOrders.length === 0 ? (
         <p className="text-sm text-gray-400 p-6 text-center">No imported items in orders yet.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
-            <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Stage</th>
-          </tr></thead>
-          <tbody>
-            {supplierOrders.map((so, i) => {
-              const meta = PIPELINE_STAGE_META[String(so.status)] ?? { label: String(so.status).replace(/_/g, " "), color: "#6B7280" };
-              return (
-                <tr key={i} className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
-                  <td className="px-4 py-2.5">
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: meta.color, background: `${meta.color}15` }}>{meta.label}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
+              <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Stage</th>
+            </tr></thead>
+            <tbody>
+              {supplierOrders.map((so, i) => {
+                const meta = PIPELINE_STAGE_META[String(so.status)] ?? { label: String(so.status).replace(/_/g, " "), color: "#6B7280" };
+                return (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: meta.color, background: `${meta.color}15` }}>{meta.label}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -317,29 +321,31 @@ function ProductManagement({ sellerId, products, onChanged }: { sellerId: string
       )}
 
       {products.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No products yet.</p> : (
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Price</th>
-            <th className="px-4 py-2 font-medium">Stock</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Sold</th><th className="px-4 py-2"></th>
-          </tr></thead>
-          <tbody>
-            {products.map((p, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-3"><span className="mr-2">{String(p.emoji)}</span><span className="font-medium text-gray-800">{String(p.name)}</span></td>
-                <td className="px-4 py-3 text-gray-700">{fmtZAR(Number(p.price))}</td>
-                <td className="px-4 py-3 text-gray-500">{String(p.stock)}</td>
-                <td className="px-4 py-3">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{
-                    background: p.status === "active" ? "#ECFDF5" : p.status === "pending_review" ? "#FFF7ED" : "#F3F4F6",
-                    color: p.status === "active" ? "#059669" : p.status === "pending_review" ? "#C2410C" : "#6B7280",
-                  }}>{String(p.status).replace("_"," ")}</span>
-                </td>
-                <td className="px-4 py-3 text-gray-500">{String(p.totalSold)}</td>
-                <td className="px-4 py-3"><button onClick={() => remove(String(p.id))} className="text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Price</th>
+              <th className="px-4 py-2 font-medium">Stock</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Sold</th><th className="px-4 py-2"></th>
+            </tr></thead>
+            <tbody>
+              {products.map((p, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-3"><span className="mr-2">{String(p.emoji)}</span><span className="font-medium text-gray-800">{String(p.name)}</span></td>
+                  <td className="px-4 py-3 text-gray-700">{fmtZAR(Number(p.price))}</td>
+                  <td className="px-4 py-3 text-gray-500">{String(p.stock)}</td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{
+                      background: p.status === "active" ? "#ECFDF5" : p.status === "pending_review" ? "#FFF7ED" : "#F3F4F6",
+                      color: p.status === "active" ? "#059669" : p.status === "pending_review" ? "#C2410C" : "#6B7280",
+                    }}>{String(p.status).replace("_"," ")}</span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{String(p.totalSold)}</td>
+                  <td className="px-4 py-3"><button onClick={() => remove(String(p.id))} className="text-gray-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

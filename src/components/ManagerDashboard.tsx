@@ -499,82 +499,86 @@ function SupplyChainPanel() {
       {subTab === "orders" && (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Supplier Orders — two-leg fulfilment ({supplierOrders.length})</span></div>
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-              <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
-              <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Route</th>
-              <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
-            </tr></thead>
-            <tbody>
-              {supplierOrders.map((so, i) => {
-                const next = SUPPLIER_ORDER_NEXT[String(so.status)] ?? [];
-                return (
-                  <tr key={i} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
-                    <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{String(so.sellerName)}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
-                    <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(so.status).replace(/_/g, " ")}</td>
-                    <td className="px-4 py-2.5">
-                      {so.status === "qc_failed_origin" ? (
-                        <>
-                          <button onClick={() => resolveOrder(String(so.id), "refund")} disabled={busyId === so.id}
-                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: "#DC2626" }}>
-                            {busyId === so.id ? "..." : "Refund customer"}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
+                <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Route</th>
+                <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+              </tr></thead>
+              <tbody>
+                {supplierOrders.map((so, i) => {
+                  const next = SUPPLIER_ORDER_NEXT[String(so.status)] ?? [];
+                  return (
+                    <tr key={i} className="border-b border-gray-50 last:border-0">
+                      <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{String(so.sellerName)}</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
+                      <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(so.status).replace(/_/g, " ")}</td>
+                      <td className="px-4 py-2.5">
+                        {so.status === "qc_failed_origin" ? (
+                          <>
+                            <button onClick={() => resolveOrder(String(so.id), "refund")} disabled={busyId === so.id}
+                              className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: "#DC2626" }}>
+                              {busyId === so.id ? "..." : "Refund customer"}
+                            </button>
+                            <button onClick={() => resolveOrder(String(so.id), "reorder")} disabled={busyId === so.id}
+                              className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                              {busyId === so.id ? "..." : "Reorder from supplier"}
+                            </button>
+                          </>
+                        ) : next.length ? next.map(n => (
+                          <button key={n} onClick={() => advanceOrder(String(so.id), n)} disabled={busyId === so.id}
+                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: n.includes("failed") ? "#DC2626" : "#B8862E" }}>
+                            {busyId === so.id ? "..." : n.replace(/_/g, " ")}
                           </button>
-                          <button onClick={() => resolveOrder(String(so.id), "reorder")} disabled={busyId === so.id}
-                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
-                            {busyId === so.id ? "..." : "Reorder from supplier"}
-                          </button>
-                        </>
-                      ) : next.length ? next.map(n => (
-                        <button key={n} onClick={() => advanceOrder(String(so.id), n)} disabled={busyId === so.id}
-                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white mr-1 disabled:opacity-50" style={{ background: n.includes("failed") ? "#DC2626" : "#B8862E" }}>
-                          {busyId === so.id ? "..." : n.replace(/_/g, " ")}
-                        </button>
-                      )) : <span className="text-xs text-gray-300">—</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!supplierOrders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No supplier orders yet.</td></tr>}
-            </tbody>
-          </table>
+                        )) : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!supplierOrders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No supplier orders yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {subTab === "shipments" && (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Shipments — consolidated 2nd-leg freight ({shipments.length})</span></div>
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-              <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Carrier</th>
-              <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
-            </tr></thead>
-            <tbody>
-              {shipments.map((sh, i) => {
-                const next: Record<string, string> = { in_transit: "received_at_destination", received_at_destination: "customs_cleared", customs_cleared: "closed" };
-                const n = next[String(sh.status)];
-                return (
-                  <tr key={i} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5 text-gray-600 text-xs">{String(sh.originWarehouseName)} → {String(sh.destinationWarehouseName)}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{String(sh.carrier ?? "—")}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{String(sh.orderCount ?? 0)}</td>
-                    <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(sh.status).replace(/_/g, " ")}</td>
-                    <td className="px-4 py-2.5">
-                      {n ? (
-                        <button onClick={() => advanceShipment(String(sh.id), n)} disabled={busyId === sh.id}
-                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
-                          {busyId === sh.id ? "..." : `Mark ${n.replace(/_/g, " ")}`}
-                        </button>
-                      ) : <span className="text-xs text-gray-300">—</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!shipments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-400">No shipments yet — batch QC-passed orders once enough have accumulated at an origin hub.</td></tr>}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Carrier</th>
+                <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+              </tr></thead>
+              <tbody>
+                {shipments.map((sh, i) => {
+                  const next: Record<string, string> = { in_transit: "received_at_destination", received_at_destination: "customs_cleared", customs_cleared: "closed" };
+                  const n = next[String(sh.status)];
+                  return (
+                    <tr key={i} className="border-b border-gray-50 last:border-0">
+                      <td className="px-4 py-2.5 text-gray-600 text-xs">{String(sh.originWarehouseName)} → {String(sh.destinationWarehouseName)}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{String(sh.carrier ?? "—")}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{String(sh.orderCount ?? 0)}</td>
+                      <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(sh.status).replace(/_/g, " ")}</td>
+                      <td className="px-4 py-2.5">
+                        {n ? (
+                          <button onClick={() => advanceShipment(String(sh.id), n)} disabled={busyId === sh.id}
+                            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                            {busyId === sh.id ? "..." : `Mark ${n.replace(/_/g, " ")}`}
+                          </button>
+                        ) : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!shipments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-400">No shipments yet — batch QC-passed orders once enough have accumulated at an origin hub.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -713,55 +717,57 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
-            <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
-            <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
-            <th className="px-4 py-2 font-medium">Dashboard login</th>
-          </tr></thead>
-          <tbody>
-            {suppliers.map((s, i) => (
-              <Fragment key={i}>
-                <tr className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
-                  <td className="px-4 py-2.5">
-                    <button onClick={() => toggleVerified(s)} className="flex items-center gap-1">
-                      {s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}
-                    </button>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {s.userId ? (
-                      <span className="text-[11px] font-semibold text-green-600">Has login</span>
-                    ) : (
-                      <button onClick={() => setLoginFor(loginFor === s.id ? null : String(s.id))} className="text-[11px] font-semibold text-amber-700 hover:underline">
-                        {loginFor === s.id ? "Cancel" : "Create login"}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
+              <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
+              <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
+              <th className="px-4 py-2 font-medium">Dashboard login</th>
+            </tr></thead>
+            <tbody>
+              {suppliers.map((s, i) => (
+                <Fragment key={i}>
+                  <tr className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.name)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
+                    <td className="px-4 py-2.5">
+                      <button onClick={() => toggleVerified(s)} className="flex items-center gap-1">
+                        {s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}
                       </button>
-                    )}
-                  </td>
-                </tr>
-                {loginFor === s.id && (
-                  <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
-                    <td colSpan={7} className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <input placeholder="Username" value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                        <input placeholder="Password (min 8 chars)" type="text" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                        <button onClick={() => createLogin(String(s.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
-                          {creatingLogin ? "Creating..." : "Create"}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {s.userId ? (
+                        <span className="text-[11px] font-semibold text-green-600">Has login</span>
+                      ) : (
+                        <button onClick={() => setLoginFor(loginFor === s.id ? null : String(s.id))} className="text-[11px] font-semibold text-amber-700 hover:underline">
+                          {loginFor === s.id ? "Cancel" : "Create login"}
                         </button>
-                        <span className="text-[11px] text-gray-400">Share these with the supplier yourself — not stored or emailed anywhere by this system.</span>
-                      </div>
+                      )}
                     </td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                  {loginFor === s.id && (
+                    <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
+                      <td colSpan={7} className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Username" value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                          <input placeholder="Password (min 8 chars)" type="text" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                          <button onClick={() => createLogin(String(s.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                            {creatingLogin ? "Creating..." : "Create"}
+                          </button>
+                          <span className="text-[11px] text-gray-400">Share these with the supplier yourself — not stored or emailed anywhere by this system.</span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1082,47 +1088,49 @@ function AllProductsPricing() {
         <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-              <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Store</th>
-              <th className="px-4 py-2 font-medium">Source</th><th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 font-medium">Price / Discount</th><th className="px-4 py-2 font-medium">Action</th>
-            </tr></thead>
-            <tbody>
-              {products.map((p, i) => (
-                <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(p.emoji ?? "📦")} {String(p.name)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(p.sellerName)}</td>
-                  <td className="px-4 py-2.5 text-gray-500 capitalize">{String(p.fulfillmentType ?? "local")}</td>
-                  <td className="px-4 py-2.5 text-gray-500 capitalize">{String(p.status).replace("_", " ")}</td>
-                  <td className="px-4 py-2.5">
-                    {editingId === p.id ? (
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" step="0.01" placeholder="Price" value={priceEdit.price} onChange={e => setPriceEdit({ ...priceEdit, price: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
-                        <input type="number" step="0.01" placeholder="Was" value={priceEdit.compareAtPrice} onChange={e => setPriceEdit({ ...priceEdit, compareAtPrice: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
-                      </div>
-                    ) : (
-                      <span className="text-gray-700 font-medium">
-                        {fmtZAR(Number(p.price))}
-                        {p.compareAtPrice ? <span className="text-gray-400 line-through ml-1.5 text-xs">{fmtZAR(Number(p.compareAtPrice))}</span> : null}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {editingId === p.id ? (
-                      <div className="flex gap-1">
-                        <button onClick={() => save(String(p.id))} disabled={saving} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "..." : "Save"}</button>
-                        <button onClick={() => setEditingId(null)} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600">Cancel</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => startEdit(p)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit price</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {!products.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No products match this filter.</td></tr>}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Store</th>
+                <th className="px-4 py-2 font-medium">Source</th><th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Price / Discount</th><th className="px-4 py-2 font-medium">Action</th>
+              </tr></thead>
+              <tbody>
+                {products.map((p, i) => (
+                  <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(p.emoji ?? "📦")} {String(p.name)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(p.sellerName)}</td>
+                    <td className="px-4 py-2.5 text-gray-500 capitalize">{String(p.fulfillmentType ?? "local")}</td>
+                    <td className="px-4 py-2.5 text-gray-500 capitalize">{String(p.status).replace("_", " ")}</td>
+                    <td className="px-4 py-2.5">
+                      {editingId === p.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input type="number" step="0.01" placeholder="Price" value={priceEdit.price} onChange={e => setPriceEdit({ ...priceEdit, price: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
+                          <input type="number" step="0.01" placeholder="Was" value={priceEdit.compareAtPrice} onChange={e => setPriceEdit({ ...priceEdit, compareAtPrice: e.target.value })} className="border border-gray-200 rounded px-2 py-1 text-xs w-20" />
+                        </div>
+                      ) : (
+                        <span className="text-gray-700 font-medium">
+                          {fmtZAR(Number(p.price))}
+                          {p.compareAtPrice ? <span className="text-gray-400 line-through ml-1.5 text-xs">{fmtZAR(Number(p.compareAtPrice))}</span> : null}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {editingId === p.id ? (
+                        <div className="flex gap-1">
+                          <button onClick={() => save(String(p.id))} disabled={saving} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>{saving ? "..." : "Save"}</button>
+                          <button onClick={() => setEditingId(null)} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600">Cancel</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => startEdit(p)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit price</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!products.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No products match this filter.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -1218,23 +1226,25 @@ function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { ta
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Country</th><th className="px-4 py-2 font-medium">Category</th>
-            <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Notes</th>
-          </tr></thead>
-          <tbody>
-            {dutyRates.map((d, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(d.country)}</td>
-                <td className="px-4 py-2.5 text-gray-600">{String(d.categoryName)}</td>
-                <td className="px-4 py-2.5 text-gray-700 font-medium">{String(d.dutyRatePct)}%</td>
-                <td className="px-4 py-2.5 text-gray-400 text-xs">{String(d.notes ?? "")}</td>
-              </tr>
-            ))}
-            {!dutyRates.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No category overrides — every import uses the country's default duty rate above.</td></tr>}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Country</th><th className="px-4 py-2 font-medium">Category</th>
+              <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Notes</th>
+            </tr></thead>
+            <tbody>
+              {dutyRates.map((d, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(d.country)}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{String(d.categoryName)}</td>
+                  <td className="px-4 py-2.5 text-gray-700 font-medium">{String(d.dutyRatePct)}%</td>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(d.notes ?? "")}</td>
+                </tr>
+              ))}
+              {!dutyRates.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No category overrides — every import uses the country's default duty rate above.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1397,51 +1407,55 @@ function TaxRevenueSummary() {
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
         <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">VAT & duty by month and country</span></div>
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Period</th><th className="px-4 py-2 font-medium">Country</th>
-            <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Subtotal</th>
-            <th className="px-4 py-2 font-medium">VAT collected</th><th className="px-4 py-2 font-medium">Duty liability</th>
-          </tr></thead>
-          <tbody>
-            {byPeriod.map((r, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(r.period)}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(r.country)}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(r.orderCount)}</td>
-                <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.subtotal))}</td>
-                <td className="px-4 py-2.5 font-medium text-green-700">{fmtZAR(Number(r.vatCollected))}</td>
-                <td className="px-4 py-2.5 font-medium text-amber-700">{fmtZAR(Number(r.dutyLiability))}</td>
-              </tr>
-            ))}
-            {!byPeriod.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No orders yet.</td></tr>}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Period</th><th className="px-4 py-2 font-medium">Country</th>
+              <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Subtotal</th>
+              <th className="px-4 py-2 font-medium">VAT collected</th><th className="px-4 py-2 font-medium">Duty liability</th>
+            </tr></thead>
+            <tbody>
+              {byPeriod.map((r, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(r.period)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(r.country)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(r.orderCount)}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.subtotal))}</td>
+                  <td className="px-4 py-2.5 font-medium text-green-700">{fmtZAR(Number(r.vatCollected))}</td>
+                  <td className="px-4 py-2.5 font-medium text-amber-700">{fmtZAR(Number(r.dutyLiability))}</td>
+                </tr>
+              ))}
+              {!byPeriod.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No orders yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {customsByStatus.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-3">
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customs records by status</span></div>
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-              <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Country</th>
-              <th className="px-4 py-2 font-medium">Shipments</th><th className="px-4 py-2 font-medium">Declared value</th>
-              <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Import VAT</th><th className="px-4 py-2 font-medium">Total payable</th>
-            </tr></thead>
-            <tbody>
-              {customsByStatus.map((r, i) => (
-                <tr key={i} className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900 capitalize">{String(r.status).replace(/_/g, " ")}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(r.country)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(r.recordCount)}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.declaredValue))}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.dutyAmount))}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.vatAmount))}</td>
-                  <td className="px-4 py-2.5 font-medium text-gray-800">{fmtZAR(Number(r.totalPayable))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Country</th>
+                <th className="px-4 py-2 font-medium">Shipments</th><th className="px-4 py-2 font-medium">Declared value</th>
+                <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Import VAT</th><th className="px-4 py-2 font-medium">Total payable</th>
+              </tr></thead>
+              <tbody>
+                {customsByStatus.map((r, i) => (
+                  <tr key={i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900 capitalize">{String(r.status).replace(/_/g, " ")}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(r.country)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(r.recordCount)}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.declaredValue))}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.dutyAmount))}</td>
+                    <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(r.vatAmount))}</td>
+                    <td className="px-4 py-2.5 font-medium text-gray-800">{fmtZAR(Number(r.totalPayable))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -1546,57 +1560,59 @@ function RevenueAuthorityManagement() {
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
-            <th className="px-4 py-2 font-medium">Agreement status</th><th className="px-4 py-2 font-medium">Dashboard login</th>
-          </tr></thead>
-          <tbody>
-            {authorities.map((a, i) => {
-              const meta = AUTHORITY_STATUS_META[String(a.status)] ?? { label: String(a.status), color: "#6B7280" };
-              return (
-                <Fragment key={i}>
-                  <tr className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(a.name)}</td>
-                    <td className="px-4 py-2.5 text-gray-500">{String(a.country)}</td>
-                    <td className="px-4 py-2.5">
-                      <select value={String(a.status)} onChange={e => updateStatus(String(a.id), e.target.value)}
-                        className="text-xs font-semibold px-2 py-1 rounded-full border-0" style={{ color: meta.color, background: `${meta.color}15` }}>
-                        <option value="not_agreed">No agreement</option>
-                        <option value="agreement_pending">Agreement pending</option>
-                        <option value="active">Active</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {a.userId ? (
-                        <span className="text-[11px] font-semibold text-green-600">Has login</span>
-                      ) : (
-                        <button onClick={() => setLoginFor(loginFor === a.id ? null : String(a.id))} className="text-[11px] font-semibold text-amber-700 hover:underline">
-                          {loginFor === a.id ? "Cancel" : "Create login"}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  {loginFor === a.id && (
-                    <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
-                      <td colSpan={4} className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <input placeholder="Username" value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                          <input placeholder="Password (min 8 chars)" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-                          <button onClick={() => createLogin(String(a.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
-                            {creatingLogin ? "Creating..." : "Create"}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
+              <th className="px-4 py-2 font-medium">Agreement status</th><th className="px-4 py-2 font-medium">Dashboard login</th>
+            </tr></thead>
+            <tbody>
+              {authorities.map((a, i) => {
+                const meta = AUTHORITY_STATUS_META[String(a.status)] ?? { label: String(a.status), color: "#6B7280" };
+                return (
+                  <Fragment key={i}>
+                    <tr className="border-b border-gray-50 last:border-0">
+                      <td className="px-4 py-2.5 font-semibold text-gray-900">{String(a.name)}</td>
+                      <td className="px-4 py-2.5 text-gray-500">{String(a.country)}</td>
+                      <td className="px-4 py-2.5">
+                        <select value={String(a.status)} onChange={e => updateStatus(String(a.id), e.target.value)}
+                          className="text-xs font-semibold px-2 py-1 rounded-full border-0" style={{ color: meta.color, background: `${meta.color}15` }}>
+                          <option value="not_agreed">No agreement</option>
+                          <option value="agreement_pending">Agreement pending</option>
+                          <option value="active">Active</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {a.userId ? (
+                          <span className="text-[11px] font-semibold text-green-600">Has login</span>
+                        ) : (
+                          <button onClick={() => setLoginFor(loginFor === a.id ? null : String(a.id))} className="text-[11px] font-semibold text-amber-700 hover:underline">
+                            {loginFor === a.id ? "Cancel" : "Create login"}
                           </button>
-                          <span className="text-[11px] text-gray-400">Share these with the authority yourself — not stored or emailed anywhere by this system.</span>
-                        </div>
+                        )}
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {!authorities.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No revenue authorities added yet.</td></tr>}
-          </tbody>
-        </table>
+                    {loginFor === a.id && (
+                      <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
+                        <td colSpan={4} className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <input placeholder="Username" value={loginForm.username} onChange={e => setLoginForm({ ...loginForm, username: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                            <input placeholder="Password (min 8 chars)" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
+                            <button onClick={() => createLogin(String(a.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
+                              {creatingLogin ? "Creating..." : "Create"}
+                            </button>
+                            <span className="text-[11px] text-gray-400">Share these with the authority yourself — not stored or emailed anywhere by this system.</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {!authorities.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No revenue authorities added yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1667,36 +1683,38 @@ function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: 
       )}
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Body type</th><th className="px-4 py-2 font-medium">Engine cc</th>
-            <th className="px-4 py-2 font-medium">Age</th><th className="px-4 py-2 font-medium">Duty + surtax</th>
-            <th className="px-4 py-2 font-medium">Notes</th><th className="px-4 py-2 font-medium">Action</th>
-          </tr></thead>
-          <tbody>
-            {rates.map((r, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0">
-                <td className="px-4 py-2.5 font-semibold text-gray-900 capitalize">{String(r.bodyType).replace(/_/g, " ")}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(r.engineCcMin)}–{r.engineCcMax ? String(r.engineCcMax) : "+"}</td>
-                <td className="px-4 py-2.5 text-gray-500">{r.ageBand === "2_to_5" ? "2-5 yrs" : "5+ yrs"}</td>
-                <td className="px-4 py-2.5">
-                  {editingId === r.id ? (
-                    <div className="flex items-center gap-1">
-                      <input type="number" step="0.01" value={editForm.dutyKwacha} onChange={e => setEditForm({ ...editForm, dutyKwacha: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-xs w-20" />
-                      <input type="number" step="0.01" value={editForm.carbonSurtaxKwacha} onChange={e => setEditForm({ ...editForm, carbonSurtaxKwacha: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-xs w-16" />
-                      <button onClick={() => saveEdit(String(r.id))} className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ background: "#B8862E" }}>Save</button>
-                    </div>
-                  ) : (
-                    <button onClick={() => startEdit(r)} className="text-gray-700 font-medium hover:underline">K{Number(r.dutyKwacha).toLocaleString()} + K{Number(r.carbonSurtaxKwacha).toLocaleString()}</button>
-                  )}
-                </td>
-                <td className="px-4 py-2.5 text-gray-400 text-xs max-w-xs">{String(r.notes ?? "")}</td>
-                <td className="px-4 py-2.5">{editingId !== r.id && <button onClick={() => startEdit(r)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit</button>}</td>
-              </tr>
-            ))}
-            {!rates.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No rates yet.</td></tr>}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Body type</th><th className="px-4 py-2 font-medium">Engine cc</th>
+              <th className="px-4 py-2 font-medium">Age</th><th className="px-4 py-2 font-medium">Duty + surtax</th>
+              <th className="px-4 py-2 font-medium">Notes</th><th className="px-4 py-2 font-medium">Action</th>
+            </tr></thead>
+            <tbody>
+              {rates.map((r, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900 capitalize">{String(r.bodyType).replace(/_/g, " ")}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(r.engineCcMin)}–{r.engineCcMax ? String(r.engineCcMax) : "+"}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{r.ageBand === "2_to_5" ? "2-5 yrs" : "5+ yrs"}</td>
+                  <td className="px-4 py-2.5">
+                    {editingId === r.id ? (
+                      <div className="flex items-center gap-1">
+                        <input type="number" step="0.01" value={editForm.dutyKwacha} onChange={e => setEditForm({ ...editForm, dutyKwacha: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-xs w-20" />
+                        <input type="number" step="0.01" value={editForm.carbonSurtaxKwacha} onChange={e => setEditForm({ ...editForm, carbonSurtaxKwacha: e.target.value })} className="border border-gray-200 rounded px-1.5 py-0.5 text-xs w-16" />
+                        <button onClick={() => saveEdit(String(r.id))} className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white" style={{ background: "#B8862E" }}>Save</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEdit(r)} className="text-gray-700 font-medium hover:underline">K{Number(r.dutyKwacha).toLocaleString()} + K{Number(r.carbonSurtaxKwacha).toLocaleString()}</button>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-400 text-xs max-w-xs">{String(r.notes ?? "")}</td>
+                  <td className="px-4 py-2.5">{editingId !== r.id && <button onClick={() => startEdit(r)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit</button>}</td>
+                </tr>
+              ))}
+              {!rates.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No rates yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1799,64 +1817,66 @@ function SettlementsPayouts() {
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-            <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
-            <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Supplier</th>
-            <th className="px-4 py-2 font-medium">Platform fee</th><th className="px-4 py-2 font-medium">Seller payout</th>
-            <th className="px-4 py-2 font-medium">Supplier payout</th>
-          </tr></thead>
-          <tbody>
-            {settlements.map((s, i) => (
-              <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
-                <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.orderNumber)}</td>
-                <td className="px-4 py-2.5 text-gray-600">{String(s.productName)}</td>
-                <td className="px-4 py-2.5 text-gray-500">{String(s.sellerName)}</td>
-                <td className="px-4 py-2.5 text-gray-500">{s.supplierName ? String(s.supplierName) : "—"}</td>
-                <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(s.platformFeeAmount))} <span className="text-[10px] text-gray-400">({String(s.platformFeePct)}%)</span></td>
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-gray-700 font-medium">{fmtZAR(Number(s.sellerPayoutAmount))}</span>
-                    {s.sellerPayoutStatus === "paid" ? (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.sellerPayoutReference ? ` · ${String(s.sellerPayoutReference)}` : ""}</span>
-                    ) : (
-                      <button onClick={() => markPaid(String(s.id), "seller")} disabled={busyId === s.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
-                    )}
-                    {refEdit?.id === s.id && refEdit.field === "seller" ? (
-                      <span className="flex items-center gap-1">
-                        <input value={refEdit.value} onChange={e => setRefEdit({ ...refEdit, value: e.target.value })} placeholder="Ref" className="border border-gray-200 rounded px-1 py-0.5 text-[10px] w-16" />
-                        <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
-                      </span>
-                    ) : (
-                      <button onClick={() => setRefEdit({ id: String(s.id), field: "seller", value: String(s.sellerPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-2.5">
-                  {s.supplierPayoutStatus === "n/a" ? <span className="text-xs text-gray-300">— (local)</span> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
+              <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Supplier</th>
+              <th className="px-4 py-2 font-medium">Platform fee</th><th className="px-4 py-2 font-medium">Seller payout</th>
+              <th className="px-4 py-2 font-medium">Supplier payout</th>
+            </tr></thead>
+            <tbody>
+              {settlements.map((s, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(s.orderNumber)}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{String(s.productName)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{String(s.sellerName)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{s.supplierName ? String(s.supplierName) : "—"}</td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(s.platformFeeAmount))} <span className="text-[10px] text-gray-400">({String(s.platformFeePct)}%)</span></td>
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-gray-700 font-medium">{s.supplierCostAmountZar !== null ? fmtZAR(Number(s.supplierCostAmountZar)) : "No FX rate"}</span>
-                      {s.supplierPayoutStatus === "paid" ? (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.supplierPayoutReference ? ` · ${String(s.supplierPayoutReference)}` : ""}</span>
+                      <span className="text-gray-700 font-medium">{fmtZAR(Number(s.sellerPayoutAmount))}</span>
+                      {s.sellerPayoutStatus === "paid" ? (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.sellerPayoutReference ? ` · ${String(s.sellerPayoutReference)}` : ""}</span>
                       ) : (
-                        <button onClick={() => markPaid(String(s.id), "supplier")} disabled={busyId === s.id || s.supplierCostAmountZar === null} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
+                        <button onClick={() => markPaid(String(s.id), "seller")} disabled={busyId === s.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
                       )}
-                      {refEdit?.id === s.id && refEdit.field === "supplier" ? (
+                      {refEdit?.id === s.id && refEdit.field === "seller" ? (
                         <span className="flex items-center gap-1">
                           <input value={refEdit.value} onChange={e => setRefEdit({ ...refEdit, value: e.target.value })} placeholder="Ref" className="border border-gray-200 rounded px-1 py-0.5 text-[10px] w-16" />
                           <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
                         </span>
                       ) : (
-                        <button onClick={() => setRefEdit({ id: String(s.id), field: "supplier", value: String(s.supplierPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
+                        <button onClick={() => setRefEdit({ id: String(s.id), field: "seller", value: String(s.sellerPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
                       )}
                     </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!settlements.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">No settlements match this filter.</td></tr>}
-          </tbody>
-        </table>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {s.supplierPayoutStatus === "n/a" ? <span className="text-xs text-gray-300">— (local)</span> : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-700 font-medium">{s.supplierCostAmountZar !== null ? fmtZAR(Number(s.supplierCostAmountZar)) : "No FX rate"}</span>
+                        {s.supplierPayoutStatus === "paid" ? (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.supplierPayoutReference ? ` · ${String(s.supplierPayoutReference)}` : ""}</span>
+                        ) : (
+                          <button onClick={() => markPaid(String(s.id), "supplier")} disabled={busyId === s.id || s.supplierCostAmountZar === null} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
+                        )}
+                        {refEdit?.id === s.id && refEdit.field === "supplier" ? (
+                          <span className="flex items-center gap-1">
+                            <input value={refEdit.value} onChange={e => setRefEdit({ ...refEdit, value: e.target.value })} placeholder="Ref" className="border border-gray-200 rounded px-1 py-0.5 text-[10px] w-16" />
+                            <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => setRefEdit({ id: String(s.id), field: "supplier", value: String(s.supplierPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!settlements.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">No settlements match this filter.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1892,54 +1912,56 @@ function OrderMonitoring({ orders, onChanged }: { orders: R[]; onChanged: () => 
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">All Orders ({orders.length})</span></div>
-      <table className="w-full text-sm">
-        <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
-          <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
-          <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Refunded</th>
-          <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Date</th><th className="px-4 py-2 font-medium">Action</th>
-        </tr></thead>
-        <tbody>
-          {orders.slice(0, 50).map((o, i) => {
-            const items = (o.items as R[]) ?? [];
-            const refundable = !["refunded", "cancelled", "payment_failed"].includes(String(o.status));
-            return (
-              <Fragment key={i}>
-                <tr className="border-b border-gray-50 last:border-0">
-                  <td className="px-4 py-2.5 font-semibold text-gray-900">{String(o.orderNumber)}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{String(o.customerName)}</td>
-                  <td className="px-4 py-2.5 font-bold text-gray-700">{fmtZAR(Number(o.totalAmount))}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{Number(o.refundedAmount ?? 0) > 0 ? fmtZAR(Number(o.refundedAmount)) : "—"}</td>
-                  <td className="px-4 py-2.5 capitalize text-gray-600">{String(o.status).replace(/_/g, " ")}</td>
-                  <td className="px-4 py-2.5 text-gray-400">{new Date(String(o.placedAt)).toLocaleDateString()}</td>
-                  <td className="px-4 py-2.5">
-                    {refundable && (
-                      <button onClick={() => (refundFor === o.id ? setRefundFor(null) : startRefund(o))} className="text-[11px] font-semibold text-amber-700 hover:underline">
-                        {refundFor === o.id ? "Cancel" : "Refund"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-                {refundFor === o.id && (
-                  <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
-                    <td colSpan={7} className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <select value={refundForm.productId} onChange={e => setRefundForm({ ...refundForm, productId: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs">
-                          <option value="">Whole order ({fmtZAR(Number(o.totalAmount) - Number(o.refundedAmount ?? 0))} remaining)</option>
-                          {items.map((it, idx) => <option key={idx} value={String(it.productId)}>{String(it.productName)} — {fmtZAR(Number(it.unitPrice) * Number(it.quantity))}</option>)}
-                        </select>
-                        <input placeholder="Reason (optional)" value={refundForm.reason} onChange={e => setRefundForm({ ...refundForm, reason: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs flex-1 min-w-[160px]" />
-                        <button onClick={() => submitRefund(o)} disabled={submitting} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#DC2626" }}>
-                          {submitting ? "Processing..." : "Issue refund"}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
+            <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Refunded</th>
+            <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Date</th><th className="px-4 py-2 font-medium">Action</th>
+          </tr></thead>
+          <tbody>
+            {orders.slice(0, 50).map((o, i) => {
+              const items = (o.items as R[]) ?? [];
+              const refundable = !["refunded", "cancelled", "payment_failed"].includes(String(o.status));
+              return (
+                <Fragment key={i}>
+                  <tr className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900">{String(o.orderNumber)}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{String(o.customerName)}</td>
+                    <td className="px-4 py-2.5 font-bold text-gray-700">{fmtZAR(Number(o.totalAmount))}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{Number(o.refundedAmount ?? 0) > 0 ? fmtZAR(Number(o.refundedAmount)) : "—"}</td>
+                    <td className="px-4 py-2.5 capitalize text-gray-600">{String(o.status).replace(/_/g, " ")}</td>
+                    <td className="px-4 py-2.5 text-gray-400">{new Date(String(o.placedAt)).toLocaleDateString()}</td>
+                    <td className="px-4 py-2.5">
+                      {refundable && (
+                        <button onClick={() => (refundFor === o.id ? setRefundFor(null) : startRefund(o))} className="text-[11px] font-semibold text-amber-700 hover:underline">
+                          {refundFor === o.id ? "Cancel" : "Refund"}
                         </button>
-                      </div>
+                      )}
                     </td>
                   </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+                  {refundFor === o.id && (
+                    <tr className="border-b border-gray-50 last:border-0 bg-gray-50">
+                      <td colSpan={7} className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select value={refundForm.productId} onChange={e => setRefundForm({ ...refundForm, productId: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs">
+                            <option value="">Whole order ({fmtZAR(Number(o.totalAmount) - Number(o.refundedAmount ?? 0))} remaining)</option>
+                            {items.map((it, idx) => <option key={idx} value={String(it.productId)}>{String(it.productName)} — {fmtZAR(Number(it.unitPrice) * Number(it.quantity))}</option>)}
+                          </select>
+                          <input placeholder="Reason (optional)" value={refundForm.reason} onChange={e => setRefundForm({ ...refundForm, reason: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs flex-1 min-w-[160px]" />
+                          <button onClick={() => submitRefund(o)} disabled={submitting} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#DC2626" }}>
+                            {submitting ? "Processing..." : "Issue refund"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
