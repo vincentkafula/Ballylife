@@ -7,15 +7,34 @@ export const setMktToken = (t: string | null) => { _token = t; if (t) localStora
 export const getMktToken = () => _token;
 
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
-  if (isDemoMode()) return mktDemoResponse(path, opts) as T;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (_token) headers["Authorization"] = `Bearer ${_token}`;
   // Previously no timeout existed here at all -- a genuinely stalled
   // connection (not an error response, just no response ever) would
   // hang indefinitely regardless of any try/catch at the call site,
   // since neither resolve nor reject would ever fire.
+  //
+  // Demo mode is now self-healing rather than a permanent, one-way
+  // trap: previously, once isDemoMode() was ever set true (e.g. by a
+  // transient network blip, or the CORS misconfiguration this fix
+  // shipped alongside), every future call short-circuited straight to
+  // fake data forever -- setDemoMode(true) was called on failure, but
+  // nothing ever called it with false, and a real request was never
+  // attempted again. Now every call still genuinely tries the real
+  // backend first, even while already in demo mode -- just with a
+  // much shorter timeout in that case (4s vs 20s) so a still-broken
+  // backend doesn't make the whole app feel sluggish while it's being
+  // retried. The moment a real request actually succeeds, demo mode
+  // clears itself and every subsequent call uses real data again --
+  // no manual localStorage clearing, no permanent "stuck in demo"
+  // state for whoever's browser happened to be open during an outage.
+  const wasInDemoMode = isDemoMode();
+  const isAuthPath = path.startsWith("/api/auth/") || path.includes("/sellers/register");
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  // Auth always gets the full timeout regardless of demo-mode state --
+  // a legitimate slow login shouldn't fail just because unrelated
+  // catalog calls happen to be mid-retry.
+  const timeoutId = setTimeout(() => controller.abort(), wasInDemoMode && !isAuthPath ? 4000 : 20000);
   try {
     const res = await fetch(`${BASE}${path}`, { ...opts, headers, signal: controller.signal });
     const j = await res.json();
@@ -25,14 +44,17 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
     // throw when the server responded but didn't give us a shape we can
     // reason about (no JSON body, or a body missing `success` entirely).
     if (!res.ok && typeof j?.success !== "boolean") throw new Error(j?.error ?? `HTTP ${res.status}`);
+    if (wasInDemoMode) setDemoMode(false); // the real backend just answered -- stop pretending it can't
     return j;
   } catch (err) {
     // Auth requests never silently fall back to demo/mock data on a
     // network failure — a login or registration is either real or it
     // isn't; pretending it worked (or didn't) against fake data is worse
     // than surfacing the real connection error and letting the person retry.
-    const isAuthPath = path.startsWith("/api/auth/") || path.includes("/sellers/register");
-    if (!isAuthPath && (err instanceof TypeError || (err instanceof Error && err.message.includes("fetch")))) {
+    const looksLikeNetworkFailure = err instanceof TypeError
+      || (err instanceof Error && err.message.includes("fetch"))
+      || (err instanceof DOMException && err.name === "AbortError"); // a timeout, including the short demo-mode retry above
+    if (!isAuthPath && looksLikeNetworkFailure) {
       setDemoMode(true);
       return mktDemoResponse(path, opts) as T;
     }
