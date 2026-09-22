@@ -1,7 +1,6 @@
 /**
- * The one place the frontend's backend URL is defined. apiClient and
- * marketplaceApi both import API_BASE from here — not their own copy of
- * this fallback logic.
+ * The one place the frontend's backend URL is defined. marketplaceApi
+ * imports API_BASE from here — not its own copy of this fallback logic.
  *
  * Configuration, in order of precedence:
  * 1. VITE_API_URL — set this in Railway's environment variables (or a

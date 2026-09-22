@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Fragment, lazy, Suspense, type ReactNode, type CSSProperties } from "react";
+import { toast } from "sonner";
+import { ApiConnectionError } from "../services/marketplaceApi";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
 import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
@@ -18,7 +20,6 @@ import {
   mktCategories, mktProducts, mktCart, mktOrders,
   mktWishlist, mktSellers, mktAdmin, mktAddresses, mktAuth, setMktToken, getMktToken, type MktAuthUser,
 } from "../services/marketplaceApi";
-import { isDemoMode } from "../services/demoMode";
 import {
   ExecutiveChairIllustration, MeshTaskChairIllustration, ManagerChairIllustration,
   ConferenceChairIllustration, DraftingStoolIllustration, VisitorChairIllustration,
@@ -101,6 +102,16 @@ function clearRecentlyViewed() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtZAR = formatZAR; // now converts + formats in the shopper's local currency
+
+// Shared handler for a failed data-load call across every view. An
+// ApiConnectionError already carries a genuinely friendly message
+// ("we're having trouble connecting..."); anything else surfaces a
+// generic one rather than a raw technical error string, since most
+// thrown errors here aren't written with an end user as the audience.
+function showLoadError(err: unknown) {
+  if (err instanceof ApiConnectionError) toast.error(err.message);
+  else toast.error("Something went wrong loading this page — please try again.");
+}
 
 // True only when the app is running as the installed PWA/TWA (opened
 // from a home-screen icon, no browser chrome) -- false in an ordinary
@@ -877,7 +888,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
       const res = await mktProducts.list(params);
       setProducts(res.data as R[]);
       setHasMore(Number(res.meta?.pages ?? 1) > 1);
-    } finally { setLoading(false); }
+    } catch (err) { showLoadError(err); } finally { setLoading(false); }
   }, [activeCat, search, sort, isVehicleCategory, vCondition, vBodyType, vFuelType, vTransmission, vMinYear, vMaxYear, vMaxMileage]);
 
   useEffect(() => { load(); }, [load]);
@@ -905,7 +916,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
       setProducts(prev => [...prev, ...(res.data as R[])]);
       setPage(nextPage);
       setHasMore(nextPage < Number(res.meta?.pages ?? 1));
-    } finally { setLoadingMore(false); }
+    } catch (err) { showLoadError(err); } finally { setLoadingMore(false); }
   }, [loadingMore, loading, hasMore, page, activeCat, search, sort, isVehicleCategory, vCondition, vBodyType, vFuelType, vTransmission, vMinYear, vMaxYear, vMaxMileage]);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -1097,21 +1108,23 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
     if (!authUser) { onRequireAuth(); return; }
     if (!reviewRating) return;
     setSubmittingReview(true);
-    const res = await mktProducts.addReview(productId, { userId: authUser.id, rating: reviewRating, title: reviewTitle, body: reviewBody });
-    setSubmittingReview(false);
-    if ((res as { success: boolean }).success) {
-      setReviewSubmitted(true);
-      setReviewRating(0); setReviewTitle(""); setReviewBody("");
-      mktProducts.get(productId).then(r => setData(r.data as typeof data));
-    }
+    try {
+      const res = await mktProducts.addReview(productId, { userId: authUser.id, rating: reviewRating, title: reviewTitle, body: reviewBody });
+      if ((res as { success: boolean }).success) {
+        setReviewSubmitted(true);
+        setReviewRating(0); setReviewTitle(""); setReviewBody("");
+        mktProducts.get(productId).then(r => setData(r.data as typeof data));
+      }
+    } catch (err) { showLoadError(err); } finally { setSubmittingReview(false); }
   };
 
   useEffect(() => {
     setLoading(true);
     setShow3D(false);
     mktProducts.get(productId)
-      .then(res => { setData(res.data as typeof data); setLoading(false); addRecentlyViewed(productId); })
-      .catch(() => setLoading(false));
+      .then(res => { setData(res.data as typeof data); addRecentlyViewed(productId); })
+      .catch(showLoadError)
+      .finally(() => setLoading(false));
   }, [productId]);
 
   if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#B8862E" }} /></div>;
@@ -1922,7 +1935,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     const results = await Promise.allSettled(promises);
     const [catRes, prodRes, cartRes, wishRes, addrRes] = results as PromiseSettledResult<{ data: unknown }>[];
     if (catRes.status  === "fulfilled") setCategories(catRes.value.data as R[]);
+    else showLoadError(catRes.reason);
     if (prodRes.status === "fulfilled") setProducts(prodRes.value.data as R[]);
+    else showLoadError(prodRes.reason);
     if (authUser) {
       if (cartRes?.status === "fulfilled" && cartRes.value.data) setCart(cartRes.value.data as R);
       if (wishRes?.status === "fulfilled") setWishlistIds(new Set(((wishRes.value.data as R[]) ?? []).map(p => String(p.id))));
@@ -1937,27 +1952,35 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
 
   const handleAddToCart = async (p: R, variantId?: string) => {
     if (!authUser) { setShowAuthModal(true); return; }
-    const res = await mktCart.add(authUser.id, { productId: p.id, variantId: variantId ?? null, quantity: 1 });
-    setCart(res.data as R);
+    try {
+      const res = await mktCart.add(authUser.id, { productId: p.id, variantId: variantId ?? null, quantity: 1 });
+      setCart(res.data as R);
+    } catch (err) { showLoadError(err); }
   };
 
   const handleUpdateQty = async (productId: string, qty: number) => {
     if (!authUser) return;
-    if (qty <= 0) { await mktCart.remove(authUser.id, productId); }
-    else { await mktCart.update(authUser.id, productId, qty); }
-    loadInitial();
+    try {
+      if (qty <= 0) { await mktCart.remove(authUser.id, productId); }
+      else { await mktCart.update(authUser.id, productId, qty); }
+      loadInitial();
+    } catch (err) { showLoadError(err); }
   };
 
   const handleRemove = async (productId: string) => {
     if (!authUser) return;
-    await mktCart.remove(authUser.id, productId);
-    loadInitial();
+    try {
+      await mktCart.remove(authUser.id, productId);
+      loadInitial();
+    } catch (err) { showLoadError(err); }
   };
 
   const handleCoupon = async (code: string) => {
     if (!authUser) return;
-    const res = await mktCart.coupon(authUser.id, code);
-    if (res.data) setCart(res.data as R);
+    try {
+      const res = await mktCart.coupon(authUser.id, code);
+      if (res.data) setCart(res.data as R);
+    } catch (err) { showLoadError(err); }
   };
 
   const handleWishlist = async (productId: string) => {
@@ -2258,9 +2281,6 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             {item.icon} {item.label}
           </button>
         ))}
-        {isDemoMode() && (
-          <span className="hidden xl:inline text-[10px] text-amber-300 whitespace-nowrap ml-auto md:ml-4">⚡ Demo Mode</span>
-        )}
       </div>
 
       {/* Content */}

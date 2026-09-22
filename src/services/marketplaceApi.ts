@@ -1,4 +1,3 @@
-import { isDemoMode, setDemoMode, DEMO_TOKEN, mktMock } from "./demoMode";
 import { API_BASE as BASE } from "./config";
 export { API_BASE as BASE } from "./config";
 
@@ -6,35 +5,29 @@ let _token: string | null = localStorage.getItem("mkt_token");
 export const setMktToken = (t: string | null) => { _token = t; if (t) localStorage.setItem("mkt_token", t); else localStorage.removeItem("mkt_token"); };
 export const getMktToken = () => _token;
 
+// A real production storefront doesn't silently substitute fake catalog/
+// order data for real data when the backend is unreachable -- a shopper
+// seeing an "in stock" quantity, a price, or an order status that isn't
+// actually real is a worse outcome than an honest "we're having trouble
+// connecting" message. This is a distinct error type so call sites (and
+// the app's top-level ErrorBoundary) can show that message specifically,
+// rather than a generic failure.
+export class ApiConnectionError extends Error {
+  constructor(message = "We're having trouble connecting right now — please check your connection and try again.") {
+    super(message);
+    this.name = "ApiConnectionError";
+  }
+}
+
 async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (_token) headers["Authorization"] = `Bearer ${_token}`;
-  // Previously no timeout existed here at all -- a genuinely stalled
-  // connection (not an error response, just no response ever) would
-  // hang indefinitely regardless of any try/catch at the call site,
-  // since neither resolve nor reject would ever fire.
-  //
-  // Demo mode is now self-healing rather than a permanent, one-way
-  // trap: previously, once isDemoMode() was ever set true (e.g. by a
-  // transient network blip, or the CORS misconfiguration this fix
-  // shipped alongside), every future call short-circuited straight to
-  // fake data forever -- setDemoMode(true) was called on failure, but
-  // nothing ever called it with false, and a real request was never
-  // attempted again. Now every call still genuinely tries the real
-  // backend first, even while already in demo mode -- just with a
-  // much shorter timeout in that case (4s vs 20s) so a still-broken
-  // backend doesn't make the whole app feel sluggish while it's being
-  // retried. The moment a real request actually succeeds, demo mode
-  // clears itself and every subsequent call uses real data again --
-  // no manual localStorage clearing, no permanent "stuck in demo"
-  // state for whoever's browser happened to be open during an outage.
-  const wasInDemoMode = isDemoMode();
-  const isAuthPath = path.startsWith("/api/auth/") || path.includes("/sellers/register");
+  // A genuinely stalled connection (not an error response, just no
+  // response ever) would otherwise hang indefinitely regardless of any
+  // try/catch at the call site, since neither resolve nor reject would
+  // ever fire without this.
   const controller = new AbortController();
-  // Auth always gets the full timeout regardless of demo-mode state --
-  // a legitimate slow login shouldn't fail just because unrelated
-  // catalog calls happen to be mid-retry.
-  const timeoutId = setTimeout(() => controller.abort(), wasInDemoMode && !isAuthPath ? 4000 : 20000);
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
     const res = await fetch(`${BASE}${path}`, { ...opts, headers, signal: controller.signal });
     const j = await res.json();
@@ -44,114 +37,16 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
     // throw when the server responded but didn't give us a shape we can
     // reason about (no JSON body, or a body missing `success` entirely).
     if (!res.ok && typeof j?.success !== "boolean") throw new Error(j?.error ?? `HTTP ${res.status}`);
-    if (wasInDemoMode) setDemoMode(false); // the real backend just answered -- stop pretending it can't
     return j;
   } catch (err) {
-    // Auth requests never silently fall back to demo/mock data on a
-    // network failure — a login or registration is either real or it
-    // isn't; pretending it worked (or didn't) against fake data is worse
-    // than surfacing the real connection error and letting the person retry.
     const looksLikeNetworkFailure = err instanceof TypeError
       || (err instanceof Error && err.message.includes("fetch"))
-      || (err instanceof DOMException && err.name === "AbortError"); // a timeout, including the short demo-mode retry above
-    if (!isAuthPath && looksLikeNetworkFailure) {
-      setDemoMode(true);
-      return mktDemoResponse(path, opts) as T;
-    }
+      || (err instanceof DOMException && err.name === "AbortError"); // a timeout
+    if (looksLikeNetworkFailure) throw new ApiConnectionError();
     throw err;
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-// ─── Demo response router ──────────────────────────────────────────────────────
-function mktDemoResponse(path: string, opts: RequestInit = {}): unknown {
-  const method = (opts.method ?? "GET").toUpperCase();
-  const body   = opts.body ? (() => { try { return JSON.parse(opts.body as string); } catch { return {}; } })() : {};
-  const qs     = path.includes("?") ? Object.fromEntries(new URLSearchParams(path.split("?")[1])) : {};
-
-  if (path.includes("/categories"))              return mktMock.categories();
-  if (path.includes("/auth/forgot-password"))    return { success:true, message:"If an account exists with that email, a password reset link has been sent." };
-  if (path.includes("/auth/reset-password"))     return { success:true, message:"Password reset successfully — you can now sign in with your new password." };
-  if (path.includes("/search-suggest"))          return mktMock.searchSuggest(qs.q ?? "");
-  if (path.includes("/admin/products/") && path.includes("/price")) return mktMock.adminUpdateProductPrice(path.split("/admin/products/")[1].split("/price")[0], body);
-  if (path.includes("/admin/products/") && path.includes("/approve")) return mktMock.approveProduct(path.split("/admin/products/")[1].split("/approve")[0]);
-  if (path.includes("/admin/products/pending")) return mktMock.pendingProducts();
-  if (path.includes("/admin/products")) return mktMock.adminAllProducts(qs);
-  if (path.match(/\/products\/[^/?]+$/) && !path.includes("reviews") && method === "GET") return mktMock.productById(path.split("/products/")[1].split("?")[0]);
-  if (path.includes("/products") && method === "GET") return mktMock.products(qs);
-  if (path.includes("/reviews") && method === "POST") return mktMock.addReview(body);
-  if (path.includes("/reviews"))                 return mktMock.reviews(path.split("/products/")[1]?.split("/")[0] ?? "");
-  if (path.includes("/cart") && method === "GET")      return mktMock.cart();
-  if (path.includes("/cart") && path.includes("/add")) return mktMock.addToCart(body);
-  if (path.includes("/cart") && path.includes("/coupon")) return mktMock.applyCoupon(body.code);
-  if (path.includes("/cart") && method === "PATCH")    return mktMock.updateCartItem(body);
-  if (path.includes("/cart") && method === "DELETE")   return mktMock.removeCartItem(path.split("/item/")[1]);
-  if (path.includes("/admin/supplier-orders") && path.includes("/resolve")) return mktMock.adminResolveSupplierOrder(path.split("/admin/supplier-orders/")[1].split("/resolve")[0], body);
-  if (path.includes("/admin/supplier-orders") && path.includes("/status")) return mktMock.adminUpdateSupplierOrderStatus(path.split("/admin/supplier-orders/")[1].split("/status")[0], body);
-  if (path.includes("/admin/supplier-orders"))  return mktMock.adminSupplierOrders();
-  if (path.includes("/orders/track"))            return mktMock.trackOrder(qs);
-  if (path.includes("/orders") && method === "POST")   return mktMock.placeOrder(body);
-  if (path.includes("/orders"))                  return mktMock.orders();
-  if (path.includes("/wishlist") && method === "POST")   return { success: true, message: "Added to wishlist" };
-  if (path.includes("/wishlist") && method === "DELETE") return { success: true };
-  if (path.includes("/wishlist"))                return mktMock.wishlist();
-  if (path.includes("/sellers") && path.includes("/analytics")) return mktMock.sellerAnalytics();
-  if (path.includes("/import-listing"))          return mktMock.importListing(body);
-  if (path.includes("/supplier-catalog") && !path.match(/\/supplier-catalog\/[^/?]+$/)) return mktMock.supplierCatalog(qs);
-  if (path.match(/\/supplier-catalog\/[^/?]+$/)) return mktMock.supplierCatalogItem(path.split("/supplier-catalog/")[1].split("?")[0]);
-  if (path.includes("/admin/suppliers") && path.includes("/create-login")) return mktMock.adminCreateSupplierLogin(path.split("/admin/suppliers/")[1].split("/create-login")[0], body);
-  if (path.includes("/admin/suppliers") && method === "GET")   return mktMock.adminSuppliers();
-  if (path.includes("/admin/suppliers") && method === "POST")  return mktMock.adminCreateSupplier(body);
-  if (path.includes("/admin/suppliers") && method === "PATCH") return mktMock.adminUpdateSupplier(path.split("/admin/suppliers/")[1], body);
-  if (path.includes("/suppliers/by-user/")) return mktMock.supplierByUser(path.split("/suppliers/by-user/")[1]);
-  if (path.match(/\/suppliers\/[^/]+\/products\/[^/?]+$/) && method === "PATCH") return mktMock.supplierUpdateProduct(path.split("/suppliers/")[1].split("/products/")[0], path.split("/products/")[1], body);
-  if (path.match(/\/suppliers\/[^/]+\/products$/) && method === "GET") return mktMock.supplierProducts(path.split("/suppliers/")[1].split("/products")[0]);
-  if (path.match(/\/suppliers\/[^/]+\/products$/) && method === "POST") return mktMock.supplierAddProduct(path.split("/suppliers/")[1].split("/products")[0], body);
-  if (path.match(/\/suppliers\/[^/]+\/orders$/)) return mktMock.supplierOrdersFor(path.split("/suppliers/")[1].split("/orders")[0]);
-  if (path.match(/\/suppliers\/[^/?]+$/) && method === "PATCH") return mktMock.supplierUpdateProfile(path.split("/suppliers/")[1], body);
-  if (path.match(/\/suppliers\/[^/?]+$/) && method === "GET") return mktMock.supplierGet(path.split("/suppliers/")[1].split("?")[0]);
-  if (path.includes("/admin/supplier-products/bulk-import")) return mktMock.adminBulkImportSupplierProducts(body);
-  if (path.includes("/admin/supplier-products") && method === "GET")   return mktMock.adminSupplierProducts();
-  if (path.includes("/admin/supplier-products") && method === "POST")  return mktMock.adminCreateSupplierProduct(body);
-  if (path.includes("/admin/supplier-products") && method === "PATCH") return mktMock.adminUpdateSupplierProduct(path.split("/admin/supplier-products/")[1], body);
-  if (path.includes("/admin/warehouses") && method === "GET")  return mktMock.adminWarehouses();
-  if (path.includes("/admin/warehouses") && method === "POST") return mktMock.adminCreateWarehouse(body);
-  if (path.includes("/admin/shipments") && path.includes("/status")) return mktMock.adminUpdateShipmentStatus(path.split("/admin/shipments/")[1].split("/status")[0], body);
-  if (path.includes("/admin/shipments") && method === "POST") return mktMock.adminCreateShipment(body);
-  if (path.includes("/admin/shipments"))        return mktMock.adminShipments();
-  if (path.includes("/admin/tax-rates") && method === "PATCH") return mktMock.adminUpdateTaxRate(path.split("/admin/tax-rates/")[1], body);
-  if (path.includes("/admin/tax-rates") && method === "POST")  return mktMock.adminCreateTaxRate(body);
-  if (path.includes("/admin/tax-rates"))         return mktMock.adminTaxRates();
-  if (path.includes("/admin/duty-rates") && method === "POST")  return mktMock.adminCreateDutyRate(body);
-  if (path.includes("/admin/duty-rates") && method === "PATCH") return mktMock.adminUpdateDutyRate(path.split("/admin/duty-rates/")[1], body);
-  if (path.includes("/admin/duty-rates"))        return mktMock.adminDutyRates(qs);
-  if (path.includes("/admin/vehicle-duty-zm") && method === "POST")  return mktMock.adminCreateVehicleDutyZm(body);
-  if (path.includes("/admin/vehicle-duty-zm") && method === "PATCH") return mktMock.adminUpdateVehicleDutyZm(path.split("/admin/vehicle-duty-zm/")[1], body);
-  if (path.includes("/admin/vehicle-duty-zm"))   return mktMock.adminVehicleDutyZm();
-  if (path.includes("/admin/fx-rates") && method === "POST") return mktMock.adminCreateFxRate(body);
-  if (path.includes("/admin/fx-rates"))          return mktMock.adminFxRates();
-  if (path.includes("/admin/settlements") && method === "PATCH") return mktMock.adminUpdateSettlement(path.split("/admin/settlements/")[1], body);
-  if (path.includes("/admin/settlements"))       return mktMock.adminSettlements(qs);
-  if (path.includes("/admin/customs-records/generate")) return mktMock.adminGenerateCustomsRecord(body);
-  if (path.includes("/admin/customs-records") && method === "PATCH") return mktMock.adminUpdateCustomsRecord(path.split("/admin/customs-records/")[1], body);
-  if (path.includes("/admin/customs-records"))   return mktMock.adminCustomsRecords();
-  if (path.includes("/sellers") && path.includes("/supplier-orders")) return mktMock.sellerSupplierOrders(path.split("/sellers/")[1].split("/supplier-orders")[0]);
-  if (path.includes("/sellers"))                 return mktMock.sellers();
-  if (path.includes("/admin/revenue-authorities") && path.includes("/create-login")) return mktMock.adminCreateAuthorityLogin(path.split("/admin/revenue-authorities/")[1].split("/create-login")[0], body);
-  if (path.includes("/admin/revenue-authorities") && method === "GET")   return mktMock.adminRevenueAuthorities();
-  if (path.includes("/admin/revenue-authorities") && method === "POST")  return mktMock.adminCreateRevenueAuthority(body);
-  if (path.includes("/admin/revenue-authorities") && method === "PATCH") return mktMock.adminUpdateRevenueAuthority(path.split("/admin/revenue-authorities/")[1], body);
-  if (path.includes("/revenue-authorities/by-user/")) return mktMock.authorityByUser(path.split("/revenue-authorities/by-user/")[1]);
-  if (path.match(/\/revenue-authorities\/[^/]+\/tax-summary$/)) return mktMock.authorityTaxSummary(path.split("/revenue-authorities/")[1].split("/tax-summary")[0]);
-  if (path.match(/\/revenue-authorities\/[^/?]+$/)) return mktMock.authorityGet(path.split("/revenue-authorities/")[1].split("?")[0]);
-  if (path.includes("/admin/tax-summary"))       return mktMock.adminTaxSummary();
-  if (path.includes("/admin/stats"))             return mktMock.adminStats();
-  if (path.includes("/admin/orders") && path.includes("/refund") && method === "POST") return mktMock.adminRefundOrder(path.split("/admin/orders/")[1].split("/refund")[0], body);
-  if (path.includes("/admin/orders") && path.includes("/refunds")) return mktMock.adminOrderRefunds(path.split("/admin/orders/")[1].split("/refunds")[0]);
-  if (path.includes("/admin/orders"))            return mktMock.orders();
-  if (path.includes("/addresses"))               return mktMock.addresses();
-  return { success: true, data: {} };
 }
 
 // ─── API exports ───────────────────────────────────────────────────────────────
