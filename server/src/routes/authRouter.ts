@@ -2,16 +2,40 @@ import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "../db/pool";
 import { requireAuth, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
-import { sendPasswordResetEmail, isEmailConfigured } from "../services/emailService";
+import { sendPasswordResetEmail, sendVerificationEmail, isEmailConfigured } from "../services/emailService";
+import { sendVerificationOtp, isSmsConfigured } from "../services/smsService";
 
 const router: ReturnType<typeof Router> = Router();
 
+// Resend endpoints get their own tighter limit on top of /api/auth's
+// blanket 20/min (index.ts) -- same reasoning as the order-tracking and
+// order-creation limiters added earlier: an unauthenticated endpoint
+// that triggers an outbound email/SMS send is worth capping specifically
+// rather than trusting the general limit alone.
+const resendLimiter = rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false });
+
 const mapUser = (r: any) => ({
   id: r.id, username: r.username, role: r.role, name: r.name, email: r.email,
+  phone: r.phone ?? null, emailVerified: r.email_verified, phoneVerified: r.phone_verified, accountStatus: r.account_status,
 });
+
+// Phone verification is only required if SMS is actually configured --
+// otherwise every new signup with a phone number would be permanently
+// stuck below "active" waiting on a step that can never be completed.
+// The moment real Twilio credentials exist, this starts requiring it
+// for real, for every signup from then on -- accounts that already
+// reached "active" under the looser rule are not retroactively
+// downgraded.
+function computeAccountStatus(emailVerified: boolean, phoneVerified: boolean, hasPhone: boolean): "unverified" | "partially_verified" | "active" {
+  const phoneRequirementMet = !hasPhone || !isSmsConfigured() || phoneVerified;
+  if (emailVerified && phoneRequirementMet) return "active";
+  if (emailVerified || phoneVerified) return "partially_verified";
+  return "unverified";
+}
 
 // ── Google / Facebook sign-in ────────────────────────────────────────────
 // Both are "identity provider already did the login" flows: the
@@ -50,9 +74,25 @@ async function findOrCreateOauthUser(provider: "google" | "facebook", providerId
 
   const byEmail = await pool!.query(`SELECT * FROM users WHERE email = $1`, [email]);
   if (byEmail.rows.length) {
+    const existing = byEmail.rows[0];
+    // Google/Facebook have just verified this exact email address as
+    // part of this very sign-in -- that's a legitimate verification
+    // signal in its own right, so an account that registered via
+    // password and never clicked its verification email gets
+    // email_verified = true here rather than staying stuck unverified
+    // forever with no way to complete that step (there's no password-
+    // reset-style link for "verify via the OAuth account you just
+    // proved you own"). Previously this update didn't touch
+    // verification fields at all, and neither /google nor /facebook
+    // checked account_status before issuing a token -- meaning
+    // registering with a password (deliberately left unverified) and
+    // then immediately signing in via Google with the same email would
+    // hand back a working token regardless, a real bypass of the
+    // verification requirement this phase exists to enforce.
+    const newStatus = computeAccountStatus(true, existing.phone_verified, Boolean(existing.phone));
     const { rows } = await pool!.query(
-      `UPDATE users SET oauth_provider = $1, oauth_id = $2 WHERE id = $3 RETURNING *`,
-      [provider, providerId, byEmail.rows[0].id]
+      `UPDATE users SET oauth_provider = $1, oauth_id = $2, email_verified = true, account_status = $3 WHERE id = $4 RETURNING *`,
+      [provider, providerId, newStatus, existing.id]
     );
     return rows[0];
   }
@@ -65,12 +105,43 @@ async function findOrCreateOauthUser(provider: "google" | "facebook", providerId
   if (usernameTaken.rows.length) username = `${username}-${crypto.randomBytes(3).toString("hex")}`;
 
   const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+  // Deliberately not setting email_verified/phone_verified/account_status
+  // here -- they get the schema's DEFAULT true/true/'active' as a result,
+  // which is correct, not an oversight: Google and Facebook only ever
+  // hand back an email they've already verified themselves, so there's
+  // nothing this app needs to re-verify. No phone number exists to
+  // verify either.
   const { rows } = await pool!.query(
     `INSERT INTO users (username, password_hash, role, name, email, oauth_provider, oauth_id)
      VALUES ($1, $2, 'customer', $3, $4, $5, $6) RETURNING *`,
     [username, randomPasswordHash, name || username, email, provider, providerId]
   );
   return rows[0];
+}
+
+// Shared by /login, /google, and /facebook -- issues a real token when
+// (and only when) the account is actually active, or the same
+// structured "needs verification" shape login already used, so the
+// frontend handles all three sign-in paths with one code path rather
+// than three slightly different ones. Centralizing this is what closes
+// the gap where /google and /facebook could previously issue a token
+// for an account that hadn't met the verification requirement at all.
+async function respondWithSessionOrVerificationNeeded(user: any, res: Response): Promise<void> {
+  if (user.account_status !== "active") {
+    res.status(403).json({
+      success: false,
+      error: "Please verify your account before logging in.",
+      data: {
+        needsVerification: true, username: user.username,
+        emailVerified: user.email_verified, phoneVerified: user.phone_verified,
+        hasPhone: Boolean(user.phone), accountStatus: user.account_status,
+      },
+    });
+    return;
+  }
+  await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
+  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  res.json({ success: true, data: { token, user: mapUser(user) } });
 }
 
 router.get("/oauth-config", (_req: Request, res: Response) => {
@@ -88,9 +159,7 @@ router.post("/google", async (req: Request, res: Response): Promise<void> => {
     if (!payload?.sub || !payload.email) { res.status(401).json({ success: false, error: "Invalid Google credential" }); return; }
 
     const user = await findOrCreateOauthUser("google", payload.sub, payload.email, payload.name ?? "");
-    await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
-    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-    res.json({ success: true, data: { token, user: mapUser(user) } });
+    await respondWithSessionOrVerificationNeeded(user, res);
   } catch (err) {
     console.error("[auth] Google sign-in failed:", err);
     res.status(401).json({ success: false, error: "Could not verify that Google sign-in — please try again." });
@@ -123,9 +192,7 @@ router.post("/facebook", async (req: Request, res: Response): Promise<void> => {
     }
 
     const user = await findOrCreateOauthUser("facebook", profile.id, profile.email, profile.name ?? "");
-    await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
-    const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-    res.json({ success: true, data: { token, user: mapUser(user) } });
+    await respondWithSessionOrVerificationNeeded(user, res);
   } catch (err) {
     console.error("[auth] Facebook sign-in failed:", err);
     res.status(401).json({ success: false, error: "Could not verify that Facebook sign-in — please try again." });
@@ -134,13 +201,25 @@ router.post("/facebook", async (req: Request, res: Response): Promise<void> => {
 
 // ── Register — new marketplace account (customer by default) ─────────────
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
-  const { username, password, name, email } = req.body ?? {};
+  const { username, password, name, email, phone } = req.body ?? {};
   if (!username || !password || !name || !email) {
     res.status(400).json({ success: false, error: "username, password, name and email are required" });
     return;
   }
   if (typeof password !== "string" || password.length < 8) {
     res.status(400).json({ success: false, error: "Password must be at least 8 characters" });
+    return;
+  }
+  if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ success: false, error: "Please enter a valid email address" });
+    return;
+  }
+  // E.164 format (a leading + and 7-15 digits) -- what Twilio itself
+  // requires the To/From numbers to be in, so validating this shape at
+  // signup avoids a silently-failed SMS send later over a format issue
+  // rather than an actually-wrong number.
+  if (phone && (typeof phone !== "string" || !/^\+[1-9]\d{6,14}$/.test(phone))) {
+    res.status(400).json({ success: false, error: "Phone number must be in international format, e.g. +27821234567" });
     return;
   }
 
@@ -151,14 +230,39 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+  const accountStatus = computeAccountStatus(false, false, Boolean(phone));
   const { rows } = await pool!.query(
-    `INSERT INTO users (username, password_hash, role, name, email)
-     VALUES ($1, $2, 'customer', $3, $4) RETURNING *`,
-    [username, passwordHash, name, email]
+    `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status)
+     VALUES ($1, $2, 'customer', $3, $4, $5, false, false, $6) RETURNING *`,
+    [username, passwordHash, name, email, phone ?? null, accountStatus]
   );
   const user = rows[0];
-  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  res.status(201).json({ success: true, data: { token, user: mapUser(user) } });
+
+  const emailToken = crypto.randomBytes(32).toString("hex");
+  const emailTokenHash = crypto.createHash("sha256").update(emailToken).digest("hex");
+  await pool!.query(
+    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '30 minutes')`,
+    [user.id, emailTokenHash]
+  );
+  const verifyUrl = `${process.env.MARKETPLACE_PUBLIC_URL ?? ""}/?verifyEmailToken=${emailToken}`;
+  await sendVerificationEmail(email, verifyUrl);
+
+  if (phone) {
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+    await pool!.query(
+      `INSERT INTO phone_verification_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')`,
+      [user.id, otpHash]
+    );
+    await sendVerificationOtp(phone, otp);
+  }
+
+  // Deliberately no token here -- registering isn't the same as being
+  // logged in while account_status isn't "active" yet (see the brief:
+  // "block login... until Active"). The frontend routes to a
+  // verification screen using just the username, the same
+  // unauthenticated pattern password-reset already uses.
+  res.status(201).json({ success: true, data: { user: mapUser(user), needsVerification: accountStatus !== "active" } });
 });
 
 // ── Login ───────────────────────────────────────────────────────────────
@@ -176,9 +280,126 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  // Credentials being correct but the account not yet active gets a
+  // 403 (not 401) inside the shared helper below, deliberately distinct
+  // so the frontend can tell "wrong password" apart from "right
+  // password, just not verified yet" and show the right screen for each.
+  await respondWithSessionOrVerificationNeeded(user, res);
+});
+
+// ── Account verification ───────────────────────────────────────────────
+// After either verification step succeeds, recompute account_status and
+// -- if it just became "active" -- issue a real token in the same
+// response, so completing the last required step logs the person
+// straight in rather than sending them back to a manual login screen.
+async function maybeIssueTokenIfNowActive(user: any): Promise<{ token: string } | Record<string, never>> {
+  const newStatus = computeAccountStatus(user.email_verified, user.phone_verified, Boolean(user.phone));
+  if (newStatus === user.account_status) return {};
+  await pool!.query(`UPDATE users SET account_status = $1 WHERE id = $2`, [newStatus, user.id]);
+  user.account_status = newStatus;
+  if (newStatus !== "active") return {};
   await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
   const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  res.json({ success: true, data: { token, user: mapUser(user) } });
+  return { token };
+}
+
+router.post("/verify-email", async (req: Request, res: Response): Promise<void> => {
+  const { token } = req.body ?? {};
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ success: false, error: "Verification token is required" });
+    return;
+  }
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const { rows } = await pool!.query(
+    `SELECT * FROM email_verification_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`,
+    [tokenHash]
+  );
+  if (!rows.length) {
+    res.status(400).json({ success: false, error: "This verification link is invalid or has expired. Request a new one." });
+    return;
+  }
+  const tokenRow = rows[0];
+  await pool!.query(`UPDATE email_verification_tokens SET used_at = now() WHERE id = $1`, [tokenRow.id]);
+  await pool!.query(`UPDATE users SET email_verified = true WHERE id = $1`, [tokenRow.user_id]);
+
+  const { rows: userRows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [tokenRow.user_id]);
+  const extra = await maybeIssueTokenIfNowActive(userRows[0]);
+  res.json({ success: true, data: { user: mapUser(userRows[0]), ...extra } });
+});
+
+router.post("/resend-verification-email", resendLimiter, async (req: Request, res: Response): Promise<void> => {
+  const { username } = req.body ?? {};
+  if (!username) { res.status(400).json({ success: false, error: "username is required" }); return; }
+  const { rows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [username]);
+  // Same non-enumeration shape as forgot-password below: always 200
+  // regardless of whether the account exists or is already verified.
+  if (!rows.length || rows[0].email_verified) { res.json({ success: true }); return; }
+  const user = rows[0];
+  const emailToken = crypto.randomBytes(32).toString("hex");
+  const emailTokenHash = crypto.createHash("sha256").update(emailToken).digest("hex");
+  await pool!.query(
+    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '30 minutes')`,
+    [user.id, emailTokenHash]
+  );
+  const verifyUrl = `${process.env.MARKETPLACE_PUBLIC_URL ?? ""}/?verifyEmailToken=${emailToken}`;
+  await sendVerificationEmail(user.email, verifyUrl);
+  res.json({ success: true });
+});
+
+router.post("/verify-phone", async (req: Request, res: Response): Promise<void> => {
+  const { username, code } = req.body ?? {};
+  if (!username || !code) {
+    res.status(400).json({ success: false, error: "username and code are required" });
+    return;
+  }
+  const { rows: userRows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [username]);
+  if (!userRows.length) { res.status(400).json({ success: false, error: "Invalid or expired code" }); return; }
+  const user = userRows[0];
+
+  const { rows } = await pool!.query(
+    `SELECT * FROM phone_verification_codes WHERE user_id = $1 AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1`,
+    [user.id]
+  );
+  if (!rows.length) { res.status(400).json({ success: false, error: "Invalid or expired code. Request a new one." }); return; }
+  const codeRow = rows[0];
+
+  // Caps guesses against this specific code, independent of the general
+  // /api/auth rate limit -- a 6-digit OTP has only a million
+  // possibilities, worth a tighter, explicit lockout on the code itself.
+  if (codeRow.attempts >= 5) {
+    res.status(400).json({ success: false, error: "Too many incorrect attempts. Request a new code." });
+    return;
+  }
+
+  const codeHash = crypto.createHash("sha256").update(String(code)).digest("hex");
+  if (codeHash !== codeRow.code_hash) {
+    await pool!.query(`UPDATE phone_verification_codes SET attempts = attempts + 1 WHERE id = $1`, [codeRow.id]);
+    res.status(400).json({ success: false, error: "Incorrect code. Please try again." });
+    return;
+  }
+
+  await pool!.query(`UPDATE phone_verification_codes SET used_at = now() WHERE id = $1`, [codeRow.id]);
+  await pool!.query(`UPDATE users SET phone_verified = true WHERE id = $1`, [user.id]);
+
+  const { rows: freshUserRows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [user.id]);
+  const extra = await maybeIssueTokenIfNowActive(freshUserRows[0]);
+  res.json({ success: true, data: { user: mapUser(freshUserRows[0]), ...extra } });
+});
+
+router.post("/resend-phone-otp", resendLimiter, async (req: Request, res: Response): Promise<void> => {
+  const { username } = req.body ?? {};
+  if (!username) { res.status(400).json({ success: false, error: "username is required" }); return; }
+  const { rows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [username]);
+  if (!rows.length || !rows[0].phone || rows[0].phone_verified) { res.json({ success: true }); return; }
+  const user = rows[0];
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+  await pool!.query(
+    `INSERT INTO phone_verification_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')`,
+    [user.id, otpHash]
+  );
+  await sendVerificationOtp(user.phone, otp);
+  res.json({ success: true });
 });
 
 // ── Who am I ────────────────────────────────────────────────────────────

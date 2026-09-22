@@ -708,3 +708,35 @@ CREATE TABLE IF NOT EXISTS mkt_audit_log (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON mkt_audit_log(entity_type, entity_id);
+
+-- Account verification (email + phone). DEFAULT true/true/'active' means
+-- this is automatically retroactive for every existing account the
+-- moment this column is added -- no separate grandfathering migration
+-- needed, and no existing login (including every demo account this
+-- whole build has relied on) is affected. New signups explicitly
+-- override these to false/pending at INSERT time in authRouter.ts.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status TEXT NOT NULL DEFAULT 'active'; -- 'unverified' | 'partially_verified' | 'active'
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_verif_user ON email_verification_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS phone_verification_codes (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash   TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  attempts    INTEGER NOT NULL DEFAULT 0, -- wrong-code guesses against this specific code
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_phone_verif_user ON phone_verification_codes(user_id);

@@ -3,6 +3,7 @@ import request from "supertest";
 import express, { type Express } from "express";
 import bcrypt from "bcryptjs";
 import { createTestDb } from "../test/testDb";
+import { registerAndVerifyCustomer } from "../test/authHelpers";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -55,9 +56,7 @@ describe("Shipment batching -> customs record generation", () => {
       .set("Authorization", `Bearer ${sellerToken}`).send({ supplierProductId, retailPrice: 499, stock: 10 });
     await pool.query(`UPDATE mkt_products SET status = 'active' WHERE id = $1`, [importRes.body.data.id]);
 
-    const custReg = await request(app).post("/api/auth/register").send({ username: "pipelinecustomer", password: "TestPass123", name: "Customer", email: "pipeline@example.com" });
-    const custToken = custReg.body.data.token;
-    const custId = custReg.body.data.user.id;
+    const { token: custToken, userId: custId } = await registerAndVerifyCustomer(app, pool, { username: "pipelinecustomer", email: "pipeline@example.com" });
     await request(app).post(`/api/marketplace/addresses/${custId}`).set("Authorization", `Bearer ${custToken}`).send({
       firstName: "P", lastName: "C", line1: "1 St", city: "Cape Town", postalCode: "8001", country: "ZA", phone: "0821234567",
     });
@@ -157,8 +156,8 @@ describe("Revenue authority read-only, country-scoped views", () => {
   });
 
   it("rejects a customer (or anyone who isn't this authority or a manager) from viewing it", async () => {
-    const custReg = await request(app).post("/api/auth/register").send({ username: "notanauthority", password: "TestPass123", name: "X", email: "notauth@example.com" });
-    const res = await request(app).get(`/api/marketplace/revenue-authorities/${authorityId}/tax-summary`).set("Authorization", `Bearer ${custReg.body.data.token}`);
+    const { token } = await registerAndVerifyCustomer(app, pool, { username: "notanauthority", email: "notauth@example.com" });
+    const res = await request(app).get(`/api/marketplace/revenue-authorities/${authorityId}/tax-summary`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
   });
 

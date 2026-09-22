@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import express, { type Express } from "express";
 import { createTestDb } from "../test/testDb";
+import { registerAndVerifyCustomer } from "../test/authHelpers";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -46,12 +47,13 @@ beforeAll(async () => {
   );
 
   // A real customer account, obtained the same way the frontend does —
-  // through the actual register endpoint, not a hand-inserted row.
-  const registerRes = await request(app).post("/api/auth/register").send({
-    username: "ordertestcustomer", password: "TestPass123", name: "Order Test Customer", email: "ordertest@example.com",
+  // through the actual register + verify-email endpoints, not a
+  // hand-inserted row.
+  const { token, userId } = await registerAndVerifyCustomer(app, pool, {
+    username: "ordertestcustomer", email: "ordertest@example.com", name: "Order Test Customer",
   });
-  customerToken = registerRes.body.data.token;
-  customerUserId = registerRes.body.data.user.id;
+  customerToken = token;
+  customerUserId = userId;
 
   await request(app).post(`/api/marketplace/addresses/${customerUserId}`).set("Authorization", `Bearer ${customerToken}`).send({
     firstName: "Order", lastName: "Test", line1: "1 Test Street", city: "Cape Town", postalCode: "8001", country: "ZA", phone: "0821234567",

@@ -80,3 +80,11 @@ export function sendPasswordResetEmail(to: string, resetUrl: string): Promise<{ 
     html: `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Click here to set a new password</a> — this link expires in 1 hour.</p><p>If you didn't request this, you can safely ignore this email.</p>`,
   });
 }
+
+export function sendVerificationEmail(to: string, verifyUrl: string): Promise<{ sent: boolean; error?: string }> {
+  return sendEmail({
+    to,
+    subject: "Verify your Ballylife account",
+    html: `<p>Welcome to Ballylife! Please confirm your email address to activate your account.</p><p><a href="${verifyUrl}">Click here to verify your email</a> — this link expires in 30 minutes.</p><p>If you didn't create this account, you can safely ignore this email.</p>`,
+  });
+}

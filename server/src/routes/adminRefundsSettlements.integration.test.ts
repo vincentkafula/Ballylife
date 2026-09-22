@@ -3,6 +3,7 @@ import request from "supertest";
 import express, { type Express } from "express";
 import bcrypt from "bcryptjs";
 import { createTestDb } from "../test/testDb";
+import { registerAndVerifyCustomer } from "../test/authHelpers";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -42,11 +43,11 @@ beforeAll(async () => {
   // A real customer order, via the real flow, so the refund/settlement
   // tests below act on a genuine order record with a genuine settlement
   // row — not one hand-inserted to look like the real shape.
-  const registerRes = await request(app).post("/api/auth/register").send({
-    username: "refundtestcustomer", password: "TestPass123", name: "Refund Test Customer", email: "refundtest@example.com",
+  const { token: custTok, userId: custUid } = await registerAndVerifyCustomer(app, pool, {
+    username: "refundtestcustomer", email: "refundtest@example.com", name: "Refund Test Customer",
   });
-  customerToken = registerRes.body.data.token;
-  customerUserId = registerRes.body.data.user.id;
+  customerToken = custTok;
+  customerUserId = custUid;
   await request(app).post(`/api/marketplace/addresses/${customerUserId}`).set("Authorization", `Bearer ${customerToken}`).send({
     firstName: "Refund", lastName: "Test", line1: "1 Test Street", city: "Cape Town", postalCode: "8001", country: "ZA", phone: "0821234567",
   });

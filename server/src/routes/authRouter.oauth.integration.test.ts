@@ -14,6 +14,15 @@ import { buildTestApp } from "../test/testApp";
 // needing them to exist yet.
 process.env.GOOGLE_CLIENT_ID = "test-google-client-id.apps.googleusercontent.com";
 process.env.FACEBOOK_APP_ID = "test-facebook-app-id";
+// Also simulated as configured (read once at module load, same as the
+// two above) so this file can prove phone verification is genuinely
+// still required through an OAuth link, not just when signing in with
+// a password -- without this, isSmsConfigured() would be false and
+// computeAccountStatus would correctly-but-uninterestingly skip the
+// phone requirement entirely regardless of what this file tests.
+process.env.TWILIO_ACCOUNT_SID = "test-twilio-sid";
+process.env.TWILIO_AUTH_TOKEN = "test-twilio-token";
+process.env.TWILIO_FROM_NUMBER = "+15017122661";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -83,6 +92,26 @@ describe("POST /api/auth/google", () => {
     const res = await request(app).post("/api/auth/google").send({ credential: "good-token" });
     expect(res.status).toBe(200);
     expect(res.body.data.user.username).toBe("existingemailuser"); // the original account, not a new one
+  });
+
+  it("linking does NOT bypass phone verification for an account that has an unverified phone on file", async () => {
+    // The exact scenario that was a real bypass before this was fixed:
+    // register with a password (unverified), sign in via Google with
+    // the same email -- Google has genuinely verified the email, so
+    // that requirement is legitimately satisfied by linking, but Google
+    // never asserted anything about the phone number, so the account
+    // must NOT become active on the strength of the email proof alone.
+    await request(app).post("/api/auth/register").send({
+      username: "phoneandemail", password: "SecurePass123", name: "X", email: "phoneandemail@example.com", phone: "+27821234567",
+    });
+    verifyIdToken.mockResolvedValue({ getPayload: () => ({ sub: "google-sub-phonelink", email: "phoneandemail@example.com", name: "X" }) });
+    const res = await request(app).post("/api/auth/google").send({ credential: "good-token" });
+    // Correctly blocked, same 403 + needsVerification shape as a
+    // password login on an unverified account -- not a 200 with a
+    // working token, which is exactly what the bypass used to hand back.
+    expect(res.status).toBe(403);
+    expect(res.body.data.needsVerification).toBe(true);
+    expect(res.body.data.accountStatus).toBe("partially_verified"); // email now verified via Google, phone still isn't
   });
 });
 

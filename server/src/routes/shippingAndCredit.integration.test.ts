@@ -3,6 +3,7 @@ import request from "supertest";
 import express, { type Express } from "express";
 import bcrypt from "bcryptjs";
 import { createTestDb } from "../test/testDb";
+import { registerAndVerifyCustomer } from "../test/authHelpers";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -20,11 +21,7 @@ async function makeCustomerWithOrder(opts: { username: string; productId: string
   // way the other test files route around it, rather than asserting on
   // exact post-decrement values.
   await pool.query(`UPDATE mkt_products SET stock = 50 WHERE id = $1`, [opts.productId]);
-  const reg = await request(app).post("/api/auth/register").send({
-    username: opts.username, password: "TestPass123", name: "Test Customer", email: `${opts.username}@example.com`,
-  });
-  const token = reg.body.data.token as string;
-  const userId = reg.body.data.user.id as string;
+  const { token, userId } = await registerAndVerifyCustomer(app, pool, { username: opts.username, email: `${opts.username}@example.com` });
   await request(app).post(`/api/marketplace/addresses/${userId}`).set("Authorization", `Bearer ${token}`).send({
     firstName: "T", lastName: "C", line1: "1 St", city: "Cape Town", postalCode: "8001", country: "ZA", phone: "0821234567",
   });
@@ -144,8 +141,8 @@ describe("Credit provider: BNPL orders route to the right provider and need a re
   });
 
   it("rejects a customer (not a credit provider) from viewing any provider's order list", async () => {
-    const custReg = await request(app).post("/api/auth/register").send({ username: "notacreditprovider", password: "TestPass123", name: "X", email: "notcred@example.com" });
-    const res = await request(app).get("/api/marketplace/credit-providers/cred-payflex/orders").set("Authorization", `Bearer ${custReg.body.data.token}`);
+    const { token } = await registerAndVerifyCustomer(app, pool, { username: "notacreditprovider", email: "notcred@example.com" });
+    const res = await request(app).get("/api/marketplace/credit-providers/cred-payflex/orders").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
   });
 
@@ -229,8 +226,8 @@ describe("Shipping company: claim, pick up, and deliver with a real signature", 
   });
 
   it("rejects a customer (not a shipping company) from viewing any company's order list", async () => {
-    const custReg = await request(app).post("/api/auth/register").send({ username: "notashippingco", password: "TestPass123", name: "X", email: "notship@example.com" });
-    const res = await request(app).get("/api/marketplace/shipping-companies/ship-dhl/orders").set("Authorization", `Bearer ${custReg.body.data.token}`);
+    const { token } = await registerAndVerifyCustomer(app, pool, { username: "notashippingco", email: "notship@example.com" });
+    const res = await request(app).get("/api/marketplace/shipping-companies/ship-dhl/orders").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
   });
 });

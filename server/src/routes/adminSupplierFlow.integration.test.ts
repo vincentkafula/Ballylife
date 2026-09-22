@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import request from "supertest";
 import express, { type Express } from "express";
 import { createTestDb } from "../test/testDb";
+import { registerAndVerifyCustomer } from "../test/authHelpers";
 
 const { pool } = createTestDb();
 vi.mock("../db/pool", () => ({ pool, hasDb: true }));
@@ -139,11 +140,9 @@ describe("Supplier order status transitions (PATCH /admin/supplier-orders/:id/st
     // real customer buys it — this is what actually creates the
     // supplier-order record under test below.
     await pool.query(`UPDATE mkt_products SET status = 'active' WHERE price = 599`);
-    const custReg = await request(app).post("/api/auth/register").send({
-      username: "supplierordercustomer", password: "TestPass123", name: "Customer", email: "supord@example.com",
+    const { token: custToken, userId: custId } = await registerAndVerifyCustomer(app, pool, {
+      username: "supplierordercustomer", email: "supord@example.com",
     });
-    const custToken = custReg.body.data.token;
-    const custId = custReg.body.data.user.id;
     await request(app).post(`/api/marketplace/addresses/${custId}`).set("Authorization", `Bearer ${custToken}`).send({
       firstName: "S", lastName: "O", line1: "1 St", city: "Cape Town", postalCode: "8001", country: "ZA", phone: "0821234567",
     });
