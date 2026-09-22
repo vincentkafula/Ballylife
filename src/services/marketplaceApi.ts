@@ -232,21 +232,46 @@ export const mktCustomer = {
 };
 
 // ── Marketplace auth (separate from the site's admin login) ─────────────────
-export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; }
+export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; phone?: string | null; emailVerified?: boolean; phoneVerified?: boolean; accountStatus?: string; }
+
+// The shape login/register/verify-*/google/facebook all return when the
+// account isn't active yet -- carried through to the caller (rather than
+// collapsed into a generic error string) so the UI can route to a
+// verification screen with the specifics it needs, not just an error toast.
+export interface MktNeedsVerification { needsVerification: true; username: string; emailVerified: boolean; phoneVerified: boolean; hasPhone: boolean; accountStatus: string; }
 
 // Shared by login() and the OAuth methods below: none of them get the
 // seller/supplier/etc. record back in the initial response, so each
 // looks it up by role so the app knows which store/supplier/authority
 // this account owns.
-async function finishOauthLogin(r: { success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }) {
+async function finishOauthLogin(r: { success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }) {
   if (r.success && r.data?.token) {
     const { token, user } = r.data;
     setMktToken(token);
     localStorage.setItem("mkt_user", JSON.stringify(user));
     await loadRoleRecord(user);
-    return { success: true, token, user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
+    return { success: true, token, user, error: undefined, verification: undefined } as const;
   }
-  return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Sign-in failed" };
+  if (r.data?.needsVerification) {
+    return { success: false, token: undefined, user: undefined, error: r.error ?? "Please verify your account.", verification: r.data as MktNeedsVerification };
+  }
+  return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Sign-in failed", verification: undefined };
+}
+
+// Shared by verifyEmail() and verifyPhone(): if this call was the last
+// required step, the backend hands back a real token in the same
+// response (authRouter.ts's maybeIssueTokenIfNowActive) -- when that
+// happens, log the person straight in rather than sending them back to
+// a manual sign-in screen. If not, just return the (updated) user so
+// the verification screen can show what's still outstanding.
+async function applyVerificationResult(r: { success: boolean; data?: { token?: string; user: MktAuthUser }; error?: string }) {
+  if (r.success && r.data?.token) {
+    const { token, user } = r.data;
+    setMktToken(token);
+    localStorage.setItem("mkt_user", JSON.stringify(user));
+    await loadRoleRecord(user);
+  }
+  return r;
 }
 
 async function loadRoleRecord(user: MktAuthUser): Promise<void> {
@@ -270,7 +295,7 @@ async function loadRoleRecord(user: MktAuthUser): Promise<void> {
 
 export const mktAuth = {
   login: async (username: string, password: string) => {
-    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+    const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
     if (r.success && r.data?.token) {
       const { token, user } = r.data;
       setMktToken(token);
@@ -279,30 +304,49 @@ export const mktAuth = {
       // Flatten to the shape callers expect (token/user at the top level)
       // — the backend nests them under data, but every caller here (and
       // MarketplaceAuthModal) was written against a flat response.
-      return { success: true, token, user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
+      return { success: true, token, user, error: undefined, verification: undefined } as const;
     }
-    return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Invalid username or password" };
-  },
-  registerCustomer: async (body: { username: string; password: string; name: string; email: string }) => {
-    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/register", { method: "POST", body: JSON.stringify({ ...body, role: "customer" }) });
-    if (r.success && r.data?.token) {
-      setMktToken(r.data.token);
-      localStorage.setItem("mkt_user", JSON.stringify(r.data.user));
-      return { success: true, token: r.data.token, user: r.data.user, error: undefined } as { success: boolean; token: string; user: MktAuthUser; error?: string };
+    if (r.data?.needsVerification) {
+      // Correct credentials, account just isn't active yet -- carry the
+      // verification details through rather than a bare error string,
+      // so the caller can route to the verification screen with them.
+      return { success: false, token: undefined, user: undefined, error: r.error ?? "Please verify your account.", verification: r.data as MktNeedsVerification };
     }
-    return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Registration failed" };
+    return { success: false, token: undefined as unknown as string, user: undefined as unknown as MktAuthUser, error: r.error ?? "Invalid username or password", verification: undefined };
   },
+  registerCustomer: async (body: { username: string; password: string; name: string; email: string; phone?: string }) => {
+    const r = await api<{ success: boolean; data?: { user: MktAuthUser; needsVerification?: boolean }; error?: string }>("/api/auth/register", { method: "POST", body: JSON.stringify({ ...body, role: "customer" }) });
+    // Registering never returns a usable token anymore -- the account
+    // isn't active until it's verified (see docs/threat-model.md /
+    // authRouter.ts). The caller routes to the verification screen
+    // using just the returned user's username, no token required for
+    // that screen's own verify/resend calls.
+    if (r.success && r.data?.user) {
+      return { success: true, user: r.data.user, needsVerification: Boolean(r.data.needsVerification), error: undefined };
+    }
+    return { success: false, user: undefined as unknown as MktAuthUser, needsVerification: false, error: r.error ?? "Registration failed" };
+  },
+  verifyEmail: (token: string) =>
+    api<{ success: boolean; data?: { token?: string; user: MktAuthUser }; error?: string }>("/api/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) })
+      .then(applyVerificationResult),
+  resendVerificationEmail: (username: string) =>
+    api<{ success: boolean; error?: string }>("/api/auth/resend-verification-email", { method: "POST", body: JSON.stringify({ username }) }),
+  verifyPhone: (username: string, code: string) =>
+    api<{ success: boolean; data?: { token?: string; user: MktAuthUser }; error?: string }>("/api/auth/verify-phone", { method: "POST", body: JSON.stringify({ username, code }) })
+      .then(applyVerificationResult),
+  resendPhoneOtp: (username: string) =>
+    api<{ success: boolean; error?: string }>("/api/auth/resend-phone-otp", { method: "POST", body: JSON.stringify({ username }) }),
   oauthConfig: () => api<{ success: boolean; data: { googleEnabled: boolean; facebookEnabled: boolean } }>("/api/auth/oauth-config"),
   // Google/Facebook sign-in: same post-login role lookup as login()
   // above (a Google sign-in can land on an existing seller/supplier/etc.
   // account if it was linked by matching email, not just a fresh
   // customer), so this shares that logic rather than assuming customer.
   google: async (credential: string) => {
-    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
+    const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
     return finishOauthLogin(r);
   },
   facebook: async (accessToken: string) => {
-    const r = await api<{ success: boolean; data?: { token: string; user: MktAuthUser }; error?: string }>("/api/auth/facebook", { method: "POST", body: JSON.stringify({ accessToken }) });
+    const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/facebook", { method: "POST", body: JSON.stringify({ accessToken }) });
     return finishOauthLogin(r);
   },
   registerSeller: async (body: { username: string; password: string; name: string; email: string; storeName: string; description?: string; phone?: string; taxId?: string; applicationData?: unknown }) => {

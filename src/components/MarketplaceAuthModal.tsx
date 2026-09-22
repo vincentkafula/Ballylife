@@ -30,7 +30,7 @@ function loadScriptOnce(src: string, id: string): Promise<void> {
   });
 }
 
-type Tab = "signin" | "customer" | "seller" | "forgot" | "reset";
+type Tab = "signin" | "customer" | "seller" | "forgot" | "reset" | "verify";
 
 interface Props {
   onClose: () => void;
@@ -148,6 +148,52 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
   const [cUsername, setCUsername] = useState("");
   const [cEmail, setCEmail] = useState("");
   const [cPassword, setCPassword] = useState("");
+  const [cPhone, setCPhone] = useState("");
+
+  // Account verification -- reached either right after registering, or
+  // when signing in on an account that isn't active yet (login returns
+  // 403 + these same details rather than a token in that case).
+  const [vUsername, setVUsername] = useState("");
+  const [vEmailVerified, setVEmailVerified] = useState(false);
+  const [vPhoneVerified, setVPhoneVerified] = useState(false);
+  const [vHasPhone, setVHasPhone] = useState(false);
+  const [vOtpCode, setVOtpCode] = useState("");
+  const [vResendCooldown, setVResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (vResendCooldown <= 0) return;
+    const t = setTimeout(() => setVResendCooldown(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [vResendCooldown]);
+
+  // A verification email link lands back here as ?verifyEmailToken=... —
+  // complete the verification immediately rather than making the
+  // person find their way back to a form on their own, the same
+  // pattern the existing ?resetToken= handling below already uses.
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("verifyEmailToken");
+    if (!token) return;
+    (async () => {
+      setLoading(true);
+      const r = await mktAuth.verifyEmail(token);
+      setLoading(false);
+      window.history.replaceState({}, "", window.location.pathname);
+      if (r.success && r.data) {
+        if (r.data.token) {
+          onAuthenticated(r.data.user, null);
+        } else {
+          setVUsername(r.data.user.username);
+          setVEmailVerified(Boolean(r.data.user.emailVerified));
+          setVPhoneVerified(Boolean(r.data.user.phoneVerified));
+          setVHasPhone(Boolean(r.data.user.phone));
+          setTab("verify");
+        }
+      } else {
+        setError(r.error ?? "This verification link is invalid or has expired.");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSignIn = async () => {
     setError(null);
@@ -155,8 +201,16 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     setLoading(true);
     const r = await mktAuth.login(siUsername, siPassword);
     setLoading(false);
-    if (r.success && r.token) onAuthenticated(r.user, JSON.parse(localStorage.getItem("mkt_seller") ?? "null"), JSON.parse(localStorage.getItem("mkt_supplier") ?? "null"), JSON.parse(localStorage.getItem("mkt_authority") ?? "null"));
-    else setError((r as { error?: string }).error ?? "Sign in failed. Check your username and password.");
+    if (r.success && r.token) { onAuthenticated(r.user, JSON.parse(localStorage.getItem("mkt_seller") ?? "null"), JSON.parse(localStorage.getItem("mkt_supplier") ?? "null"), JSON.parse(localStorage.getItem("mkt_authority") ?? "null")); return; }
+    if (r.verification) {
+      setVUsername(r.verification.username);
+      setVEmailVerified(r.verification.emailVerified);
+      setVPhoneVerified(r.verification.phoneVerified);
+      setVHasPhone(r.verification.hasPhone);
+      setTab("verify");
+      return;
+    }
+    setError(r.error ?? "Sign in failed. Check your username and password.");
   };
 
   const handleCustomerRegister = async () => {
@@ -164,11 +218,48 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     if (!cName || !cUsername || !cEmail || !cPassword) { setError("All fields are required."); return; }
     if (cPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
     setLoading(true);
-    const r = await mktAuth.registerCustomer({ username: cUsername, password: cPassword, name: cName, email: cEmail });
+    const r = await mktAuth.registerCustomer({ username: cUsername, password: cPassword, name: cName, email: cEmail, phone: cPhone || undefined });
     setLoading(false);
-    if (r.success && r.token) onAuthenticated(r.user, null);
-    else setError((r as { error?: string }).error ?? "Registration failed.");
+    if (!r.success) { setError(r.error ?? "Registration failed."); return; }
+    // Registering never hands back a usable token anymore -- the
+    // account needs to be verified first (see marketplaceApi.ts).
+    setVUsername(r.user.username);
+    setVEmailVerified(false);
+    setVPhoneVerified(false);
+    setVHasPhone(Boolean(cPhone));
+    setTab("verify");
   };
+
+  const handleResendEmail = async () => {
+    setError(null); setMessage(null);
+    setLoading(true);
+    await mktAuth.resendVerificationEmail(vUsername);
+    setLoading(false);
+    setMessage("Verification email sent — check your inbox.");
+    setVResendCooldown(30);
+  };
+
+  const handleResendPhone = async () => {
+    setError(null); setMessage(null);
+    setLoading(true);
+    await mktAuth.resendPhoneOtp(vUsername);
+    setLoading(false);
+    setMessage("A new code has been sent to your phone.");
+    setVResendCooldown(30);
+  };
+
+  const handleVerifyPhone = async () => {
+    setError(null); setMessage(null);
+    if (!vOtpCode || vOtpCode.length < 4) { setError("Enter the code we sent to your phone."); return; }
+    setLoading(true);
+    const r = await mktAuth.verifyPhone(vUsername, vOtpCode);
+    setLoading(false);
+    if (!r.success || !r.data) { setError(r.error ?? "Incorrect code. Please try again."); return; }
+    if (r.data.token) { onAuthenticated(r.data.user, null); return; }
+    setVPhoneVerified(Boolean(r.data.user.phoneVerified));
+    setMessage("Phone verified.");
+  };
+
 
   const handleForgotPassword = async () => {
     setError(null); setMessage(null);
@@ -223,7 +314,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
         </div>
 
-        {tab !== "forgot" && tab !== "reset" && (
+        {tab !== "forgot" && tab !== "reset" && tab !== "verify" && (
           <div className="flex border-b border-gray-100 shrink-0">
             {([
               { id: "signin" as Tab, label: "Sign In" },
@@ -294,11 +385,63 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
               <Field label="Full name" value={cName} onChange={setCName} />
               <Field label="Username" value={cUsername} onChange={setCUsername} />
               <Field label="Email" value={cEmail} onChange={setCEmail} type="email" />
+              <Field label="Phone (optional)" value={cPhone} onChange={setCPhone} type="tel" required={false} placeholder="+27821234567" />
               <Field label="Password" value={cPassword} onChange={setCPassword} type="password" placeholder="At least 8 characters" />
               <button onClick={handleCustomerRegister} disabled={loading}
                 className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"
                 style={{ background: "#14110D" }}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><User className="w-4 h-4" /> Create customer account</>}
+              </button>
+              <p className="text-[11px] text-gray-400 mt-3 text-center">We'll email you a verification link. If you add a phone number, we'll also text you a code once phone verification is enabled.</p>
+            </div>
+          )}
+
+          {tab === "verify" && (
+            <div>
+              <p className="font-serif text-base text-gray-900 mb-1" style={{ fontWeight: 600 }}>Verify your account</p>
+              <p className="text-xs text-gray-500 mb-4">Signed in as <span className="font-semibold text-gray-700">{vUsername}</span>. Complete the step(s) below to activate your account.</p>
+
+              <div className="rounded-lg border border-gray-200 p-3 mb-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-800">Email</span>
+                  <span className={`text-xs font-bold ${vEmailVerified ? "text-green-600" : "text-amber-600"}`}>{vEmailVerified ? "Verified" : "Pending"}</span>
+                </div>
+                {!vEmailVerified && (
+                  <>
+                    <p className="text-xs text-gray-500 mt-1.5">Click the link we emailed you. Didn't get it?</p>
+                    <button onClick={handleResendEmail} disabled={loading || vResendCooldown > 0}
+                      className="mt-2 text-xs font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: "#B8862E" }}>
+                      {vResendCooldown > 0 ? `Resend in ${vResendCooldown}s` : "Resend email"}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {vHasPhone && (
+                <div className="rounded-lg border border-gray-200 p-3 mb-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-800">Phone</span>
+                    <span className={`text-xs font-bold ${vPhoneVerified ? "text-green-600" : "text-amber-600"}`}>{vPhoneVerified ? "Verified" : "Pending"}</span>
+                  </div>
+                  {!vPhoneVerified && (
+                    <>
+                      <p className="text-xs text-gray-500 mt-1.5 mb-2">Enter the code we texted you.</p>
+                      <div className="flex gap-2">
+                        <input value={vOtpCode} onChange={e => setVOtpCode(e.target.value.replace(/\D/g, ""))} maxLength={6} placeholder="123456"
+                          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#B8862E] focus:ring-1 focus:ring-[#B8862E] tracking-widest" />
+                        <button onClick={handleVerifyPhone} disabled={loading} className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-60" style={{ background: "#14110D" }}>Verify</button>
+                      </div>
+                      <button onClick={handleResendPhone} disabled={loading || vResendCooldown > 0}
+                        className="mt-2 text-xs font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: "#B8862E" }}>
+                        {vResendCooldown > 0 ? `Resend in ${vResendCooldown}s` : "Resend code"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <button onClick={() => { setTab("signin"); setError(null); setMessage(null); }} className="block w-full text-center text-[11px] text-gray-500 hover:text-gray-800 mt-3 hover:underline">
+                Back to sign in
               </button>
             </div>
           )}
