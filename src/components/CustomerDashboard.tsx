@@ -417,10 +417,14 @@ function AddressBook({ userId, addresses, onChanged }: { userId: string; address
   );
 }
 
-// Card numbers are never captured or stored here — only a display label and the
-// last 4 digits, matching how the rest of the app references cards elsewhere
-// (e.g. "Standard Bank ****4291"). Real payment processing isn't wired up in
-// this demo; this panel is for display/reference only.
+// Card numbers are never captured or stored here — only a display label and
+// the last 4 digits, matching how the rest of the app references cards
+// elsewhere (e.g. "Standard Bank ****4291"). Real payment processing is
+// PayFast (server/src/services/payfastProcessor.ts), which tokenizes
+// cards on its own hosted page -- this app never sees a real card
+// number regardless. This panel is a separate, simple reference list
+// the customer can name their own cards in for their own bookkeeping,
+// not itself connected to charging anything.
 function PaymentMethodsPanel() {
   const [cards, setCards] = useState<{ brand: string; last4: string }[]>([]);
   const [brand, setBrand] = useState("Visa");
@@ -429,7 +433,7 @@ function PaymentMethodsPanel() {
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-5">
       <p className="text-sm font-bold text-gray-900 mb-1">Payment Methods</p>
-      <p className="text-xs text-gray-400 mb-4">Reference only — no card numbers are collected or stored in this demo.</p>
+      <p className="text-xs text-gray-400 mb-4">Reference only — no card numbers are collected or stored here.</p>
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
         {cards.map((c, i) => (
           <div key={i} className="border border-gray-100 rounded-lg p-3 flex items-center gap-3">
@@ -510,7 +514,7 @@ function SecurityPanel() {
       <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
         {saving ? "Updating..." : "Update password"}
       </button>
-      <p className="text-[11px] text-gray-400 mt-4">Two-factor authentication and login-history tracking aren't available in this demo yet.</p>
+      <p className="text-[11px] text-gray-400 mt-4">Two-factor authentication and login-history tracking aren't available yet.</p>
     </div>
   );
 }

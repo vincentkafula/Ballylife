@@ -173,6 +173,8 @@ export const mktAdmin = {
     generate: (shipmentId: string) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/customs-records/generate", { method: "POST", body: JSON.stringify({ shipmentId }) }),
     update:   (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/customs-records/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   },
+  auditLog: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { page: number; limit: number; total: number; pages: number } }>(`/api/marketplace/admin/audit-log?${new URLSearchParams(params)}`),
+  users: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { total: number } }>(`/api/marketplace/admin/users?${new URLSearchParams(params)}`),
 };
 
 export const mktAddresses = (userId: string) =>

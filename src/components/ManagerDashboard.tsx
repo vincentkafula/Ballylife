@@ -224,7 +224,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                     ))}
                   </div>
                 </div>
-                <p className="lg:col-span-2 text-[11px] text-gray-400">Suspend/ban actions aren't wired up in this demo — this is a read-only directory.</p>
+                <p className="lg:col-span-2 text-[11px] text-gray-400">Suspend/ban actions aren't available yet — this is a read-only directory.</p>
               </div>
             )}
 
@@ -288,7 +288,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                 <TaxRevenueSummary />
                 <SettlementsPayouts />
                 <RevenueAuthorityManagement />
-                <p className="text-[11px] text-gray-400 mt-3">Chargebacks aren't wired up in this demo. Marking a payout "paid" below records that it was settled through whatever real channel you used — no money moves through this system itself.</p>
+                <p className="text-[11px] text-gray-400 mt-3">Chargebacks aren't handled automatically yet. Marking a payout "paid" below records that it was settled through whatever real channel you used — no money moves through this system itself.</p>
               </div>
             )}
 
@@ -313,18 +313,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
-            {tab === "security" && (
-              <div className="bg-white rounded-xl border border-gray-100 p-5">
-                <div className="flex items-center gap-2 mb-3"><Shield className="w-5 h-5 text-gray-400" /><p className="text-sm font-bold text-gray-900">Security & Fraud Monitoring</p></div>
-                <p className="text-sm text-gray-500 mb-4">Live fraud detection, IP monitoring and audit logging aren't implemented in this demo — building real versions of these needs actual traffic/behavioural data and dedicated infrastructure. What's genuinely enforced right now:</p>
-                <ul className="space-y-2 text-sm text-gray-700">
-                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> Passwords are hashed with bcrypt, never stored in plain text</li>
-                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> All dashboard routes require a valid signed-in session (JWT)</li>
-                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> New products and sellers require manual approval before going live</li>
-                  <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> API requests are rate-limited (300/min per IP)</li>
-                </ul>
-              </div>
-            )}
+            {tab === "security" && <SecurityAndAuditPanel />}
           </>
         )}
       </div>
@@ -347,6 +336,78 @@ const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
   shipped_to_customer: ["delivered"],
   delivered: [],
 };
+
+function SecurityAndAuditPanel() {
+  const [entries, setEntries] = useState<R[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [entityFilter, setEntityFilter] = useState<"" | "settlement" | "refund">("");
+
+  useEffect(() => {
+    setLoading(true);
+    mktAdmin.auditLog(entityFilter ? { entityType: entityFilter } : undefined)
+      .then(r => { if (r.success) setEntries(r.data as R[]); })
+      .catch(() => toast.error("Couldn't load the audit log — please try again."))
+      .finally(() => setLoading(false));
+  }, [entityFilter]);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="flex items-center gap-2 mb-3"><Shield className="w-5 h-5 text-gray-400" /><p className="text-sm font-bold text-gray-900">Security & Fraud Monitoring</p></div>
+        <p className="text-sm text-gray-500 mb-4">Live fraud detection and IP-based anomaly monitoring aren't built yet — that needs real traffic/behavioural data and dedicated infrastructure this platform doesn't have at its current scale. What's genuinely enforced right now:</p>
+        <ul className="space-y-2 text-sm text-gray-700">
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> Passwords are hashed with bcrypt, never stored in plain text</li>
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> All dashboard routes require a valid signed-in session (JWT), scoped to each account's own role and records</li>
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> A password change or reset immediately invalidates every other signed-in session on that account</li>
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> New customer accounts require email verification (and phone verification, once SMS delivery is configured) before they can sign in</li>
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> New products and sellers require manual approval before going live</li>
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> Settlement and refund changes are recorded in an audit log, below</li>
+          <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> API requests are rate-limited, with tighter limits on login, signup, and order creation specifically</li>
+        </ul>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-bold text-gray-900">Audit Log</p>
+          <select value={entityFilter} onChange={e => setEntityFilter(e.target.value as typeof entityFilter)}
+            className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 outline-none focus:border-[#B8862E]">
+            <option value="">All</option>
+            <option value="settlement">Settlements</option>
+            <option value="refund">Refunds</option>
+          </select>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
+        ) : entries.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-10">No audit entries yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-gray-400 border-b border-gray-100">
+                  <th className="py-2 pr-3 font-semibold">When</th>
+                  <th className="py-2 pr-3 font-semibold">Actor</th>
+                  <th className="py-2 pr-3 font-semibold">Entity</th>
+                  <th className="py-2 pr-3 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={String(e.id)} className="border-b border-gray-50">
+                    <td className="py-2 pr-3 text-gray-500 whitespace-nowrap">{new Date(String(e.createdAt)).toLocaleString()}</td>
+                    <td className="py-2 pr-3 text-gray-700">{String(e.actorUsername ?? e.actorId)}</td>
+                    <td className="py-2 pr-3 text-gray-700">{String(e.entityType)} <span className="text-gray-400">#{String(e.entityId).slice(0, 8)}</span></td>
+                    <td className="py-2 pr-3 text-gray-700">{String(e.action).replace(/_/g, " ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SupplyChainPanel() {
   const [subTab, setSubTab] = useState<"suppliers" | "warehouses" | "orders" | "shipments" | "catalog" | "taxRates" | "customs" | "vehicleDuty">("orders");

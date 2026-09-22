@@ -517,7 +517,7 @@ function StoreSettings({ seller, onSaved }: { seller: { id: string; storeName: s
       <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
         {saving ? "Saving..." : "Save changes"}
       </button>
-      <p className="text-[11px] text-gray-400 mt-4">Logo/banner upload, coupon creation and advertising campaigns aren't available in this demo yet.</p>
+      <p className="text-[11px] text-gray-400 mt-4">Logo/banner upload, coupon creation and advertising campaigns aren't available yet.</p>
     </div>
   );
 }

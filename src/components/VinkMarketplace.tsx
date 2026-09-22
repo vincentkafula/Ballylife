@@ -18,7 +18,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
   mktCategories, mktProducts, mktCart, mktOrders,
-  mktWishlist, mktSellers, mktAdmin, mktAddresses, mktAuth, setMktToken, getMktToken, type MktAuthUser,
+  mktWishlist, mktSellers, mktAdmin, mktAddresses, mktAddAddress, mktAuth, setMktToken, type MktAuthUser,
 } from "../services/marketplaceApi";
 import {
   ExecutiveChairIllustration, MeshTaskChairIllustration, ManagerChairIllustration,
@@ -1500,9 +1500,9 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
 }
 
 // ─── CHECKOUT ─────────────────────────────────────────────────────────────────
-function CheckoutView({ cart, addresses, onBack, onComplete }: {
-  cart: R | null; addresses: R[];
-  onBack: () => void; onComplete: (order: R) => void;
+function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAdded }: {
+  cart: R | null; addresses: R[]; userId: string;
+  onBack: () => void; onComplete: (order: R) => void; onAddressAdded: () => Promise<void>;
 }) {
   const [step, setStep]     = useState<CheckoutStep>("address");
   const [paymentPending, setPaymentPending] = useState(false);
@@ -1512,8 +1512,47 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
   const [bnplProvider, setBnplProvider] = useState<"payflex" | "payjustnow">("payflex");
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [addingAddress, setAddingAddress] = useState(addresses.length === 0);
+  const [newAddr, setNewAddr] = useState({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "" });
+  const [savingAddr, setSavingAddr] = useState(false);
+  const [addrError, setAddrError] = useState<string | null>(null);
+
+  // addresses can still be loading (or arrive late) when this component
+  // first mounts -- useState's lazy initializer above only runs once, so
+  // if it started empty and real addresses show up shortly after, this
+  // closes the auto-opened form once -- but only that first time, not
+  // every render, or it would also fight the user manually reopening
+  // "+ Add a new address" with existing addresses already loaded.
+  const hasAutoClosedRef = useRef(false);
+  useEffect(() => {
+    if (addresses.length > 0 && !hasAutoClosedRef.current) {
+      hasAutoClosedRef.current = true;
+      setAddingAddress(false);
+    }
+  }, [addresses.length]);
   const STEPS: CheckoutStep[] = ["address","shipping","payment","confirmation"];
   const si = STEPS.indexOf(step);
+
+  const handleSaveAddress = async () => {
+    setAddrError(null);
+    const { firstName, lastName, line1, city, postalCode, phone } = newAddr;
+    if (!firstName || !lastName || !line1 || !city || !postalCode || !phone) {
+      setAddrError("Please fill in every field.");
+      return;
+    }
+    setSavingAddr(true);
+    try {
+      const res = await mktAddAddress(userId, newAddr) as { success: boolean; error?: string };
+      if (!res.success) { setAddrError(res.error ?? "Couldn't save that address — please check the details and try again."); return; }
+      await onAddressAdded();
+      setAddingAddress(false);
+      setNewAddr({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "" });
+    } catch (err) {
+      setAddrError(err instanceof ApiConnectionError ? err.message : "Couldn't save that address — please try again.");
+    } finally {
+      setSavingAddr(false);
+    }
+  };
 
   const handlePlace = async () => {
     setPlacing(true);
@@ -1584,11 +1623,11 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
         <div className="max-w-lg mx-auto space-y-4">
           <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Delivery Address</h2>
           {addresses.map((a, i) => (
-            <button key={i} onClick={() => setSelAddr(i)}
-              className={`w-full p-4 rounded-2xl text-left border transition-all ${selAddr === i ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
+            <button key={i} onClick={() => { setSelAddr(i); setAddingAddress(false); }}
+              className={`w-full p-4 rounded-2xl text-left border transition-all ${selAddr === i && !addingAddress ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
               <div className="flex items-start gap-3">
-                <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center flex-shrink-0 ${selAddr === i ? "border-emerald-600 bg-emerald-600" : "border-gray-300"}`}>
-                  {selAddr === i && <div className="w-2 h-2 rounded-full bg-white" />}
+                <div className={`w-5 h-5 rounded-full border-2 mt-0.5 flex items-center justify-center flex-shrink-0 ${selAddr === i && !addingAddress ? "border-emerald-600 bg-emerald-600" : "border-gray-300"}`}>
+                  {selAddr === i && !addingAddress && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-900">{a.label as string}</p>
@@ -1598,8 +1637,48 @@ function CheckoutView({ cart, addresses, onBack, onComplete }: {
               </div>
             </button>
           ))}
-          <button onClick={() => setStep("shipping")}
-            className="w-full py-3.5 rounded-2xl text-sm font-bold text-white"
+
+          {addresses.length > 0 && !addingAddress && (
+            <button onClick={() => setAddingAddress(true)} className="w-full p-3 rounded-2xl border border-dashed border-gray-300 text-xs font-semibold text-gray-500 hover:border-[#B8862E] hover:text-[#B8862E]">
+              + Add a new address
+            </button>
+          )}
+
+          {addingAddress && (
+            <div className="p-4 rounded-2xl border border-gray-200 bg-white space-y-2">
+              <p className="text-sm font-semibold text-gray-900 mb-1">{addresses.length === 0 ? "Add your delivery address" : "New address"}</p>
+              {addrError && <div className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium">{addrError}</div>}
+              <div className="grid grid-cols-2 gap-2">
+                <input placeholder="First name" value={newAddr.firstName} onChange={e => setNewAddr(p => ({ ...p, firstName: e.target.value }))}
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                <input placeholder="Last name" value={newAddr.lastName} onChange={e => setNewAddr(p => ({ ...p, lastName: e.target.value }))}
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+              </div>
+              <input placeholder="Street address" value={newAddr.line1} onChange={e => setNewAddr(p => ({ ...p, line1: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+              <div className="grid grid-cols-2 gap-2">
+                <input placeholder="City" value={newAddr.city} onChange={e => setNewAddr(p => ({ ...p, city: e.target.value }))}
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                <input placeholder="Postal code" value={newAddr.postalCode} onChange={e => setNewAddr(p => ({ ...p, postalCode: e.target.value }))}
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+              </div>
+              <input placeholder="Phone number" value={newAddr.phone} onChange={e => setNewAddr(p => ({ ...p, phone: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+              <div className="flex gap-2 pt-1">
+                {addresses.length > 0 && (
+                  <button onClick={() => { setAddingAddress(false); setAddrError(null); }} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200">
+                    Cancel
+                  </button>
+                )}
+                <button onClick={handleSaveAddress} disabled={savingAddr} className="flex-[2] py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ background: "#14110D" }}>
+                  {savingAddr ? "Saving..." : "Save address"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button onClick={() => setStep("shipping")} disabled={addresses.length === 0 || addingAddress}
+            className="w-full py-3.5 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
             style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
             Continue to Shipping
           </button>
@@ -2326,8 +2405,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
           {view === "checkout" && authUser && (
             <CheckoutView
-              cart={cart} addresses={addresses}
+              cart={cart} addresses={addresses} userId={authUser.id}
               onBack={() => setView("home")}
+              onAddressAdded={loadInitial}
               onComplete={() => { loadInitial(); setView("account"); }}
             />
           )}

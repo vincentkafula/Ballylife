@@ -371,12 +371,12 @@ export function SellerApplicationWizard({ onClose, onAuthenticated }: Props) {
                       className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
                       style={{ background: form[v.key] ? "#ECFDF5" : "#F3F4F6", color: form[v.key] ? "#059669" : "#9CA3AF" }}
                     >
-                      {form[v.key] ? <><CheckCircle2 className="w-3 h-3" /> Verified (demo)</> : "Not verified"}
+                      {form[v.key] ? <><CheckCircle2 className="w-3 h-3" /> Verified (simulated)</> : "Not verified"}
                     </button>
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-gray-400 mt-3">Real SMS/email OTP delivery isn't wired up in this demo — the toggle above simulates the verified state a production build would confirm before allowing sign-up.</p>
+              <p className="text-[11px] text-gray-400 mt-3">This toggle simulates the verified state a real OTP flow would confirm — seller sign-up doesn't yet send an actual SMS/email code the way customer account verification does (see Sign In → New Customer). Every seller application still requires manual KYC approval by the marketplace team regardless, so this isn't a gap in what actually gates a seller going live.</p>
             </div>
           )}
 
