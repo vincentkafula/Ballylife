@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.ballylife.com/sitemap.xml
+Sitemap: https://ballylife-backend-production.up.railway.app/sitemap-index.xml

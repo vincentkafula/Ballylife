@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import authRouter from "./routes/authRouter";
 import marketplaceRouter from "./routes/marketplaceRouter";
 import geoRouter from "./routes/geoRouter";
+import sitemapRouter from "./routes/sitemapRouter";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 
@@ -79,6 +80,11 @@ app.get("/health", async (_req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/marketplace", marketplaceRouter);
 app.use("/api", geoRouter);
+// Mounted at root, not under /api -- sitemaps are conventionally fetched
+// from a site's own domain root; referenced this way (cross-domain, from
+// the frontend's robots.txt) since this service and the frontend are
+// separate Railway services on separate domains. See sitemapRouter.ts.
+app.use("/", sitemapRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, error: "Not found" });
