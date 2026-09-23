@@ -6,8 +6,8 @@ import rateLimit from "express-rate-limit";
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "../db/pool";
 import { requireAuth, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
-import { sendPasswordResetEmail, sendVerificationEmail, isEmailConfigured } from "../services/emailService";
-import { sendVerificationOtp, isSmsConfigured } from "../services/smsService";
+import { sendPasswordResetEmail, isEmailConfigured } from "../services/emailService";
+import { computeAccountStatus, sendEmailVerification, sendPhoneVerification } from "../services/accountVerification";
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -29,13 +29,9 @@ const mapUser = (r: any) => ({
 // The moment real Twilio credentials exist, this starts requiring it
 // for real, for every signup from then on -- accounts that already
 // reached "active" under the looser rule are not retroactively
-// downgraded.
-function computeAccountStatus(emailVerified: boolean, phoneVerified: boolean, hasPhone: boolean): "unverified" | "partially_verified" | "active" {
-  const phoneRequirementMet = !hasPhone || !isSmsConfigured() || phoneVerified;
-  if (emailVerified && phoneRequirementMet) return "active";
-  if (emailVerified || phoneVerified) return "partially_verified";
-  return "unverified";
-}
+// downgraded. Lives in accountVerification.ts now, not here, so seller
+// registration (marketplaceRouter.ts) can share the exact same logic
+// rather than a second copy that could drift out of sync.
 
 // ── Google / Facebook sign-in ────────────────────────────────────────────
 // Both are "identity provider already did the login" flows: the
@@ -238,24 +234,8 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
   );
   const user = rows[0];
 
-  const emailToken = crypto.randomBytes(32).toString("hex");
-  const emailTokenHash = crypto.createHash("sha256").update(emailToken).digest("hex");
-  await pool!.query(
-    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '30 minutes')`,
-    [user.id, emailTokenHash]
-  );
-  const verifyUrl = `${process.env.MARKETPLACE_PUBLIC_URL ?? ""}/?verifyEmailToken=${emailToken}`;
-  await sendVerificationEmail(email, verifyUrl);
-
-  if (phone) {
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-    await pool!.query(
-      `INSERT INTO phone_verification_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')`,
-      [user.id, otpHash]
-    );
-    await sendVerificationOtp(phone, otp);
-  }
+  await sendEmailVerification(user.id, email);
+  if (phone) await sendPhoneVerification(user.id, phone);
 
   // Deliberately no token here -- registering isn't the same as being
   // logged in while account_status isn't "active" yet (see the brief:
@@ -335,14 +315,7 @@ router.post("/resend-verification-email", resendLimiter, async (req: Request, re
   // regardless of whether the account exists or is already verified.
   if (!rows.length || rows[0].email_verified) { res.json({ success: true }); return; }
   const user = rows[0];
-  const emailToken = crypto.randomBytes(32).toString("hex");
-  const emailTokenHash = crypto.createHash("sha256").update(emailToken).digest("hex");
-  await pool!.query(
-    `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, now() + interval '30 minutes')`,
-    [user.id, emailTokenHash]
-  );
-  const verifyUrl = `${process.env.MARKETPLACE_PUBLIC_URL ?? ""}/?verifyEmailToken=${emailToken}`;
-  await sendVerificationEmail(user.email, verifyUrl);
+  await sendEmailVerification(user.id, user.email);
   res.json({ success: true });
 });
 
@@ -392,13 +365,7 @@ router.post("/resend-phone-otp", resendLimiter, async (req: Request, res: Respon
   const { rows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [username]);
   if (!rows.length || !rows[0].phone || rows[0].phone_verified) { res.json({ success: true }); return; }
   const user = rows[0];
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
-  const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-  await pool!.query(
-    `INSERT INTO phone_verification_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')`,
-    [user.id, otpHash]
-  );
-  await sendVerificationOtp(user.phone, otp);
+  await sendPhoneVerification(user.id, user.phone);
   res.json({ success: true });
 });
 

@@ -27,7 +27,6 @@ const SELLER_TYPES = [
 
 type FormData = {
   email: string; mobile: string; password: string; confirmPassword: string;
-  emailVerified: boolean; phoneVerified: boolean;
   sellerType: string;
   firstName: string; middleName: string; lastName: string; dob: string; gender: string; nationality: string;
   altPhone: string; contactEmail: string;
@@ -42,7 +41,7 @@ type FormData = {
 };
 
 const EMPTY: FormData = {
-  email: "", mobile: "", password: "", confirmPassword: "", emailVerified: false, phoneVerified: false,
+  email: "", mobile: "", password: "", confirmPassword: "",
   sellerType: "", firstName: "", middleName: "", lastName: "", dob: "", gender: "", nationality: "",
   altPhone: "", contactEmail: "",
   idType: "", idNumber: "", idCountry: "", idExpiry: "", idFront: null, idBack: null, selfie: null,
@@ -362,21 +361,10 @@ export function SellerApplicationWizard({ onClose, onAuthenticated }: Props) {
                 <TextField label="Password" value={form.password} onChange={v => set("password", v)} type="password" placeholder="At least 8 characters" required />
                 <TextField label="Confirm password" value={form.confirmPassword} onChange={v => set("confirmPassword", v)} type="password" required />
               </div>
-              <div className="mt-4 grid sm:grid-cols-2 gap-3">
-                {[{ key: "emailVerified" as const, label: "Email verification (OTP)" }, { key: "phoneVerified" as const, label: "Phone verification (SMS OTP)" }].map(v => (
-                  <div key={v.key} className="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2.5">
-                    <span className="text-xs text-gray-600">{v.label}</span>
-                    <button
-                      onClick={() => set(v.key, !form[v.key])}
-                      className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full"
-                      style={{ background: form[v.key] ? "#ECFDF5" : "#F3F4F6", color: form[v.key] ? "#059669" : "#9CA3AF" }}
-                    >
-                      {form[v.key] ? <><CheckCircle2 className="w-3 h-3" /> Verified (simulated)</> : "Not verified"}
-                    </button>
-                  </div>
-                ))}
+              <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+                <p className="text-xs text-gray-600 font-medium mb-1">Email &amp; phone verification</p>
+                <p className="text-[11px] text-gray-500">We'll send a real verification email and SMS code to the address and number above once you submit — you can complete them from your seller account afterward. Every application still requires manual KYC approval by the marketplace team regardless, so this isn't what gates your store going live.</p>
               </div>
-              <p className="text-[11px] text-gray-400 mt-3">This toggle simulates the verified state a real OTP flow would confirm — seller sign-up doesn't yet send an actual SMS/email code the way customer account verification does (see Sign In → New Customer). Every seller application still requires manual KYC approval by the marketplace team regardless, so this isn't a gap in what actually gates a seller going live.</p>
             </div>
           )}
 

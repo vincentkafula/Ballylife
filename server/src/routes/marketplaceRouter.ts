@@ -10,6 +10,7 @@ import { sendOrderConfirmationEmail } from "../services/emailService";
 import { parseCsv } from "../utils/csv";
 import { calculateVat, convertToZar, calculatePercentageDuty, calculateZmVehicleDuty, calculatePlatformFee, calculateSellerPayout, zmVehicleAgeBand, round2 } from "../utils/pricing";
 import { logger } from "../utils/logger";
+import { computeAccountStatus, sendEmailVerification, sendPhoneVerification } from "../services/accountVerification";
 import { checkVehicleCompliance } from "../utils/compliance";
 import { SUPPLIER_ORDER_TRANSITIONS, CUSTOMS_RECORD_TRANSITIONS, canTransition, allowedNextStates } from "../utils/stateMachine";
 import { recalcCartTotals } from "../utils/cart";
@@ -1472,9 +1473,24 @@ router.post("/sellers/register", async (req: Request, res: Response): Promise<vo
   try {
     await client.query("BEGIN");
     const passwordHash = await bcrypt.hash(password, 10);
+    // email_verified/phone_verified/account_status genuinely reflect
+    // reality now, same as a customer signup -- previously
+    // SellerApplicationWizard.tsx's identity-check step was a UI
+    // toggle that sent nothing real. Deliberately still issuing a
+    // token immediately below, though, unlike customer registration:
+    // this same request flow uploads KYC documents using that token
+    // moments later (see the wizard's submit handler), so withholding
+    // it would break that. This is an acceptable, honest trade-off
+    // specifically because sellers already have a stronger gate in
+    // front of ever going live -- mandatory human KYC/admin approval
+    // of mkt_sellers.status, regardless of email/phone verification
+    // status -- so an unverified-but-logged-in seller still can't
+    // actually transact until a person reviews them.
+    const accountStatus = computeAccountStatus(false, false, Boolean(phone));
     const { rows: userRows } = await client.query(
-      `INSERT INTO users (username, password_hash, role, name, email) VALUES ($1,$2,'seller',$3,$4) RETURNING *`,
-      [username, passwordHash, name, email]
+      `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status)
+       VALUES ($1,$2,'seller',$3,$4,$5,false,false,$6) RETURNING *`,
+      [username, passwordHash, name, email, phone ?? null, accountStatus]
     );
     const user = userRows[0];
     const sellerId = `sel-${user.id.slice(0, 8)}`;
@@ -1484,10 +1500,14 @@ router.post("/sellers/register", async (req: Request, res: Response): Promise<vo
       [sellerId, user.id, storeName, slug, description ?? "", email, phone ?? "", taxId ?? null, JSON.stringify(applicationData ?? {})]
     );
     await client.query("COMMIT");
+
+    await sendEmailVerification(user.id, email);
+    if (phone) await sendPhoneVerification(user.id, phone);
+
     const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.status(201).json({
       success: true, token,
-      user: { id: user.id, username: user.username, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, username: user.username, name: user.name, email: user.email, role: user.role, emailVerified: false, phoneVerified: false, accountStatus },
       seller: { id: sellerId, storeName, status: "pending_kyc" },
       message: "Seller account created — your application is pending review before your store goes live.",
     });
