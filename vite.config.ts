@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
           id: '/',
           name: 'Ballylife',
           short_name: 'Ballylife',
-          description: "Ballylife — Zambia's largest online shopping.",
+          description: "A growing multi-vendor online marketplace serving South Africa and expanding across Africa.",
           categories: ['shopping'],
           theme_color: '#14110D',
           background_color: '#14110D',
