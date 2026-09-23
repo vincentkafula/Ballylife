@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, Fragment, lazy, Suspense, type ReactNode, type CSSProperties } from "react";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiConnectionError } from "../services/marketplaceApi";
+import { pathForView, viewForPath, TITLE_FOR_VIEW, setPageMeta, type MarketplaceView } from "../services/routes";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
 import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
@@ -844,16 +846,34 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
   categories: R[]; onProduct: (p: R) => void; onCart: (p: R) => void;
   wishlistIds: Set<string>; onWishlist: (id: string) => void; initialSearch?: string; onFooterLink: (label: string) => void;
 }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<R[]>([]);
   const [loading, setLoading]   = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage]         = useState(1);
   const [hasMore, setHasMore]   = useState(true);
-  const [search, setSearch]     = useState(initialSearch ?? "");
-  const [activeCat, setActiveCat] = useState("");
-  const [sort, setSort]         = useState("popular");
+  // category/search are seeded from the URL first (so a shared or
+  // bookmarked /catalog?category=electronics link actually lands on
+  // that filtered view), falling back to initialSearch (set when
+  // arriving here from the header search box) or empty.
+  const [search, setSearch]     = useState(searchParams.get("search") ?? initialSearch ?? "");
+  const [activeCat, setActiveCat] = useState(searchParams.get("category") ?? "");
+  const [sort, setSort]         = useState(searchParams.get("sort") ?? "popular");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const isStandalone = useIsStandalone();
+
+  // Keeps the URL's query string reflecting the current filters -- so
+  // this page has a real, distinct, shareable/indexable address per
+  // category or search term instead of one generic /catalog URL no
+  // matter what's being browsed.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (activeCat) next.set("category", activeCat);
+    if (search) next.set("search", search);
+    if (sort !== "popular") next.set("sort", sort);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCat, search, sort]);
 
   // Vehicle-specific filters — only shown/applied when browsing the
   // Vehicles category itself (not its Parts & Equipment subcategory,
@@ -1122,7 +1142,21 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
     setLoading(true);
     setShow3D(false);
     mktProducts.get(productId)
-      .then(res => { setData(res.data as typeof data); addRecentlyViewed(productId); })
+      .then(res => {
+        const d = res.data as typeof data;
+        setData(d);
+        addRecentlyViewed(productId);
+        if (d?.product) {
+          const name = String(d.product.name ?? "Product");
+          const rawDesc = String(d.product.description ?? "").replace(/\s+/g, " ").trim();
+          // Meta descriptions much beyond ~155 chars just get cut off in
+          // a search snippet anyway, and this app's product descriptions
+          // are multi-paragraph -- take the first sentence-ish chunk
+          // rather than a mid-word cut.
+          const shortDesc = rawDesc.length > 155 ? rawDesc.slice(0, 155).replace(/\s+\S*$/, "") + "…" : rawDesc;
+          setPageMeta(`${name} — Ballylife`, shortDesc || undefined);
+        }
+      })
       .catch(showLoadError)
       .finally(() => setLoading(false));
   }, [productId]);
@@ -1973,6 +2007,42 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [addresses, setAddresses] = useState<R[]>([]);
   const [selProductId, setSelProductId] = useState("");
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Bidirectional sync between `view`/`selProductId` and the real URL.
+  // Each direction checks whether an update is actually needed before
+  // acting, so the two effects below can't ping-pong off each other --
+  // see routes.ts for why this "translate state to a URL" approach was
+  // chosen over rewriting this component's rendering into <Route>
+  // elements.
+  useEffect(() => {
+    const expectedPath = pathForView(view as MarketplaceView, selProductId);
+    if (location.pathname !== expectedPath) navigate(expectedPath, { replace: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, selProductId]);
+
+  useEffect(() => {
+    const { view: urlView, productId } = viewForPath(location.pathname);
+    if (urlView !== view || (urlView === "product" && productId !== selProductId)) {
+      setView(urlView as View);
+      if (productId) setSelProductId(productId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
+
+  // A short, distinct <title> per page -- otherwise every page (and
+  // every search-result snippet or shared link preview) says the same
+  // generic "Ballylife" regardless of what's actually being viewed.
+  // The "product" view is deliberately excluded here -- ProductDetailView
+  // sets a title+description from the real product's own name/description
+  // once it loads, which is more useful than a generic one and would
+  // otherwise get immediately overwritten by this effect anyway.
+  useEffect(() => {
+    if (view === "product") return;
+    const suffix = TITLE_FOR_VIEW[view as MarketplaceView];
+    setPageMeta(suffix ? `${suffix} — Ballylife` : "Ballylife");
+  }, [view]);
   const [cartCount, setCartCount] = useState(0);
   const [authUser, setAuthUser]   = useState<MktAuthUser | null>(null);
   const [authSeller, setAuthSeller] = useState<{ id: string; storeName: string; status: string } | null>(null);
