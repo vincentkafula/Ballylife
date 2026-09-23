@@ -200,33 +200,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
-            {tab === "users" && (
-              <div className="grid lg:grid-cols-2 gap-4">
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customers ({customers.length})</span></div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {customers.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No customers yet.</p> : customers.map((c, i) => (
-                      <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
-                        <div><p className="text-sm font-medium text-gray-800">{String(c.name)}</p><p className="text-[11px] text-gray-400">{String(c.email)}</p></div>
-                        <p className="text-[11px] text-gray-400">{c.lastLogin ? new Date(String(c.lastLogin)).toLocaleDateString() : "Never signed in"}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Sellers ({sellers.length})</span></div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {sellers.map((s, i) => (
-                      <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
-                        <div><p className="text-sm font-medium text-gray-800">{String(s.storeName)}</p><p className="text-[11px] text-gray-400">{String(s.email)}</p></div>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.status === "active" ? "#ECFDF5" : "#FFF7ED", color: s.status === "active" ? "#059669" : "#C2410C" }}>{String(s.status)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <p className="lg:col-span-2 text-[11px] text-gray-400">Suspend/ban actions aren't available yet — this is a read-only directory.</p>
-              </div>
-            )}
+            {tab === "users" && <UserManagementPanel customers={customers} sellers={sellers} />}
 
             {tab === "sellerApproval" && (
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -336,6 +310,130 @@ const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
   shipped_to_customer: ["delivered"],
   delivered: [],
 };
+
+function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: R[] }) {
+  const [users, setUsers] = useState<R[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [roleFilter, setRoleFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [pendingRole, setPendingRole] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const params: Record<string, string> = {};
+    if (roleFilter) params.role = roleFilter;
+    if (search) params.search = search;
+    mktAdmin.users(params)
+      .then(r => { if (r.success) setUsers(r.data as R[]); })
+      .catch(() => toast.error("Couldn't load accounts — please try again."))
+      .finally(() => setLoading(false));
+  }, [roleFilter, search]);
+
+  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]); // debounced -- search fires on every keystroke otherwise
+
+  const saveRole = async (userId: string) => {
+    const role = pendingRole[userId];
+    if (!role) return;
+    setSavingId(userId);
+    try {
+      const res = await mktAdmin.changeUserRole(userId, role);
+      if (!res.success) { toast.error(res.error ?? "Couldn't change that account's role."); return; }
+      toast.success("Role updated — every other session for that account has been signed out.");
+      setPendingRole(p => { const next = { ...p }; delete next[userId]; return next; });
+      load();
+    } catch {
+      toast.error("Couldn't change that account's role — please try again.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customers ({customers.length})</span></div>
+          <div className="max-h-72 overflow-y-auto">
+            {customers.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No customers yet.</p> : customers.map((c, i) => (
+              <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
+                <div><p className="text-sm font-medium text-gray-800">{String(c.name)}</p><p className="text-[11px] text-gray-400">{String(c.email)}</p></div>
+                <p className="text-[11px] text-gray-400">{c.lastLogin ? new Date(String(c.lastLogin)).toLocaleDateString() : "Never signed in"}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Sellers ({sellers.length})</span></div>
+          <div className="max-h-72 overflow-y-auto">
+            {sellers.map((s, i) => (
+              <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
+                <div><p className="text-sm font-medium text-gray-800">{String(s.storeName)}</p><p className="text-[11px] text-gray-400">{String(s.email)}</p></div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.status === "active" ? "#ECFDF5" : "#FFF7ED", color: s.status === "active" ? "#059669" : "#C2410C" }}>{String(s.status)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="lg:col-span-2 text-[11px] text-gray-400">Suspend/ban actions aren't available yet. Role changes below are — changing a role signs that account out everywhere immediately.</p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 justify-between">
+          <span className="text-sm font-bold text-gray-900">All Accounts</span>
+          <div className="flex gap-2">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search username, name, email…"
+              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-[#B8862E] w-48" />
+            <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 outline-none focus:border-[#B8862E]">
+              <option value="">All roles</option>
+              {["customer", "seller", "marketplace_admin", "supplier", "revenue_authority", "shipping_company", "credit_provider"].map(r => (
+                <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="text-left text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-semibold">Account</th>
+                <th className="px-4 py-2 font-semibold">Current role</th>
+                <th className="px-4 py-2 font-semibold">Change to</th>
+                <th className="px-4 py-2 font-semibold"></th>
+              </tr></thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={String(u.id)} className="border-b border-gray-50">
+                    <td className="px-4 py-2.5"><p className="font-medium text-gray-800">{String(u.username)}</p><p className="text-gray-400">{String(u.email)}</p></td>
+                    <td className="px-4 py-2.5 text-gray-700">{String(u.role).replace(/_/g, " ")}</td>
+                    <td className="px-4 py-2.5">
+                      <select value={pendingRole[String(u.id)] ?? String(u.role)} onChange={e => setPendingRole(p => ({ ...p, [String(u.id)]: e.target.value }))}
+                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#B8862E]">
+                        {["customer", "seller", "marketplace_admin", "supplier", "revenue_authority", "shipping_company", "credit_provider"].map(r => (
+                          <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {pendingRole[String(u.id)] && pendingRole[String(u.id)] !== String(u.role) && (
+                        <button onClick={() => saveRole(String(u.id))} disabled={savingId === String(u.id)}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-60" style={{ background: "#14110D" }}>
+                          {savingId === String(u.id) ? "Saving…" : "Save"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {users.length === 0 && <p className="text-sm text-gray-400 text-center py-10">No matching accounts.</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SecurityAndAuditPanel() {
   const [entries, setEntries] = useState<R[]>([]);

@@ -220,3 +220,60 @@ describe("GET /api/marketplace/admin/users (Phase 5)", () => {
     for (const u of res.body.data) expect(u.passwordHash ?? u.password_hash).toBeUndefined();
   });
 });
+
+describe("PATCH /api/marketplace/admin/users/:id/role", () => {
+  it("rejects a non-admin", async () => {
+    const res = await request(app).patch(`/api/marketplace/admin/users/${customerUserId}/role`).set("Authorization", `Bearer ${customerToken}`).send({ role: "seller" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an invalid role value", async () => {
+    const res = await request(app).patch(`/api/marketplace/admin/users/${customerUserId}/role`).set("Authorization", `Bearer ${adminToken}`).send({ role: "superuser" });
+    expect(res.status).toBe(400);
+  });
+
+  it("blocks an admin from changing their own role", async () => {
+    const me = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${adminToken}`);
+    const res = await request(app).patch(`/api/marketplace/admin/users/${me.body.data.id}/role`).set("Authorization", `Bearer ${adminToken}`).send({ role: "customer" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/own role/i);
+  });
+
+  it("rejects setting the role to what it already is", async () => {
+    const res = await request(app).patch(`/api/marketplace/admin/users/${customerUserId}/role`).set("Authorization", `Bearer ${adminToken}`).send({ role: "customer" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/already has/i);
+  });
+
+  it("changes the role AND invalidates every existing session for that account -- the whole point of bumping token_version here", async () => {
+    // A working token for the account before the change.
+    const before = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${customerToken}`);
+    expect(before.status).toBe(200);
+
+    const changeRes = await request(app).patch(`/api/marketplace/admin/users/${customerUserId}/role`).set("Authorization", `Bearer ${adminToken}`).send({ role: "seller" });
+    expect(changeRes.status).toBe(200);
+    expect(changeRes.body.data.role).toBe("seller");
+
+    // The customer's OLD token -- still cryptographically valid,
+    // unexpired -- must now be rejected. This is the actual security
+    // property this endpoint exists to provide, not just a database
+    // update.
+    const after = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${customerToken}`);
+    expect(after.status).toBe(401);
+  });
+
+  it("records the role change in the audit log", async () => {
+    const auditRes = await request(app).get(`/api/marketplace/admin/audit-log?entityType=user_role&entityId=${customerUserId}`).set("Authorization", `Bearer ${adminToken}`);
+    expect(auditRes.status).toBe(200);
+    expect(auditRes.body.data.length).toBeGreaterThan(0);
+    const entry = auditRes.body.data[0];
+    expect(entry.action).toBe("role_change");
+    expect(entry.before.role).toBe("customer");
+    expect(entry.after.role).toBe("seller");
+  });
+
+  it("404s for a user that doesn't exist", async () => {
+    const res = await request(app).patch(`/api/marketplace/admin/users/00000000-0000-0000-0000-000000000000/role`).set("Authorization", `Bearer ${adminToken}`).send({ role: "seller" });
+    expect(res.status).toBe(404);
+  });
+});

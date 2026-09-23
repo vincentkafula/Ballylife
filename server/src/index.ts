@@ -7,6 +7,7 @@ import authRouter from "./routes/authRouter";
 import marketplaceRouter from "./routes/marketplaceRouter";
 import geoRouter from "./routes/geoRouter";
 import sitemapRouter from "./routes/sitemapRouter";
+import reconciliationRouter from "./routes/reconciliationRouter";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 
@@ -79,6 +80,7 @@ app.get("/health", async (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/marketplace", marketplaceRouter);
+app.use("/api/marketplace", reconciliationRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from

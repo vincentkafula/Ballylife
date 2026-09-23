@@ -1708,6 +1708,52 @@ router.get("/admin/users", requireAuth, requireRole(...MANAGER_ROLES), async (re
   });
 });
 
+const VALID_ROLES = ["customer", "seller", "marketplace_admin", "supplier", "revenue_authority", "shipping_company", "credit_provider"];
+
+// The role-change endpoint /admin/users was deliberately left without
+// when it was first built (docs/remaining-checklist.md): should
+// changing a role force that account to re-authenticate immediately,
+// or let its current session finish at the old role? Made the call
+// rather than leave this unbuilt indefinitely -- bump token_version,
+// the same secure default already used for a password change (Phase 3)
+// -- a role change is at least as security-sensitive as a password
+// change, so it gets at least the same treatment. Every other session
+// for that account is invalidated the moment this completes.
+//
+// Deliberately does not touch any existing mkt_sellers/mkt_suppliers/
+// etc. record for this user -- changing role away from "seller" does
+// not delete or transfer their seller record, which would be a much
+// bigger, separate decision about what happens to their store/
+// inventory/orders. That record simply becomes orphaned from an
+// active role, same as it would be for a suspended account today.
+router.patch("/admin/users/:id/role", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { role } = req.body ?? {};
+  if (!VALID_ROLES.includes(role)) {
+    res.status(400).json({ success: false, error: `role must be one of: ${VALID_ROLES.join(", ")}` });
+    return;
+  }
+  if (req.params.id === req.user!.userId) {
+    res.status(400).json({ success: false, error: "You can't change your own role — ask another admin." });
+    return;
+  }
+
+  const { rows: beforeRows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [req.params.id]);
+  if (!beforeRows.length) { res.status(404).json({ success: false, error: "User not found" }); return; }
+  const before = beforeRows[0];
+
+  if (before.role === role) {
+    res.status(400).json({ success: false, error: `User already has the role "${role}"` });
+    return;
+  }
+
+  const { rows } = await pool!.query(
+    `UPDATE users SET role = $1, token_version = token_version + 1 WHERE id = $2 RETURNING id, username, name, email, role, created_at`,
+    [role, req.params.id]
+  );
+  await writeAuditLog(pool!, req.user!.userId, req.user!.role, "user_role", rows[0].id, "role_change", { role: before.role }, { role: rows[0].role });
+  res.json({ success: true, data: rows[0] });
+});
+
 // Audit log viewer (Phase 5) -- mkt_audit_log has been written to since
 // Phase 3 (settlement status changes, refund creation) but nothing
 // could read it back until now; a log nobody can view is close to not

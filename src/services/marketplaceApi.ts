@@ -175,6 +175,7 @@ export const mktAdmin = {
   },
   auditLog: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { page: number; limit: number; total: number; pages: number } }>(`/api/marketplace/admin/audit-log?${new URLSearchParams(params)}`),
   users: (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { total: number } }>(`/api/marketplace/admin/users?${new URLSearchParams(params)}`),
+  changeUserRole: (userId: string, role: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/admin/users/${userId}/role`, { method: "PATCH", body: JSON.stringify({ role }) }),
 };
 
 export const mktAddresses = (userId: string) =>
