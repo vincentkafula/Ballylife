@@ -884,6 +884,29 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   const [savingNrcs, setSavingNrcs] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ created: number; errorCount: number; errors: { row: number; error: string }[]; message?: string; error?: string } | null>(null);
+  const [cjConfigured, setCjConfigured] = useState<boolean | null>(null);
+  const [cjSyncing, setCjSyncing] = useState(false);
+  const [cjPage, setCjPage] = useState(1);
+  const [cjResult, setCjResult] = useState<{ imported: number; updated: number; skippedNoRate: number; totalAvailable: number; pageNum: number; pageSize: number } | null>(null);
+
+  useEffect(() => {
+    mktAdmin.cj.status().then(r => { if (r.success) setCjConfigured(r.data.configured); }).catch(() => setCjConfigured(false));
+  }, []);
+
+  const syncFromCj = async () => {
+    setCjSyncing(true);
+    setCjResult(null);
+    try {
+      const res = await mktAdmin.cj.sync({ pageNum: cjPage, pageSize: 20 });
+      if (!res.success || !res.data) { toast.error(res.error ?? "Sync failed — please try again."); return; }
+      setCjResult(res.data);
+      if (res.data.imported > 0 || res.data.updated > 0) onChanged();
+    } catch {
+      toast.error("Couldn't reach CJdropshipping — please try again.");
+    } finally {
+      setCjSyncing(false);
+    }
+  };
 
   const handleCsvFile = async (file: File) => {
     setImporting(true);
@@ -978,6 +1001,28 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
         </div>
       </div>
       <p className="text-xs text-gray-400 mb-3">Cost price is what the supplier charges Ballylife — set that here to reflect the actual supplier agreement. Retail price here is only a suggested starting point sellers see; each seller sets their own final retail price (their profit margin) when they import an item. Any price change after a listing is live still needs manager approval.</p>
+
+      {cjConfigured === true && (
+        <div className="mb-3 flex items-center gap-2 flex-wrap bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+          <span className="text-xs font-semibold text-amber-800">CJdropshipping</span>
+          <input type="number" min={1} value={cjPage} onChange={e => setCjPage(Math.max(1, Number(e.target.value) || 1))}
+            className="w-16 border border-amber-200 rounded px-2 py-1 text-xs" title="Page number" />
+          <button onClick={syncFromCj} disabled={cjSyncing}
+            className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-60" style={{ background: "#B8862E" }}>
+            {cjSyncing ? "Syncing…" : `Sync page ${cjPage} from CJdropshipping`}
+          </button>
+          <span className="text-[11px] text-amber-700">Imports land as "pending review" below, same as a manual submission — nothing goes live unreviewed.</span>
+        </div>
+      )}
+      {cjConfigured === false && (
+        <p className="text-[11px] text-gray-400 mb-3">CJdropshipping isn't connected yet — set CJ_EMAIL and CJ_API_KEY to enable real product syncing here.</p>
+      )}
+      {cjResult && (
+        <div className="mb-3 text-xs font-medium px-3 py-2 rounded-lg border bg-green-50 text-green-700 border-green-200">
+          Page {cjResult.pageNum} of {Math.ceil(cjResult.totalAvailable / cjResult.pageSize)}: {cjResult.imported} new, {cjResult.updated} updated
+          {cjResult.skippedNoRate > 0 && <span className="text-amber-700"> — {cjResult.skippedNoRate} skipped (no USD FX rate on file yet)</span>}.
+        </div>
+      )}
 
       {importResult && (
         <div className={`mb-3 text-xs font-medium px-3 py-2 rounded-lg border ${importResult.created > 0 ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
