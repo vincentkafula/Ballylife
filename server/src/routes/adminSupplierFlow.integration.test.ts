@@ -170,3 +170,32 @@ describe("Supplier order status transitions (PATCH /admin/supplier-orders/:id/st
     expect(res.body.error).toMatch(/valid next step/i);
   });
 });
+
+describe("White-labelled supplier catalog (GET /supplier-catalog)", () => {
+  it("never shows a seller the supplier's identity or true cost -- only the platform base price", async () => {
+    const res = await request(app).get("/api/marketplace/supplier-catalog").set("Authorization", `Bearer ${sellerToken}`);
+    expect(res.status).toBe(200);
+    const item = res.body.data.find((p: { id: string }) => p.id === supplierProductId);
+    expect(item).toBeDefined();
+    for (const hidden of ["costPrice", "currency", "supplierId", "supplierName", "supplierCountry"]) expect(item).not.toHaveProperty(hidden);
+    expect(item.basePrice).toBe(item.retailPrice);
+    expect(JSON.stringify(res.body)).not.toContain("Test Supplier Co");
+
+    const single = await request(app).get(`/api/marketplace/supplier-catalog/${supplierProductId}`).set("Authorization", `Bearer ${sellerToken}`);
+    expect(single.body.data).not.toHaveProperty("costPrice");
+  });
+
+  it("still shows the admin the real supplier and cost", async () => {
+    const res = await request(app).get(`/api/marketplace/supplier-catalog/${supplierProductId}`).set("Authorization", `Bearer ${adminToken}`);
+    expect(res.body.data.supplierName).toBe("Test Supplier Co");
+    expect(typeof res.body.data.costPrice).toBe("number");
+  });
+
+  it("serves supplier CDN photos through our own media path, never the raw supplier URL", async () => {
+    await pool.query(`UPDATE mkt_supplier_products SET images = $1 WHERE id = $2`,
+      [JSON.stringify(["https://cf.cjdropshipping.com/abc.jpg", "#ffffff"]), supplierProductId]);
+    const res = await request(app).get(`/api/marketplace/supplier-catalog/${supplierProductId}`).set("Authorization", `Bearer ${sellerToken}`);
+    expect(res.body.data.images).toEqual([`/api/marketplace/media/c/${supplierProductId}/0`, "#ffffff"]);
+    expect(JSON.stringify(res.body)).not.toMatch(/cjdropshipping/i);
+  });
+});

@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { mktSellers, mktAdmin, mktSupplierCatalog, type MktAuthUser } from "../services/marketplaceApi";
+import { productPhotos } from "../services/productMedia";
 
 type R = Record<string, unknown>;
 type Tab = "overview" | "orders" | "products" | "import" | "inventory" | "reviews" | "settings";
@@ -422,15 +423,21 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {items.map(item => {
-            const cost = Number(item.costPrice ?? 0);
+            const basePrice = Number(item.basePrice ?? item.retailPrice ?? 0);
             const suggested = Number(item.retailPrice ?? 0);
+            const photo = productPhotos(item.images)[0];
             const draft = priceDraft[String(item.id)] ?? (suggested > 0 ? String(suggested) : "");
             const finalPrice = draft ? Number(draft) : 0;
             const canImport = finalPrice > 0;
             return (
               <div key={String(item.id)} className="bg-white rounded-xl border border-gray-100 p-4">
+                {photo && (
+                  <div className="mb-3 rounded-lg overflow-hidden bg-white border border-gray-100" style={{ aspectRatio: "4 / 3" }}>
+                    <img src={photo} alt={String(item.name)} loading="lazy" className="w-full h-full object-contain" />
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-2xl">{String(item.emoji ?? "📦")}</span>
+                  <span className="text-2xl">{photo ? "" : String(item.emoji ?? "📦")}</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{String(item.originCountry)}</span>
                 </div>
                 <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
@@ -445,9 +452,9 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                     </span>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-gray-400 mb-2">Supplier: {String(item.supplierName)} · MOQ {String(item.moq)}</p>
+                  <p className="text-[11px] text-gray-400 mb-2">Ballylife Fulfilled · MOQ {String(item.moq)}</p>
                 )}
-                <p className="text-xs font-semibold text-gray-600 mb-2">Supplier price: {String(item.currency)} {cost.toFixed(2)}{suggested > 0 ? ` · Suggested R${suggested.toFixed(2)}` : ""}</p>
+                <p className="text-xs font-semibold text-gray-600 mb-2">{basePrice > 0 ? `Base price R${basePrice.toFixed(2)} — your earnings are your price minus this` : "Base price not set yet"}</p>
                 <label className="block mb-2">
                   <span className="text-[11px] text-gray-500">Your retail price (ZAR)</span>
                   <input type="number" step="0.01" placeholder="Set your price" value={draft}

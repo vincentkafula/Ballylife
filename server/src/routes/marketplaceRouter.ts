@@ -15,6 +15,7 @@ import { checkVehicleCompliance } from "../utils/compliance";
 import { SUPPLIER_ORDER_TRANSITIONS, CUSTOMS_RECORD_TRANSITIONS, canTransition, allowedNextStates } from "../utils/stateMachine";
 import { recalcCartTotals } from "../utils/cart";
 import { checkPaymentVelocity } from "../services/fraudChecks";
+import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
@@ -150,7 +151,7 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   categoryId: r.category_id, categoryName: categoryName ?? r.category_name,
   name: r.name, slug: r.slug, description: r.description, shortDescription: r.short_description,
   price: Number(r.price), compareAtPrice: r.compare_at_price !== null ? Number(r.compare_at_price) : null,
-  currency: r.currency, images: r.images, emoji: r.emoji, status: r.status, stock: r.stock, sku: r.sku,
+  currency: r.currency, images: publicImages("p", r.id, r.images), emoji: r.emoji, status: r.status, stock: r.stock, sku: r.sku,
   brand: r.brand, tags: r.tags, attributes: r.attributes, variants: r.variants,
   avgRating: Number(r.avg_rating), reviewCount: r.review_count, totalSold: r.total_sold,
   isFeatured: r.is_featured, isFlashDeal: r.is_flash_deal, flashDealEndsAt: r.flash_deal_ends_at,
@@ -169,11 +170,21 @@ const mapSupplierProduct = (r: any) => ({
   id: r.id, supplierId: r.supplier_id, supplierName: r.supplier_name, supplierCountry: r.supplier_country,
   categoryId: r.category_id, name: r.name, description: r.description, costPrice: Number(r.cost_price),
   currency: r.currency, retailPrice: Number(r.retail_price), compareAtPrice: r.compare_at_price !== null && r.compare_at_price !== undefined ? Number(r.compare_at_price) : null,
-  moq: r.moq, images: r.images, emoji: r.emoji, originCountry: r.origin_country,
+  moq: r.moq, images: publicImages("c", r.id, r.images), emoji: r.emoji, originCountry: r.origin_country,
   status: r.status, importCount: r.import_count,
   vehicleDetails: r.vehicle_details ?? null, condition: r.condition ?? null, nrcsApproved: r.nrcs_approved ?? false, nrcsReference: r.nrcs_reference ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
+
+// What a seller browsing the supplier catalog is allowed to see: the
+// platform base price (retail_price) they mark up from, never the true
+// supplier cost, currency, or who the supplier actually is.
+const mapSupplierProductForSeller = (r: any) => {
+  const { costPrice: _c, currency: _cur, supplierId: _sid, supplierName: _sn, supplierCountry: _sc, importCount: _ic, ...rest } = mapSupplierProduct(r);
+  return { ...rest, basePrice: rest.retailPrice };
+};
+const supplierProductMapperFor = (req: Request): ((r: any) => Record<string, unknown>) =>
+  (MANAGER_ROLES as readonly string[]).includes(req.user?.role ?? "") ? mapSupplierProduct : mapSupplierProductForSeller;
 
 const mapWarehouse = (r: any) => ({
   id: r.id, name: r.name, country: r.country, type: r.type, address: r.address, status: r.status, createdAt: r.created_at,
@@ -443,7 +454,7 @@ router.get("/supplier-catalog", requireAuth, async (req: Request, res: Response)
      ORDER BY sp.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, (page - 1) * limit]
   );
-  res.json({ success: true, data: rows.map(mapSupplierProduct), meta: { page, limit, total: countRows[0].total, pages: Math.ceil(countRows[0].total / limit) } });
+  res.json({ success: true, data: rows.map(supplierProductMapperFor(req)), meta: { page, limit, total: countRows[0].total, pages: Math.ceil(countRows[0].total / limit) } });
 });
 
 router.get("/supplier-catalog/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
@@ -452,7 +463,7 @@ router.get("/supplier-catalog/:id", requireAuth, async (req: Request, res: Respo
      FROM mkt_supplier_products sp JOIN mkt_suppliers s ON s.id = sp.supplier_id WHERE sp.id::text = $1`, [req.params.id]
   );
   if (!rows.length) { res.status(404).json({ success: false, error: "Catalog item not found" }); return; }
-  res.json({ success: true, data: mapSupplierProduct(rows[0]) });
+  res.json({ success: true, data: supplierProductMapperFor(req)(rows[0]) });
 });
 
 // ── CART ──────────────────────────────────────────────────────────────────────
@@ -503,7 +514,7 @@ router.post("/cart/:userId/add", requireAuth, requireSelf, async (req: Request, 
     return;
   }
   if (existing) existing.quantity += (quantity ?? 1);
-  else items.push({ productId, variantId: variantId ?? null, quantity: quantity ?? 1, unitPrice: product.price, name: product.name, emoji: product.emoji, sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
+  else items.push({ productId, variantId: variantId ?? null, quantity: quantity ?? 1, unitPrice: product.price, name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
 
   const updated = await saveCart(cartRow.id, items, cartRow.coupon_code);
   res.json({ success: true, data: cartRowToApi(updated) });
@@ -839,7 +850,7 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
   const addr = addrRows[0] ?? {};
 
   const items = cart.items.map((i: any) => ({
-    productId: i.productId, productName: i.name, emoji: i.emoji, variantId: i.variantId, variantLabel: null,
+    productId: i.productId, productName: i.name, emoji: i.emoji, image: i.image ?? null, variantId: i.variantId, variantLabel: null,
     quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.unitPrice * i.quantity, sellerId: i.sellerId ?? "sel-01", sellerName: i.sellerName,
   }));
   const shippingAddress = {

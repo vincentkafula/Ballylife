@@ -134,7 +134,7 @@ export const mktAdmin = {
   cj: {
     status: () => api<{ success: boolean; data: { configured: boolean } }>("/api/marketplace/admin/cj/status"),
     sync: (body: { pageNum?: number; pageSize?: number; categoryId?: string }) =>
-      api<{ success: boolean; data?: { imported: number; updated: number; skippedNoRate: number; totalAvailable: number; pageNum: number; pageSize: number }; error?: string }>(
+      api<{ success: boolean; data?: { imported: number; updated: number; skippedNoRate: number; withPhotos?: number; detailFailures?: number; totalAvailable: number; pageNum: number; pageSize: number }; error?: string }>(
         "/api/marketplace/admin/cj/sync", { method: "POST", body: JSON.stringify(body) }
       ),
   },

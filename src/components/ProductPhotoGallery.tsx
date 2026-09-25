@@ -8,6 +8,9 @@ interface Props {
   name: string;
   discount?: number;
   illustration?: () => ReactNode;
+  /** Real product photos (already resolved to absolute URLs). When present
+   *  the gallery pages through these instead of the illustrated angles. */
+  photos?: string[];
   /** Rendered as a small toggle in the corner so the existing interactive
    *  3D cube viewer stays reachable, instead of removing that feature. */
   onOpen3DView?: () => void;
@@ -29,33 +32,39 @@ const ANGLES: { label: string; artTransform: string; bg: string; shade: number }
   { label: "Detail", artTransform: "scale(1.55)", bg: "200deg", shade: 0.97 },
 ];
 
-export function ProductPhotoGallery({ emoji, colorA, colorB, name, discount, illustration, onOpen3DView }: Props) {
+export function ProductPhotoGallery({ emoji, colorA, colorB, name, discount, illustration, photos = [], onOpen3DView }: Props) {
   const [index, setIndex] = useState(0);
+  const hasPhotos = photos.length > 0;
+  const count = hasPhotos ? photos.length : ANGLES.length;
 
   const go = useCallback((delta: number) => {
-    setIndex(i => (i + delta + ANGLES.length) % ANGLES.length);
-  }, []);
+    setIndex(i => (i + delta + count) % count);
+  }, [count]);
 
-  const angle = ANGLES[index];
+  const angle = ANGLES[index % ANGLES.length];
 
   return (
     <div className="relative" style={{ minHeight: 340 }}>
       <div
         role="group"
-        aria-label={`${name} photos, image ${index + 1} of ${ANGLES.length}`}
+        aria-label={`${name} photos, image ${index + 1} of ${count}`}
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1); }}
         className="relative flex items-center justify-center outline-none"
-        style={{
+        style={hasPhotos ? { minHeight: 340, background: "#FFFFFF", overflow: "hidden" } : {
           minHeight: 340,
           background: `linear-gradient(${angle.bg}, ${colorA} 0%, ${colorB} 100%)`,
           filter: `brightness(${angle.shade})`,
           overflow: "hidden",
         }}
       >
-        <div className="w-40 h-40 flex items-center justify-center" style={{ transform: angle.artTransform, transition: "transform 0.35s ease" }}>
-          {illustration ? illustration() : <span className="text-9xl select-none">{emoji}</span>}
-        </div>
+        {hasPhotos ? (
+          <img src={photos[index]} alt={`${name} — photo ${index + 1}`} className="w-full h-[340px] sm:h-[440px] object-contain p-4" />
+        ) : (
+          <div className="w-40 h-40 flex items-center justify-center" style={{ transform: angle.artTransform, transition: "transform 0.35s ease" }}>
+            {illustration ? illustration() : <span className="text-9xl select-none">{emoji}</span>}
+          </div>
+        )}
 
         {Boolean(discount) && (
           <span className="absolute top-4 left-4 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">-{discount}%</span>
@@ -63,7 +72,7 @@ export function ProductPhotoGallery({ emoji, colorA, colorB, name, discount, ill
 
         {/* Image counter */}
         <span className="absolute bottom-3 right-3 text-[11px] font-bold px-2.5 py-1 rounded-full bg-black/35 text-white backdrop-blur-sm">
-          {index + 1} / {ANGLES.length}
+          {index + 1} / {count}
         </span>
 
         {/* Arrow navigation */}
@@ -94,7 +103,19 @@ export function ProductPhotoGallery({ emoji, colorA, colorB, name, discount, ill
 
       {/* Thumbnail strip */}
       <div className="flex items-center gap-2 px-3 py-2.5 bg-white border-t border-gray-100 overflow-x-auto">
-        {ANGLES.map((a, i) => (
+        {hasPhotos && photos.map((src, i) => (
+          <button
+            key={src}
+            onClick={() => setIndex(i)}
+            aria-label={`View photo ${i + 1}`}
+            aria-current={i === index}
+            className="shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-white transition-all"
+            style={{ border: i === index ? "2px solid #B8862E" : "2px solid #F3F4F6", opacity: i === index ? 1 : 0.7 }}
+          >
+            <img src={src} alt="" loading="lazy" className="w-full h-full object-contain pointer-events-none" />
+          </button>
+        ))}
+        {!hasPhotos && ANGLES.map((a, i) => (
           <button
             key={a.label}
             onClick={() => setIndex(i)}

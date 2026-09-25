@@ -105,14 +105,47 @@ async function getValidAccessToken(): Promise<string> {
   return await fetchNewAccessToken();
 }
 
+// CJ enforces a per-account QPS limit (1 req/s on the base tier) and
+// answers bursts with HTTP 429 or code 1600200. A product-page sync makes
+// one detail call per product, so every request is spaced through one
+// shared queue and rate-limit responses are retried with backoff rather
+// than failing the whole sync.
+const MIN_INTERVAL_MS = Number(process.env.CJ_MIN_REQUEST_INTERVAL_MS ?? 1100);
+const MAX_RETRIES = 3;
+let queue: Promise<unknown> = Promise.resolve();
+let lastRequestAt = 0;
+
+function throttled<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(async () => {
+    const wait = lastRequestAt + MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    lastRequestAt = Date.now();
+    return fn();
+  });
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+function isRateLimited(status: number, json: Partial<CjApiResponse<unknown>> | null): boolean {
+  return status === 429 || json?.code === 1600200 || /too many|too much request/i.test(json?.message ?? "");
+}
+
 async function cjFetch<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
   const token = await getValidAccessToken();
   const url = new URL(`${BASE_URL}${path}`);
   if (params) for (const [k, v] of Object.entries(params)) if (v) url.searchParams.set(k, v);
-  const res = await fetch(url.toString(), { headers: { "CJ-Access-Token": token } });
-  const json = (await res.json()) as CjApiResponse<T>;
-  if (!res.ok || !json.result) throw new Error(`CJ API error (${path}): ${json.message ?? res.status}`);
-  return json.data;
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await throttled(() => fetch(url.toString(), { headers: { "CJ-Access-Token": token } }));
+    const json = (await res.json().catch(() => null)) as CjApiResponse<T> | null;
+    if (isRateLimited(res.status, json) && attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, MIN_INTERVAL_MS * 2 ** (attempt + 1)));
+      continue;
+    }
+    // Error text carries only CJ's message and the path -- never the token or full URL.
+    if (!res.ok || !json?.result) throw new Error(`CJ API error (${path}): ${json?.message ?? res.status}`);
+    return json.data;
+  }
 }
 
 export interface CjProductSummary {
@@ -137,10 +170,13 @@ export function listCjProducts(params: {
   });
 }
 
-export interface CjProductDetail extends CjProductSummary {
+// productImage on the detail endpoint is often a JSON-encoded string array
+// rather than a single URL -- parse with parseSupplierImageList, never use raw.
+export interface CjProductDetail extends Omit<CjProductSummary, "productImage"> {
+  productImage?: string | string[];
   description?: string;
-  productImageSet?: string[];
-  variants?: { vid: string; variantSku: string; variantSellPrice: number; variantImage?: string }[];
+  productImageSet?: string[] | string;
+  variants?: { vid: string; variantSku: string; variantSellPrice: number; variantImage?: string; variantNameEn?: string }[];
 }
 
 export function getCjProductDetail(pid: string): Promise<CjProductDetail> {

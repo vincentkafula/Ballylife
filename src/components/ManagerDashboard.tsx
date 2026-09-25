@@ -887,7 +887,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   const [cjConfigured, setCjConfigured] = useState<boolean | null>(null);
   const [cjSyncing, setCjSyncing] = useState(false);
   const [cjPage, setCjPage] = useState(1);
-  const [cjResult, setCjResult] = useState<{ imported: number; updated: number; skippedNoRate: number; totalAvailable: number; pageNum: number; pageSize: number } | null>(null);
+  const [cjResult, setCjResult] = useState<{ imported: number; updated: number; skippedNoRate: number; withPhotos?: number; detailFailures?: number; totalAvailable: number; pageNum: number; pageSize: number } | null>(null);
 
   useEffect(() => {
     mktAdmin.cj.status().then(r => { if (r.success) setCjConfigured(r.data.configured); }).catch(() => setCjConfigured(false));
@@ -897,7 +897,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
     setCjSyncing(true);
     setCjResult(null);
     try {
-      const res = await mktAdmin.cj.sync({ pageNum: cjPage, pageSize: 20 });
+      const res = await mktAdmin.cj.sync({ pageNum: cjPage, pageSize: 10 });
       if (!res.success || !res.data) { toast.error(res.error ?? "Sync failed — please try again."); return; }
       setCjResult(res.data);
       if (res.data.imported > 0 || res.data.updated > 0) onChanged();
@@ -1019,7 +1019,8 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
       )}
       {cjResult && (
         <div className="mb-3 text-xs font-medium px-3 py-2 rounded-lg border bg-green-50 text-green-700 border-green-200">
-          Page {cjResult.pageNum} of {Math.ceil(cjResult.totalAvailable / cjResult.pageSize)}: {cjResult.imported} new, {cjResult.updated} updated
+          Page {cjResult.pageNum} of {Math.ceil(cjResult.totalAvailable / cjResult.pageSize)}: {cjResult.imported} new, {cjResult.updated} updated{cjResult.withPhotos !== undefined && <>, {cjResult.withPhotos} with product photos</>}
+          {Boolean(cjResult.detailFailures) && <span className="text-amber-700"> — {cjResult.detailFailures} used the thumbnail only (full photo set unavailable)</span>}
           {cjResult.skippedNoRate > 0 && <span className="text-amber-700"> — {cjResult.skippedNoRate} skipped (no USD FX rate on file yet)</span>}.
         </div>
       )}

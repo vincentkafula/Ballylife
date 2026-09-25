@@ -4,6 +4,8 @@ import { requireAuth, requireRole } from "../middleware/auth";
 import { isCjConfigured, listCjProducts, getCjProductDetail, getCjCategories } from "../services/cjDropshippingClient";
 import { convertToZar } from "../utils/pricing";
 import { logger } from "../utils/logger";
+import { dedupeImages, isPhotoUrl, parseSupplierImageList, scrubSupplierBranding, splitSupplierDescription } from "../utils/supplierWhiteLabel";
+import type { CjProductSummary } from "../services/cjDropshippingClient";
 
 const router: ReturnType<typeof Router> = Router();
 const MANAGER_ROLES = ["marketplace_admin"] as const;
@@ -17,6 +19,39 @@ async function ensureCjSupplierExists(): Promise<void> {
      ON CONFLICT (id) DO NOTHING`,
     [CJ_SUPPLIER_ID]
   );
+}
+
+/**
+ * The list endpoint only returns one thumbnail per product; the real
+ * gallery (main shots, per-variant shots, and the detail photos embedded
+ * in the description HTML) is only on /product/query. One detail call per
+ * product, spaced by the client's rate-limit queue. If it fails, the
+ * product still imports with the list thumbnail rather than being dropped.
+ *
+ * Names and descriptions are scrubbed of supplier branding here, before
+ * they ever reach the database, so no later code path can leak them.
+ */
+async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<{ name: string; description: string; images: string[]; detailOk: boolean }> {
+  const fallbackName = scrubSupplierBranding(p.productNameEn || p.productName);
+  try {
+    const d = await getCjProductDetail(p.pid);
+    const desc = splitSupplierDescription(d.description);
+    const images = dedupeImages([
+      ...parseSupplierImageList(d.productImageSet),
+      ...parseSupplierImageList(d.productImage),
+      ...parseSupplierImageList(p.productImage),
+      ...(d.variants ?? []).map(v => v.variantImage).filter(isPhotoUrl),
+      ...desc.imageUrls,
+    ]);
+    return {
+      name: scrubSupplierBranding(d.productNameEn || d.productName) || fallbackName,
+      description: desc.text || scrubSupplierBranding(p.remark),
+      images, detailOk: true,
+    };
+  } catch (err) {
+    logger.warn("cj.product_detail_fallback", { pid: p.pid, error: err instanceof Error ? err.message : String(err) });
+    return { name: fallbackName, description: scrubSupplierBranding(p.remark), images: parseSupplierImageList(p.productImage), detailOk: false };
+  }
 }
 
 router.get("/admin/cj/status", requireAuth, requireRole(...MANAGER_ROLES), (_req: Request, res: Response) => {
@@ -68,33 +103,43 @@ router.post("/admin/cj/sync", requireAuth, requireRole(...MANAGER_ROLES), async 
     const fxByCurrency = new Map(fxRows.map((r: { currency: string; rate_to_zar: string }) => [r.currency, Number(r.rate_to_zar)]));
     const usdToZar = convertToZar(1, "USD", fxByCurrency);
 
-    let imported = 0, updated = 0, skippedNoRate = 0;
+    let imported = 0, updated = 0, skippedNoRate = 0, withPhotos = 0, detailFailures = 0;
     for (const p of result.list) {
       if (usdToZar === null) { skippedNoRate++; continue; } // no USD rate on file yet -- flagged, not silently guessed
       const retailPriceZar = Math.round(Number(p.sellPrice) * usdToZar * 100) / 100;
+
+      const { name, description, images, detailOk } = await buildWhiteLabelledProduct(p);
+      if (!detailOk) detailFailures++;
+      if (images.length) withPhotos++;
 
       const { rows: existing } = await pool!.query(
         `SELECT id FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`,
         [CJ_SUPPLIER_ID, p.pid]
       );
       if (existing.length) {
+        // GREATEST: a cost increase raises the floor, but a re-sync never
+        // wipes out a price a manager has already marked up by hand.
         await pool!.query(
-          `UPDATE mkt_supplier_products SET name = $1, cost_price = $2, retail_price = $3, images = $4, updated_at = now() WHERE id = $5`,
-          [p.productNameEn || p.productName, p.sellPrice, retailPriceZar, JSON.stringify([p.productImage].filter(Boolean)), existing[0].id]
+          `UPDATE mkt_supplier_products SET name = $1, description = $2, cost_price = $3, retail_price = GREATEST(retail_price, $4::numeric), images = $5, updated_at = now() WHERE id = $6`,
+          [name, description, p.sellPrice, retailPriceZar, JSON.stringify(images), existing[0].id]
         );
+        // Seller listings copied the catalog photos at import time -- keep them on CJ's current set.
+        if (images.length) {
+          await pool!.query(`UPDATE mkt_products SET images = $1, updated_at = now() WHERE supplier_product_id = $2`, [JSON.stringify(images), existing[0].id]);
+        }
         updated++;
       } else {
         await pool!.query(
           `INSERT INTO mkt_supplier_products (supplier_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status, external_source, external_id)
            VALUES ($1,$2,$3,$4,'USD',$5,1,$6,'CN','pending_review','cjdropshipping',$7)`,
-          [CJ_SUPPLIER_ID, p.productNameEn || p.productName, p.remark ?? null, p.sellPrice, retailPriceZar, JSON.stringify([p.productImage].filter(Boolean)), p.pid]
+          [CJ_SUPPLIER_ID, name, description, p.sellPrice, retailPriceZar, JSON.stringify(images), p.pid]
         );
         imported++;
       }
     }
 
-    logger.info("cj.sync_run", { actorId: req.user!.userId, pageNum: Number(pageNum) || 1, pageSize: boundedPageSize, imported, updated, skippedNoRate });
-    res.json({ success: true, data: { imported, updated, skippedNoRate, totalAvailable: result.total, pageNum: result.pageNum, pageSize: result.pageSize } });
+    logger.info("cj.sync_run", { actorId: req.user!.userId, pageNum: Number(pageNum) || 1, pageSize: boundedPageSize, imported, updated, skippedNoRate, withPhotos, detailFailures });
+    res.json({ success: true, data: { imported, updated, skippedNoRate, withPhotos, detailFailures, totalAvailable: result.total, pageNum: result.pageNum, pageSize: result.pageSize } });
   } catch (err) {
     logger.error("cj.sync_failed", { error: err instanceof Error ? err.message : String(err) });
     res.status(502).json({ success: false, error: "Couldn't sync from CJdropshipping — please try again." });

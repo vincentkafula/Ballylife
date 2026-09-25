@@ -9,6 +9,7 @@ import geoRouter from "./routes/geoRouter";
 import sitemapRouter from "./routes/sitemapRouter";
 import reconciliationRouter from "./routes/reconciliationRouter";
 import cjDropshippingRouter from "./routes/cjDropshippingRouter";
+import mediaRouter from "./routes/mediaRouter";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 import { logger } from "./utils/logger";
@@ -50,6 +51,8 @@ app.use(express.urlencoded({
   extended: true, limit: "2mb",
   verify: (req, _res, buf) => { (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8"); },
 }));
+// Product-photo proxy sits ahead of the general limiter -- see mediaRouter.ts.
+app.use("/api/marketplace", mediaRouter);
 app.use(rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false }));
 // Auth endpoints get a tighter limit on top of the general one above —
 // 300/min was generous enough to make credential-stuffing/brute-force

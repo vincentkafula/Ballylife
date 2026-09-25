@@ -22,6 +22,7 @@ import {
   mktCategories, mktProducts, mktCart, mktOrders,
   mktWishlist, mktSellers, mktAdmin, mktAddresses, mktAddAddress, mktAuth, setMktToken, type MktAuthUser,
 } from "../services/marketplaceApi";
+import { productPhotos, productColors } from "../services/productMedia";
 import {
   ExecutiveChairIllustration, MeshTaskChairIllustration, ManagerChairIllustration,
   ConferenceChairIllustration, DraftingStoolIllustration, VisitorChairIllustration,
@@ -52,6 +53,19 @@ function getProductIllustration(p: Record<string, unknown>): (() => ReactNode) |
   const vd = p.vehicleDetails as Record<string, unknown> | null | undefined;
   if (vd?.bodyType && VEHICLE_ILLUSTRATIONS[vd.bodyType as string]) return VEHICLE_ILLUSTRATIONS[vd.bodyType as string];
   return undefined;
+}
+
+// Real product photo layered over the placeholder artwork. object-contain on
+// white, because supplier shots are usually a product on a white backdrop and
+// cropping them (object-cover) cuts off the product in portrait cards. If the
+// image fails to load, it removes itself and the emoji/gradient shows through.
+function ProductPhoto({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setFailed(true)}
+      className={`absolute inset-0 w-full h-full object-contain bg-white ${className}`} />
+  );
 }
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { OrderTracking } from "./OrderTracking";
@@ -284,7 +298,7 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
       {/* Image — portrait, not square, on a neutral mat like real product photography would sit on */}
       <div className="relative cursor-pointer bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
         <div className="absolute inset-0 flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105"
-          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"},${imgs?.[1] ?? "#E5E7EB"})` }}>
+          style={{ background: `linear-gradient(160deg,${productColors(imgs, "#F3F4F6", "#E5E7EB").join(",")})` }}>
           {/* Soft circular spotlight behind the product -- reads as a
               studio backdrop rather than a flat color fill, and gives
               the icon somewhere to visually "sit" rather than floating
@@ -295,6 +309,7 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
               ? <div className="w-28 h-28">{getProductIllustration(p)!()}</div>
               : (p.emoji as string)}
           </div>
+          {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} className="p-2" />}
         </div>
         {p.isFlashDeal && (
           <div className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -374,10 +389,11 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
     <div className="bg-white rounded-lg border border-gray-200 flex flex-col cursor-pointer hover:shadow-md transition-shadow min-w-[160px] max-w-[190px] flex-shrink-0 overflow-hidden">
       <div className="relative bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
         <div className="absolute inset-0 flex items-center justify-center text-6xl p-5"
-          style={{ background: `linear-gradient(160deg,${imgs?.[0] ?? "#f5f5f5"},${imgs?.[1] ?? "#e8e8e8"})` }}>
+          style={{ background: `linear-gradient(160deg,${productColors(imgs, "#f5f5f5", "#e8e8e8").join(",")})` }}>
           {getProductIllustration(p)
             ? <div className="w-20 h-20" style={{ filter: "drop-shadow(0 8px 10px rgba(0,0,0,0.15))" }}>{getProductIllustration(p)!()}</div>
             : <span style={{ filter: "drop-shadow(0 8px 10px rgba(0,0,0,0.15))" }}>{p.emoji as string}</span>}
+          {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} className="p-1.5" />}
         </div>
         {discount > 0 && (
           <div className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">-{discount}%</div>
@@ -554,12 +570,13 @@ function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { produc
           </button>
         </div>
         <div
-          className="shrink-0 w-28 h-28 sm:w-40 sm:h-40 rounded-full flex items-center justify-center text-5xl sm:text-7xl shadow-sm overflow-hidden"
-          style={{ background: `linear-gradient(135deg,${imgs?.[0] ?? "#fff"},${imgs?.[1] ?? "#e8e8e8"})` }}
+          className="relative shrink-0 w-28 h-28 sm:w-40 sm:h-40 rounded-full flex items-center justify-center text-5xl sm:text-7xl shadow-sm overflow-hidden"
+          style={{ background: `linear-gradient(135deg,${productColors(imgs, "#fff", "#e8e8e8").join(",")})` }}
         >
           {getProductIllustration(p)
             ? <div className="w-20 h-20 sm:w-28 sm:h-28">{getProductIllustration(p)!()}</div>
             : (p.emoji as string)}
+          {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} className="p-3" />}
         </div>
       </div>
 
@@ -697,10 +714,11 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             <div className="grid sm:grid-cols-2 gap-6 sm:gap-10 p-4 sm:p-8">
               {/* Product card */}
               <div className="rounded-xl overflow-hidden border border-gray-100 cursor-pointer" onClick={() => onProduct(p)}>
-                <div className="relative" style={{ aspectRatio: "16 / 11", background: `linear-gradient(160deg,${imgs?.[0] ?? "#F3F4F6"},${imgs?.[1] ?? "#E5E7EB"})` }}>
+                <div className="relative" style={{ aspectRatio: "16 / 11", background: `linear-gradient(160deg,${productColors(imgs, "#F3F4F6", "#E5E7EB").join(",")})` }}>
                   <div className="absolute inset-0 flex items-center justify-center text-7xl p-8" style={{ filter: "drop-shadow(0 14px 16px rgba(0,0,0,0.18))" }}>
                     {getProductIllustration(p) ? <div className="w-28 h-28">{getProductIllustration(p)!()}</div> : (p.emoji as string)}
                   </div>
+                  {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} className="p-3" />}
                   {discount > 0 && (
                     <span className="absolute top-3 left-3 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">-{discount}%</span>
                   )}
@@ -1063,13 +1081,14 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
               const imgs = p.images as string[];
               return (
                 <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4 hover:shadow-md cursor-pointer transition-all" onClick={() => onProduct(p)}>
-                  <div className="w-20 h-20 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden"
-                    style={{ background: `linear-gradient(135deg,${imgs?.[0]},${imgs?.[1]})` }}>
+                  <div className="relative w-20 h-20 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden"
+                    style={{ background: `linear-gradient(135deg,${productColors(imgs, "#F3F4F6", "#E5E7EB").join(",")})` }}>
                     <div style={{ filter: "drop-shadow(0 6px 8px rgba(0,0,0,0.15))" }}>
                       {getProductIllustration(p)
                         ? <div className="w-14 h-14">{getProductIllustration(p)!()}</div>
                         : (p.emoji as string)}
                     </div>
+                    {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-gray-400">{p.brand as string}</p>
@@ -1195,8 +1214,8 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
               <Product3DViewer
                 key={productId}
                 emoji={p.emoji as string}
-                colorA={imgs?.[0] ?? "#B8862E"}
-                colorB={imgs?.[1] ?? "#0F3D24"}
+                colorA={productColors(imgs, "#B8862E", "#0F3D24")[0]}
+                colorB={productColors(imgs, "#B8862E", "#0F3D24")[1]}
                 brand={(p.brand as string) ?? ""}
                 name={p.name as string}
                 discount={discount}
@@ -1207,8 +1226,9 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
             <ProductPhotoGallery
               key={productId}
               emoji={p.emoji as string}
-              colorA={imgs?.[0] ?? "#B8862E"}
-              colorB={imgs?.[1] ?? "#0F3D24"}
+              colorA={productColors(imgs, "#B8862E", "#0F3D24")[0]}
+              colorB={productColors(imgs, "#B8862E", "#0F3D24")[1]}
+              photos={productPhotos(imgs)}
               name={p.name as string}
               discount={discount}
               illustration={getProductIllustration(p)}
@@ -1456,8 +1476,9 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
         <h2 className="font-serif text-xl text-gray-900" style={{ fontWeight: 600 }}>Cart ({items.length})</h2>
         {items.map((item, i) => (
           <div key={i} className="bg-white rounded-2xl p-4 flex items-center gap-4 border border-gray-100">
-            <div className="w-16 h-16 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 bg-gray-50">
+            <div className="relative w-16 h-16 rounded-xl flex items-center justify-center text-3xl flex-shrink-0 bg-gray-50 overflow-hidden">
               {item.emoji as string}
+              {productPhotos([item.image])[0] && <ProductPhoto src={productPhotos([item.image])[0]} alt={item.name as string} />}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{item.name as string}</p>
@@ -1902,7 +1923,10 @@ function OrdersView() {
         </div>
         {(selected.items as R[]).map((item, i) => (
           <div key={i} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
-            <span className="text-2xl">{item.emoji as string}</span>
+            <span className="relative w-10 h-10 flex items-center justify-center text-2xl rounded-lg overflow-hidden shrink-0">
+              {item.emoji as string}
+              {productPhotos([item.image])[0] && <ProductPhoto src={productPhotos([item.image])[0]} alt={item.productName as string} />}
+            </span>
             <div className="flex-1"><p className="text-sm font-semibold text-gray-900">{item.productName as string}</p><p className="text-xs text-gray-400">Qty: {item.quantity as number}</p></div>
             <p className="text-sm font-bold text-gray-900">{fmtZAR(Number(item.totalPrice))}</p>
           </div>
