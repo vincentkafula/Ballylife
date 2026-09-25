@@ -2127,6 +2127,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     if (!authUser) { setShowAuthModal(true); return; }
     try {
       const res = await mktCart.add(authUser.id, { productId: p.id, variantId: variantId ?? null, quantity: 1 });
+      if (!res.success) {
+        toast.error(res.error ?? "Couldn't add that to your cart.");
+        // Quick-add from a card can't pick a colour/size -- take them to the product page to choose.
+        if (res.code === "VARIANT_REQUIRED") { setSelProductId(String(p.id)); setView("product"); }
+        return;
+      }
       setCart(res.data as R);
     } catch (err) { showLoadError(err); }
   };

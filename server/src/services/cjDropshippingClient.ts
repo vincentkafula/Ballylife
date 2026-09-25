@@ -130,22 +130,41 @@ function isRateLimited(status: number, json: Partial<CjApiResponse<unknown>> | n
   return status === 429 || json?.code === 1600200 || /too many|too much request/i.test(json?.message ?? "");
 }
 
-async function cjFetch<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
+/** A CJ API failure. `code` is CJ's own error code (or the HTTP status when there's no body). */
+export class CjApiError extends Error {
+  constructor(message: string, readonly code: number | null, readonly httpStatus: number) {
+    super(message);
+    this.name = "CjApiError";
+  }
+}
+
+async function cjRequest<T>(method: "GET" | "POST" | "PATCH", path: string, opts: { params?: Record<string, string | undefined>; body?: unknown } = {}): Promise<T> {
   const token = await getValidAccessToken();
   const url = new URL(`${BASE_URL}${path}`);
-  if (params) for (const [k, v] of Object.entries(params)) if (v) url.searchParams.set(k, v);
+  if (opts.params) for (const [k, v] of Object.entries(opts.params)) if (v) url.searchParams.set(k, v);
+  const init: RequestInit = {
+    method,
+    headers: { "CJ-Access-Token": token, ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}) },
+    ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+  };
 
   for (let attempt = 0; ; attempt++) {
-    const res = await throttled(() => fetch(url.toString(), { headers: { "CJ-Access-Token": token } }));
+    const res = await throttled(() => fetch(url.toString(), init));
     const json = (await res.json().catch(() => null)) as CjApiResponse<T> | null;
     if (isRateLimited(res.status, json) && attempt < MAX_RETRIES) {
       await new Promise(r => setTimeout(r, MIN_INTERVAL_MS * 2 ** (attempt + 1)));
       continue;
     }
     // Error text carries only CJ's message and the path -- never the token or full URL.
-    if (!res.ok || !json?.result) throw new Error(`CJ API error (${path}): ${json?.message ?? res.status}`);
+    if (!res.ok || !json?.result) {
+      throw new CjApiError(`CJ API error (${path}): ${json?.message ?? res.status}`, json?.code ?? null, res.status);
+    }
     return json.data;
   }
+}
+
+function cjFetch<T>(path: string, params?: Record<string, string | undefined>): Promise<T> {
+  return cjRequest<T>("GET", path, { params });
 }
 
 export interface CjProductSummary {
@@ -176,7 +195,7 @@ export interface CjProductDetail extends Omit<CjProductSummary, "productImage"> 
   productImage?: string | string[];
   description?: string;
   productImageSet?: string[] | string;
-  variants?: { vid: string; variantSku: string; variantSellPrice: number; variantImage?: string; variantNameEn?: string }[];
+  variants?: { vid: string; variantSku: string; variantSellPrice: number; variantImage?: string; variantNameEn?: string; variantKey?: string }[];
 }
 
 export function getCjProductDetail(pid: string): Promise<CjProductDetail> {
@@ -190,4 +209,51 @@ export interface CjCategory {
 
 export function getCjCategories(): Promise<CjCategory[]> {
   return cjFetch<CjCategory[]>("/product/getCategory");
+}
+
+// ── Orders & logistics ──────────────────────────────────────────────────
+// Field names below are CJ's own, from developers.cjdropshipping.com
+// (shopping.html / logistic.html), not guessed.
+
+export interface CjFreightOption {
+  logisticName: string; logisticPrice: number; logisticAging?: string; totalPostageFee?: number;
+}
+
+export function calculateCjFreight(body: {
+  startCountryCode: string; endCountryCode: string; zip?: string; products: { vid: string; quantity: number }[];
+}): Promise<CjFreightOption[]> {
+  return cjRequest<CjFreightOption[]>("POST", "/logistic/freightCalculate", { body });
+}
+
+export interface CjCreateOrderRequest {
+  orderNumber: string;
+  shippingCountryCode: string; shippingCountry: string; shippingProvince: string; shippingCity: string;
+  shippingAddress: string; shippingAddress2?: string; shippingZip?: string; shippingPhone?: string;
+  shippingCustomerName: string;
+  logisticName: string; fromCountryCode: string;
+  /** 2 = pay from CJ wallet balance immediately, 3 = create only (pay later in CJ's dashboard). */
+  payType: 2 | 3;
+  isSandbox?: 0 | 1;
+  products: { vid: string; quantity: number }[];
+}
+
+export interface CjCreateOrderResult {
+  orderId: string; orderNumber: string; orderStatus: string;
+  orderAmount?: number; productAmount?: number; postageAmount?: number; actualPayment?: number;
+  interceptOrderReasons?: { code?: string | number; message?: string }[];
+}
+
+export function createCjOrder(body: CjCreateOrderRequest): Promise<CjCreateOrderResult> {
+  return cjRequest<CjCreateOrderResult>("POST", "/shopping/order/createOrderV2", { body });
+}
+
+export interface CjOrderDetail {
+  orderId: string; orderNum?: string; cjOrderId?: string; orderStatus: string; subStatus?: string | null;
+  trackNumber?: string | null; logisticName?: string | null; trackingUrl?: string | null;
+  orderAmount?: number; productAmount?: number; postageAmount?: number;
+}
+
+/** Accepts either CJ's order id or our own order number (CJ looks up both). */
+export function getCjOrderDetail(orderId: string): Promise<CjOrderDetail> {
+  return cjRequest<CjOrderDetail>("GET", "/shopping/order/getOrderDetail", { params: { orderId } });
 }

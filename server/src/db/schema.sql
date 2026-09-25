@@ -765,3 +765,41 @@ CREATE TABLE IF NOT EXISTS cj_dropshipping_auth (
   refresh_token_expires_at TIMESTAMPTZ,
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- CJ's own variant ids for a CJ-sourced catalog item, captured at sync
+-- time: [{ vid, key, priceUsd, image }]. Needed to place the real order
+-- with CJ (createOrderV2 takes a vid per line). Admin/back-end only --
+-- the seller listing's customer-facing variants carry an opaque hash of
+-- the vid instead (see utils/cjVariants.ts), never the vid itself.
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS external_variants JSONB NOT NULL DEFAULT '[]';
+
+-- One row per customer order that contains CJ-sourced lines: the job that
+-- places the matching order with CJ using the platform's own account, then
+-- tracks it until delivery (services/cjFulfillment.ts). Admin-only -- CJ
+-- order ids, CJ costs and error text never reach seller or customer APIs.
+CREATE TABLE IF NOT EXISTS cj_fulfillments (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id           UUID NOT NULL UNIQUE REFERENCES mkt_orders(id),
+  status             TEXT NOT NULL DEFAULT 'queued',
+  -- queued | placing | placed | shipped | delivered | needs_attention | failed | cancelled
+  attempts           INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error         TEXT,
+  cj_order_id        TEXT,
+  cj_order_status    TEXT,     -- CJ's own: CREATED | UNPAID | UNSHIPPED | SHIPPED | DELIVERED | CANCELLED ...
+  logistic_name      TEXT,     -- CJ's carrier name; customers see a white-labelled version
+  tracking_number    TEXT,
+  tracking_url       TEXT,
+  cj_product_amount  NUMERIC(12,2), -- USD, what CJ charges for goods
+  cj_postage_amount  NUMERIC(12,2), -- USD, what CJ charges for shipping
+  cj_order_amount    NUMERIC(12,2), -- USD, total paid/owed to CJ
+  pay_type           INTEGER,       -- 2 = paid from CJ balance automatically, 3 = created unpaid
+  last_synced_at     TIMESTAMPTZ,
+  alerted_at         TIMESTAMPTZ,
+  placed_at          TIMESTAMPTZ,
+  shipped_at         TIMESTAMPTZ,
+  delivered_at       TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_cj_fulfillments_status ON cj_fulfillments(status);

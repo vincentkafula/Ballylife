@@ -16,6 +16,7 @@ import { SUPPLIER_ORDER_TRANSITIONS, CUSTOMS_RECORD_TRANSITIONS, canTransition, 
 import { recalcCartTotals } from "../utils/cart";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
+import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
@@ -513,8 +514,20 @@ router.post("/cart/:userId/add", requireAuth, requireSelf, async (req: Request, 
     res.status(409).json({ success: false, error: `Only ${product.stock} left in stock.` });
     return;
   }
+  // A supplier-fulfilled product with options (colour/size) can't be
+  // placed with the supplier without knowing which one -- so the choice is
+  // required up front rather than discovered after the customer has paid.
+  const variants: any[] = Array.isArray(product.variants) ? product.variants : [];
+  const variant = variantId ? variants.find(v => v.id === variantId) : undefined;
+  if (variantId && !variant) { res.status(400).json({ success: false, error: "That option isn't available for this product." }); return; }
+  if (!variant && product.fulfillmentType === "imported" && variants.length > 1) {
+    res.status(400).json({ success: false, error: "Please choose an option (e.g. colour or size) on the product page first.", code: "VARIANT_REQUIRED" });
+    return;
+  }
+  const unitPrice = round2(product.price + Number(variant?.additionalPrice ?? 0));
+
   if (existing) existing.quantity += (quantity ?? 1);
-  else items.push({ productId, variantId: variantId ?? null, quantity: quantity ?? 1, unitPrice: product.price, name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
+  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity: quantity ?? 1, unitPrice, name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
 
   const updated = await saveCart(cartRow.id, items, cartRow.coupon_code);
   res.json({ success: true, data: cartRowToApi(updated) });
@@ -850,7 +863,7 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
   const addr = addrRows[0] ?? {};
 
   const items = cart.items.map((i: any) => ({
-    productId: i.productId, productName: i.name, emoji: i.emoji, image: i.image ?? null, variantId: i.variantId, variantLabel: null,
+    productId: i.productId, productName: i.name, emoji: i.emoji, image: i.image ?? null, variantId: i.variantId, variantLabel: i.variantLabel ?? null,
     quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.unitPrice * i.quantity, sellerId: i.sellerId ?? "sel-01", sellerName: i.sellerName,
   }));
   const shippingAddress = {
@@ -1608,17 +1621,35 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
   // buyers. The compliance check (condition + NRCS) happens at order
   // time instead, based on where THIS customer is actually shipping to.
 
+  // Supplier options (CJ variants) become customer-selectable variants. The
+  // id is an opaque hash of the supplier's variant id (see cjVariants.ts),
+  // and a pricier option's surcharge carries the seller's same markup ratio
+  // so their margin holds on every option. Single-option items need no picker.
+  const extVariants = parseExternalVariants(sp.external_variants);
+  let listingVariants: unknown[] = [];
+  if (extVariants.length > 1) {
+    const { rows: fxRows } = await pool!.query(`SELECT * FROM mkt_fx_rates`);
+    const toZar = convertToZar(1, sp.currency ?? "USD", new Map(fxRows.map((r: any) => [r.currency, Number(r.rate_to_zar)])));
+    const baseCost = Number(sp.cost_price);
+    const markup = toZar && baseCost > 0 ? finalRetailPrice / (baseCost * toZar) : 1;
+    listingVariants = extVariants.map(v => ({
+      id: variantIdForVid(v.vid), type: "Option", value: v.key, sku: null, stock: stock ?? 0,
+      additionalPrice: toZar ? Math.max(0, round2((v.priceUsd - baseCost) * toZar * markup)) : 0,
+    }));
+  }
+
   const slug = `${String(sp.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
   const client = await pool!.connect();
   try {
     await client.query("BEGIN");
     const { rows } = await client.query(
       `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
-         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17) RETURNING *`,
+         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference, variants)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17,$18) RETURNING *`,
       [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", finalRetailPrice, finalCompareAtPrice,
        JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId,
-       sp.vehicle_details ? JSON.stringify(sp.vehicle_details) : null, sp.condition ?? null, sp.nrcs_approved ?? false, sp.nrcs_reference ?? null]
+       sp.vehicle_details ? JSON.stringify(sp.vehicle_details) : null, sp.condition ?? null, sp.nrcs_approved ?? false, sp.nrcs_reference ?? null,
+       JSON.stringify(listingVariants)]
     );
     await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [supplierProductId]);
     await client.query("COMMIT");

@@ -8,7 +8,7 @@ import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser } fr
 import { toast } from "sonner";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "supplyChain" | "financial" | "reports" | "security";
+type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "supplyChain" | "financial" | "reports" | "security";
 
 // Maps a specific granted Marketplace Management position (from the job
 // application flow) to which of the 8 real tabs this dashboard already
@@ -42,9 +42,9 @@ type MarketTier = "executive" | "marketplace_ops" | "fulfillment" | "finance_sec
 const TIER_TABS: Record<MarketTier, Tab[]> = {
   executive: ["overview", "financial", "reports"],
   marketplace_ops: ["overview", "sellerApproval", "productApproval"],
-  fulfillment: ["overview", "orders", "supplyChain"],
+  fulfillment: ["overview", "orders", "fulfilment", "supplyChain"],
   finance_security: ["overview", "financial", "security", "reports"],
-  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "supplyChain", "financial", "reports", "security"],
+  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "supplyChain", "financial", "reports", "security"],
 };
 
 function positionToMarketTier(position: string | null): MarketTier {
@@ -126,9 +126,14 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
   const [customers, setCustomers] = useState<R[]>([]);
   const [sellers, setSellers] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fulfilmentAttention, setFulfilmentAttention] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Paid orders the supplier worker couldn't place -- surfaced as a sidebar badge.
+    mktAdmin.cj.fulfillments().then(r => {
+      if (r.success) setFulfilmentAttention((r.meta.counts.needs_attention ?? 0) + (r.meta.counts.failed ?? 0));
+    }).catch(() => undefined);
     const [statsRes, psRes, ppRes, ordersRes, custRes, sellRes] = await Promise.allSettled([
       mktAdmin.stats(), mktAdmin.pendingSellers(), mktAdmin.pendingProducts(), mktAdmin.orders(), mktAdmin.customers(), mktSellers.list(),
     ]);
@@ -149,6 +154,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     { id: "sellerApproval", label: "Seller Approval", icon: <Store className="w-4 h-4" />, badge: pendingSellers.length },
     { id: "productApproval", label: "Product Approval", icon: <Package className="w-4 h-4" />, badge: pendingProducts.length },
     { id: "orders", label: "Order Monitoring", icon: <ShoppingBag className="w-4 h-4" /> },
+    { id: "fulfilment", label: "Fulfilment", icon: <Truck className="w-4 h-4" />, badge: fulfilmentAttention },
     { id: "supplyChain", label: "Supply Chain", icon: <Globe2 className="w-4 h-4" /> },
     { id: "financial", label: "Financial", icon: <DollarSign className="w-4 h-4" /> },
     { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
@@ -239,6 +245,8 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
             )}
 
             {tab === "orders" && <OrderMonitoring orders={orders} onChanged={load} />}
+
+            {tab === "fulfilment" && <FulfilmentPanel onOpenOrders={() => setTab("orders")} />}
 
             {tab === "supplyChain" && <SupplyChainPanel />}
 
@@ -2105,6 +2113,154 @@ function OrderMonitoring({ orders, onChanged }: { orders: R[]; onChanged: () => 
             })}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Supplier fulfilment (CJ orders) ─────────────────────────────────────────
+// Every paid order containing supplier-sourced items is placed with the
+// supplier automatically by the backend worker. This panel is where the
+// exceptions surface: anything needing a decision, plus cost vs. revenue
+// per order. Supplier ids and costs appear only here, never to sellers.
+const FULFILMENT_STATUS_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
+  queued: { label: "Queued", bg: "#F3F4F6", fg: "#4B5563" },
+  placing: { label: "Placing…", bg: "#EFF6FF", fg: "#1D4ED8" },
+  placed: { label: "Placed", bg: "#EFF6FF", fg: "#1D4ED8" },
+  shipped: { label: "Shipped", bg: "#ECFDF5", fg: "#047857" },
+  delivered: { label: "Delivered", bg: "#ECFDF5", fg: "#047857" },
+  needs_attention: { label: "Needs attention", bg: "#FFFBEB", fg: "#B45309" },
+  failed: { label: "Failed", bg: "#FEF2F2", fg: "#B91C1C" },
+  cancelled: { label: "Cancelled", bg: "#F3F4F6", fg: "#6B7280" },
+};
+
+function FulfilmentPanel({ onOpenOrders }: { onOpenOrders: () => void }) {
+  const [rows, setRows] = useState<R[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [autoPay, setAutoPay] = useState<boolean | null>(null);
+  const [filter, setFilter] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await mktAdmin.cj.fulfillments(filter || undefined);
+      if (res.success) { setRows(res.data); setCounts(res.meta.counts); setAutoPay(res.meta.autoPay); }
+    } catch { toast.error("Couldn't load fulfilment jobs."); }
+    finally { setLoading(false); }
+  }, [filter]);
+  useEffect(() => { load(); }, [load]);
+
+  const act = async (row: R, action: "retry" | "refresh") => {
+    setBusyId(String(row.id));
+    try {
+      const res = await mktAdmin.cj[action](String(row.id));
+      if (!res.success) toast.error(res.error ?? "That didn't work — please try again.");
+      else toast.success(action === "retry" ? `Order ${row.orderNumber}: ${FULFILMENT_STATUS_STYLE[String(res.data?.status)]?.label ?? res.data?.status}` : "Status refreshed.");
+      load();
+    } catch { toast.error("Couldn't reach the server."); }
+    finally { setBusyId(null); }
+  };
+
+  const attention = (counts.needs_attention ?? 0) + (counts.failed ?? 0);
+  const filters = [
+    { id: "", label: "All" }, { id: "needs_attention", label: "Needs attention" }, { id: "failed", label: "Failed" },
+    { id: "queued", label: "Queued" }, { id: "placed", label: "Placed" }, { id: "shipped", label: "Shipped" }, { id: "delivered", label: "Delivered" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {autoPay === false && (
+        <div className="text-xs px-3 py-2 rounded-lg border bg-amber-50 text-amber-800 border-amber-200">
+          Automatic payment is off: orders are created with the supplier but left <b>unpaid</b> — pay them in the supplier dashboard, or set <code>CJ_AUTO_PAY=true</code> on the backend to pay from your supplier balance automatically.
+        </div>
+      )}
+      {attention > 0 && (
+        <div className="text-xs px-3 py-2 rounded-lg border bg-red-50 text-red-700 border-red-200">
+          {attention} paid order{attention === 1 ? "" : "s"} could not be fulfilled automatically. Retry once the issue is fixed, or refund the customer from <button onClick={onOpenOrders} className="underline font-semibold">Order Monitoring</button>.
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-bold text-gray-900 mr-2">Supplier fulfilment</span>
+          {filters.map(f => (
+            <button key={f.id} onClick={() => setFilter(f.id)}
+              className="text-[11px] font-semibold px-2.5 py-1 rounded-lg border"
+              style={{ background: filter === f.id ? "#14110D" : "white", color: filter === f.id ? "white" : "#374151", borderColor: filter === f.id ? "#14110D" : "#E5E7EB" }}>
+              {f.label}{f.id && counts[f.id] ? ` (${counts[f.id]})` : ""}
+            </button>
+          ))}
+          <button onClick={load} className="ml-auto text-[11px] font-semibold text-gray-500 hover:text-gray-800">Reload</button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-gray-400 p-6 text-center">No supplier orders{filter ? " with this status" : " yet"}. Paid orders containing supplier-sourced items appear here within a minute.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Customer paid</th><th className="px-4 py-2 font-medium">Supplier cost</th>
+                <th className="px-4 py-2 font-medium">Gross margin</th><th className="px-4 py-2 font-medium">Supplier order / tracking</th>
+                <th className="px-4 py-2 font-medium">Action</th>
+              </tr></thead>
+              <tbody>
+                {rows.map(r => {
+                  const st = FULFILMENT_STATUS_STYLE[String(r.status)] ?? { label: String(r.status), bg: "#F3F4F6", fg: "#374151" };
+                  const canRetry = !r.cjOrderId && ["failed", "needs_attention", "queued", "cancelled"].includes(String(r.status));
+                  const canRefresh = Boolean(r.cjOrderId) && !["delivered", "cancelled"].includes(String(r.status));
+                  const margin = r.grossMarginZar as number | null;
+                  return (
+                    <tr key={String(r.id)} className="border-b border-gray-50 last:border-0 align-top">
+                      <td className="px-4 py-2.5">
+                        <p className="font-semibold text-gray-900">{String(r.orderNumber)}</p>
+                        <p className="text-[11px] text-gray-400">{String(r.customerName ?? "")}</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: st.bg, color: st.fg }}>{st.label}</span>
+                        {r.status === "queued" && Number(r.attempts) > 0 && (
+                          <p className="text-[10px] text-gray-400 mt-1">Attempt {Number(r.attempts)} failed · next try {new Date(String(r.nextAttemptAt)).toLocaleTimeString()}</p>
+                        )}
+                        {r.lastError ? <p className="text-[11px] text-red-600 mt-1 max-w-xs">{String(r.lastError)}</p> : null}
+                      </td>
+                      <td className="px-4 py-2.5 font-semibold text-gray-700">{fmtZAR(Number(r.orderTotal))}</td>
+                      <td className="px-4 py-2.5 text-gray-600">
+                        {r.cjCostUsd !== null ? <>${Number(r.cjCostUsd).toFixed(2)}{r.cjCostZar !== null && <span className="text-[11px] text-gray-400"> ≈ {fmtZAR(Number(r.cjCostZar))}</span>}</> : "—"}
+                        {r.cjOrderId ? <p className="text-[10px] text-gray-400">{r.autoPaid ? "Paid from balance" : "Created unpaid"}</p> : null}
+                      </td>
+                      <td className="px-4 py-2.5 font-semibold" style={{ color: margin === null ? "#9CA3AF" : margin >= 0 ? "#047857" : "#B91C1C" }}>
+                        {margin === null ? "—" : fmtZAR(margin)}
+                      </td>
+                      <td className="px-4 py-2.5 text-[11px] text-gray-500">
+                        {r.cjOrderId ? <p className="font-mono">{String(r.cjOrderId)}</p> : "—"}
+                        {r.cjOrderStatus ? <p>{String(r.cjOrderStatus)}</p> : null}
+                        {r.trackingNumber ? <p>{String(r.logisticName ?? "")} · <span className="font-mono">{String(r.trackingNumber)}</span></p> : null}
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        {canRetry && (
+                          <button onClick={() => act(r, "retry")} disabled={busyId === r.id}
+                            className="text-xs font-semibold px-3 py-1 rounded-lg text-white disabled:opacity-40" style={{ background: "#B8862E" }}>
+                            {busyId === r.id ? "Placing…" : "Retry now"}
+                          </button>
+                        )}
+                        {canRefresh && (
+                          <button onClick={() => act(r, "refresh")} disabled={busyId === r.id}
+                            className="text-xs font-semibold px-3 py-1 rounded-lg border border-gray-200 text-gray-700 disabled:opacity-40">
+                            {busyId === r.id ? "Checking…" : "Refresh"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

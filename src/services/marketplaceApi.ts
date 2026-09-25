@@ -62,7 +62,7 @@ export const mktProducts = {
 
 export const mktCart = {
   get:      (userId: string) => api<{ success: boolean; data: unknown | null }>(`/api/marketplace/cart/${userId}`),
-  add:      (userId: string, body: unknown) => api<{ success: boolean; data: unknown }>(`/api/marketplace/cart/${userId}/add`, { method: "POST", body: JSON.stringify(body) }),
+  add:      (userId: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string; code?: string }>(`/api/marketplace/cart/${userId}/add`, { method: "POST", body: JSON.stringify(body) }),
   update:   (userId: string, productId: string, quantity: number) => api(`/api/marketplace/cart/${userId}/item/${productId}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
   remove:   (userId: string, productId: string) => api(`/api/marketplace/cart/${userId}/item/${productId}`, { method: "DELETE" }),
   coupon:   (userId: string, code: string) => api<{ success: boolean; data: unknown; message: string }>(`/api/marketplace/cart/${userId}/coupon`, { method: "POST", body: JSON.stringify({ code }) }),
@@ -137,6 +137,12 @@ export const mktAdmin = {
       api<{ success: boolean; data?: { imported: number; updated: number; skippedNoRate: number; withPhotos?: number; detailFailures?: number; totalAvailable: number; pageNum: number; pageSize: number }; error?: string }>(
         "/api/marketplace/admin/cj/sync", { method: "POST", body: JSON.stringify(body) }
       ),
+    fulfillments: (status?: string) =>
+      api<{ success: boolean; data: Record<string, unknown>[]; meta: { counts: Record<string, number>; autoPay: boolean }; error?: string }>(
+        `/api/marketplace/admin/cj/fulfillments${status ? `?status=${encodeURIComponent(status)}` : ""}`
+      ),
+    retry: (id: string) => api<{ success: boolean; data?: Record<string, unknown>; error?: string }>(`/api/marketplace/admin/cj/fulfillments/${id}/retry`, { method: "POST" }),
+    refresh: (id: string) => api<{ success: boolean; data?: Record<string, unknown>; error?: string }>(`/api/marketplace/admin/cj/fulfillments/${id}/refresh`, { method: "POST" }),
   },
   warehouses: {
     list:   () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/warehouses"),
