@@ -185,6 +185,14 @@ describe("White-labelled supplier catalog (GET /supplier-catalog)", () => {
     expect(single.body.data).not.toHaveProperty("costPrice");
   });
 
+  it("seller's import-pipeline view hides the supplier and what we paid them", async () => {
+    const res = await request(app).get(`/api/marketplace/sellers/${sellerId}/supplier-orders`).set("Authorization", `Bearer ${sellerToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    for (const hidden of ["supplierId", "supplierName", "supplierProductId", "costAmount"]) expect(res.body.data[0]).not.toHaveProperty(hidden);
+    expect(res.body.data[0].orderNumber).toBeDefined();
+  });
+
   it("still shows the admin the real supplier and cost", async () => {
     const res = await request(app).get(`/api/marketplace/supplier-catalog/${supplierProductId}`).set("Authorization", `Bearer ${adminToken}`);
     expect(res.body.data.supplierName).toBe("Test Supplier Co");

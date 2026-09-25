@@ -1556,7 +1556,12 @@ router.get("/sellers/:id/supplier-orders", requireAuth, requireSellerOwner, asyn
      WHERE so.seller_id = $1 ORDER BY so.created_at DESC LIMIT 100`,
     [req.params.id]
   );
-  res.json({ success: true, data: rows.map(mapSupplierOrder), meta: { total: rows.length } });
+  // Sellers track the import pipeline, but never see who the supplier is or what we paid them.
+  const forSeller = (r: any) => {
+    const { supplierId: _sid, supplierName: _sn, supplierProductId: _spid, costAmount: _ca, ...rest } = mapSupplierOrder(r);
+    return rest;
+  };
+  res.json({ success: true, data: rows.map(forSeller), meta: { total: rows.length } });
 });
 
 router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
