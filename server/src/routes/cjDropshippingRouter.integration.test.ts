@@ -178,6 +178,26 @@ describe("POST /api/marketplace/admin/cj/sync", () => {
 
     const authCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes("getAccessToken"));
     expect(authCalls.length).toBe(1);
+    // CJ's API-key login: the key alone. Adding an email makes CJ treat it
+    // as the retired email/password login and reject it.
+    expect(JSON.parse((authCalls[0][1] as any).body)).toEqual({ apiKey: "test-cj-api-key" });
+  });
+
+  it("after a rejected login, waits before asking CJ again instead of retrying every call", async () => {
+    await pool.query(`DELETE FROM cj_dropshipping_auth`);
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: unknown, init?: unknown) =>
+      String(input).includes("getAccessToken")
+        ? { ok: false, status: 200, json: async () => ({ code: 1600001, result: false, message: "Email or password is wrong" }) }
+        : base(input, init));
+
+    const first = await request(app).post("/api/marketplace/admin/cj/sync").set("Authorization", `Bearer ${adminToken}`).send({ pageSize: 2 });
+    const second = await request(app).post("/api/marketplace/admin/cj/sync").set("Authorization", `Bearer ${adminToken}`).send({ pageSize: 2 });
+    expect(first.status).toBe(502);
+    expect(second.status).toBe(502);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("getAccessToken")).length).toBe(1);
+
+    (await import("../services/cjDropshippingClient"))._resetCjAuthStateForTests();
   });
 
   it("retries a rate-limited CJ response instead of failing the sync", async () => {

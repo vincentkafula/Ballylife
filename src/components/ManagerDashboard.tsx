@@ -1059,7 +1059,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
         </div>
       )}
       {cjConfigured === false && (
-        <p className="text-[11px] text-gray-400 mb-3">CJdropshipping isn't connected yet — set CJ_EMAIL and CJ_API_KEY to enable real product syncing here.</p>
+        <p className="text-[11px] text-gray-400 mb-3">CJdropshipping isn't connected yet — set CJ_API_KEY to enable real product syncing here.</p>
       )}
 
       {importResult && (

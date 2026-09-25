@@ -8,8 +8,7 @@ import { pool } from "../db/pool";
  * emailService.ts, and smsService.ts.
  *
  * Required env vars to actually connect:
- *   CJ_EMAIL   -- the email on your CJdropshipping account
- *   CJ_API_KEY -- generated from your CJ account settings
+ *   CJ_API_KEY -- "CJUserNum@api@...", from CJ's API authorization page (API Key type)
  *
  * getAccessToken is rate-limited to one call per 5 minutes on CJ's own
  * side, and the resulting access token is valid for up to 15 days
@@ -23,13 +22,21 @@ import { pool } from "../db/pool";
  * makes a hard requirement, not just an optimization.
  */
 
-const CJ_EMAIL = process.env.CJ_EMAIL;
-const CJ_API_KEY = process.env.CJ_API_KEY;
+// CJ's current getAccessToken takes the API key alone ("CJUserNum@api@...").
+// Sending an email alongside it switches CJ to the retired email/password
+// mode, which rejects the request -- so CJ_EMAIL is no longer used.
+const CJ_API_KEY = process.env.CJ_API_KEY?.trim();
 const BASE_URL = "https://developers.cjdropshipping.com/api2.0/v1";
 
 export function isCjConfigured(): boolean {
-  return Boolean(CJ_EMAIL && CJ_API_KEY);
+  return Boolean(CJ_API_KEY);
 }
+
+// After a failed login, don't ask CJ again for a while: a wrong key won't
+// fix itself, and hammering the auth endpoint every minute risks CJ
+// throttling the account.
+const AUTH_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+let lastAuthFailure: { at: number; message: string } | null = null;
 
 interface CjApiResponse<T> {
   code: number;
@@ -43,12 +50,17 @@ async function fetchNewAccessToken(): Promise<string> {
   const res = await fetch(`${BASE_URL}/authentication/getAccessToken`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: CJ_EMAIL, apiKey: CJ_API_KEY }),
+    body: JSON.stringify({ apiKey: CJ_API_KEY }),
   });
-  const json = (await res.json()) as CjApiResponse<{
+  const json = (await res.json().catch(() => null)) as CjApiResponse<{
     accessToken: string; accessTokenExpiryDate: string; refreshToken: string; refreshTokenExpiryDate: string;
-  }>;
-  if (!res.ok || !json.result) throw new Error(`CJ authentication failed: ${json.message ?? res.status}`);
+  }> | null;
+  if (!res.ok || !json?.result) {
+    const message = `CJ authentication failed: ${json?.message ?? res.status}`;
+    lastAuthFailure = { at: Date.now(), message };
+    throw new Error(message);
+  }
+  lastAuthFailure = null;
   const { accessToken, accessTokenExpiryDate, refreshToken, refreshTokenExpiryDate } = json.data;
   await pool!.query(
     `INSERT INTO cj_dropshipping_auth (id, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, updated_at)
@@ -85,7 +97,7 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
  * minute rate limit on the auth endpoint.
  */
 async function getValidAccessToken(): Promise<string> {
-  if (!isCjConfigured()) throw new Error("CJdropshipping is not configured — set CJ_EMAIL and CJ_API_KEY.");
+  if (!isCjConfigured()) throw new Error("CJdropshipping is not configured — set CJ_API_KEY.");
   const { rows } = await pool!.query(`SELECT * FROM cj_dropshipping_auth WHERE id = 'cj'`);
   const cached = rows[0];
   const now = Date.now();
@@ -102,8 +114,13 @@ async function getValidAccessToken(): Promise<string> {
       // re-authentication rather than failing outright.
     }
   }
+  if (lastAuthFailure && Date.now() - lastAuthFailure.at < AUTH_FAILURE_COOLDOWN_MS) {
+    throw new Error(`${lastAuthFailure.message} (not retrying until ${new Date(lastAuthFailure.at + AUTH_FAILURE_COOLDOWN_MS).toISOString()})`);
+  }
   return await fetchNewAccessToken();
 }
+
+export function _resetCjAuthStateForTests() { lastAuthFailure = null; }
 
 // CJ enforces a per-account QPS limit (1 req/s on the base tier) and
 // answers bursts with HTTP 429 or code 1600200. A product-page sync makes

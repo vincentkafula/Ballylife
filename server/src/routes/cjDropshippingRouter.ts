@@ -9,7 +9,7 @@ import { syncCjPage, startCatalogSync, getCatalogSyncJob, hideDemoCatalogOnce } 
 
 const router: ReturnType<typeof Router> = Router();
 const MANAGER_ROLES = ["marketplace_admin"] as const;
-const NOT_CONFIGURED = "CJdropshipping isn't configured yet — set CJ_EMAIL and CJ_API_KEY.";
+const NOT_CONFIGURED = "CJdropshipping isn't configured yet — set CJ_API_KEY.";
 
 router.get("/admin/cj/status", requireAuth, requireRole(...MANAGER_ROLES), (_req: Request, res: Response) => {
   res.json({ success: true, data: { configured: isCjConfigured() } });
