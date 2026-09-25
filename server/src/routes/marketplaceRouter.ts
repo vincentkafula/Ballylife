@@ -1070,13 +1070,13 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     // check in applicationsRouter.ts -- advisory only (Section 5.1.4: flags,
     // never blocks), so a failure here must never delay order confirmation
     // or the payment submission call right below it.
-    checkPaymentVelocity(order.id, userId).catch(err => console.error("[fraud-risk] Payment velocity check failed:", err));
+    checkPaymentVelocity(order.id, userId).catch(err => logger.error("fraud_risk.velocity_check_failed", { orderId: order.id, error: err instanceof Error ? err.message : String(err) }));
 
     // Best-effort — an email failure should never fail the order itself.
     // Logs the email instead of sending if SMTP isn't configured yet
     // (see emailService.ts).
     sendOrderConfirmationEmail(customerEmail, order.order_number, Number(order.total_amount), order.currency)
-      .catch(err => console.error("[email] Order confirmation failed:", err));
+      .catch(err => logger.error("email.order_confirmation_failed", { orderId: order.id, orderNumber: order.order_number, error: err instanceof Error ? err.message : String(err) }));
 
     // Submit the charge *after* releasing the stock locks — a payment
     // gateway call is a network round trip and shouldn't hold a

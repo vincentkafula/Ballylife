@@ -8,8 +8,10 @@ import marketplaceRouter from "./routes/marketplaceRouter";
 import geoRouter from "./routes/geoRouter";
 import sitemapRouter from "./routes/sitemapRouter";
 import reconciliationRouter from "./routes/reconciliationRouter";
+import cjDropshippingRouter from "./routes/cjDropshippingRouter";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
+import { logger } from "./utils/logger";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -81,6 +83,7 @@ app.get("/health", async (_req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/marketplace", marketplaceRouter);
 app.use("/api/marketplace", reconciliationRouter);
+app.use("/api/marketplace", cjDropshippingRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -93,8 +96,8 @@ app.use((_req, res) => {
 });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error("[error]", err);
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error("http.unhandled_error", { method: req.method, path: req.path, error: err instanceof Error ? err.message : String(err) });
   res.status(500).json({ success: false, error: "Internal server error" });
 });
 

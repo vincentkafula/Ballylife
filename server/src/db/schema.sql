@@ -740,3 +740,28 @@ CREATE TABLE IF NOT EXISTS phone_verification_codes (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_phone_verif_user ON phone_verification_codes(user_id);
+
+-- External supplier-catalog sync (CJdropshipping integration). Lets
+-- mkt_supplier_products rows track which external source/product they
+-- came from, so a repeat sync updates the same row (price/stock/etc.)
+-- rather than creating a duplicate every time it runs. NULL for every
+-- row created through the existing manual/admin-entry path -- this is
+-- purely additive, nothing existing changes shape.
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS external_source TEXT; -- e.g. 'cjdropshipping'
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS external_id TEXT;     -- the source's own product id (CJ's `pid`)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_products_external ON mkt_supplier_products(supplier_id, external_id) WHERE external_id IS NOT NULL;
+
+-- Caches the CJdropshipping access/refresh token pair server-side --
+-- getAccessToken is rate-limited to one call per 5 minutes on CJ's own
+-- side (confirmed directly against their API docs before designing
+-- this), so re-fetching on every request isn't just wasteful, it would
+-- actively fail. Single row (id is always 'cj'); a real key-value store
+-- would be overkill for one integration's one token pair.
+CREATE TABLE IF NOT EXISTS cj_dropshipping_auth (
+  id                       TEXT PRIMARY KEY DEFAULT 'cj',
+  access_token             TEXT,
+  access_token_expires_at  TIMESTAMPTZ,
+  refresh_token            TEXT,
+  refresh_token_expires_at TIMESTAMPTZ,
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
