@@ -195,7 +195,7 @@ export interface CjProductDetail extends Omit<CjProductSummary, "productImage"> 
   productImage?: string | string[];
   description?: string;
   productImageSet?: string[] | string;
-  variants?: { vid: string; variantSku: string; variantSellPrice: number; variantImage?: string; variantNameEn?: string; variantKey?: string }[];
+  variants?: { vid: string; variantSku: string; variantSellPrice: number | string; variantImage?: string; variantNameEn?: string; variantKey?: string; inventories?: { countryCode?: string; totalInventory?: number }[] }[];
 }
 
 export function getCjProductDetail(pid: string): Promise<CjProductDetail> {

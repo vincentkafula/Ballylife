@@ -803,3 +803,32 @@ CREATE TABLE IF NOT EXISTS cj_fulfillments (
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_cj_fulfillments_status ON cj_fulfillments(status);
+
+-- CJ's quoted cheapest shipping (USD) to the pricing country for one unit,
+-- captured at sync time so listing prices cover landed cost, not just goods.
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS est_shipping_usd NUMERIC(12,2);
+
+-- Background CJ catalogue sync (services/cjCatalog.ts). One row per job
+-- kind; the worker advances `next_page` one page per tick until it passes
+-- `end_page`, so a long sync survives restarts and never blocks a request.
+CREATE TABLE IF NOT EXISTS cj_sync_jobs (
+  id           TEXT PRIMARY KEY,                 -- 'catalog'
+  status       TEXT NOT NULL DEFAULT 'idle',     -- idle | running | done | failed
+  next_page    INTEGER NOT NULL DEFAULT 1,
+  end_page     INTEGER NOT NULL DEFAULT 1,
+  page_size    INTEGER NOT NULL DEFAULT 20,
+  category_id  TEXT,                             -- CJ's category id filter, if any
+  totals       JSONB NOT NULL DEFAULT '{}',
+  total_available INTEGER,
+  last_error   TEXT,
+  started_at   TIMESTAMPTZ,
+  finished_at  TIMESTAMPTZ,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One-off data changes that must run exactly once per database.
+CREATE TABLE IF NOT EXISTS app_flags (
+  key         TEXT PRIMARY KEY,
+  applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  detail      TEXT
+);

@@ -49,6 +49,12 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   }
 }
 
+export interface CjSyncJob {
+  status: "idle" | "running" | "done" | "failed"; nextPage: number; endPage: number; pageSize: number;
+  totals: Partial<Record<"imported" | "updated" | "listed" | "withPhotos" | "detailFailures" | "skippedNoRate", number>>;
+  totalAvailable: number | null; lastError: string | null; startedAt: string | null; finishedAt: string | null;
+}
+
 // ─── API exports ───────────────────────────────────────────────────────────────
 export const mktCategories = () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/categories");
 
@@ -133,6 +139,9 @@ export const mktAdmin = {
   },
   cj: {
     status: () => api<{ success: boolean; data: { configured: boolean } }>("/api/marketplace/admin/cj/status"),
+    syncStatus: () => api<{ success: boolean; data: CjSyncJob | null }>("/api/marketplace/admin/cj/sync"),
+    startSync: (body: { pageNum?: number; pages: number; pageSize?: number; categoryId?: string }) =>
+      api<{ success: boolean; data?: CjSyncJob; error?: string }>("/api/marketplace/admin/cj/sync", { method: "POST", body: JSON.stringify(body) }),
     sync: (body: { pageNum?: number; pageSize?: number; categoryId?: string }) =>
       api<{ success: boolean; data?: { imported: number; updated: number; skippedNoRate: number; withPhotos?: number; detailFailures?: number; totalAvailable: number; pageNum: number; pageSize: number }; error?: string }>(
         "/api/marketplace/admin/cj/sync", { method: "POST", body: JSON.stringify(body) }

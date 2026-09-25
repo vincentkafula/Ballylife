@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   BarChart3, Users, Store, Package, ShoppingBag, DollarSign, CheckCircle, XCircle,
   Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser } from "../services/marketplaceApi";
+import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob } from "../services/marketplaceApi";
 import { toast } from "sonner";
 
 type R = Record<string, unknown>;
@@ -893,26 +893,47 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ created: number; errorCount: number; errors: { row: number; error: string }[]; message?: string; error?: string } | null>(null);
   const [cjConfigured, setCjConfigured] = useState<boolean | null>(null);
-  const [cjSyncing, setCjSyncing] = useState(false);
+  const [cjStarting, setCjStarting] = useState(false);
   const [cjPage, setCjPage] = useState(1);
-  const [cjResult, setCjResult] = useState<{ imported: number; updated: number; skippedNoRate: number; withPhotos?: number; detailFailures?: number; totalAvailable: number; pageNum: number; pageSize: number } | null>(null);
+  const [cjPages, setCjPages] = useState(10);
+  const [cjJob, setCjJob] = useState<CjSyncJob | null>(null);
+  const lastJob = useRef<CjSyncJob | null>(null);
 
   useEffect(() => {
     mktAdmin.cj.status().then(r => { if (r.success) setCjConfigured(r.data.configured); }).catch(() => setCjConfigured(false));
   }, []);
 
+  // The sync runs on the server, one page (~20 products) a minute; poll
+  // its progress while it's running and refresh the catalogue as it grows.
+  useEffect(() => {
+    if (!cjConfigured) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await mktAdmin.cj.syncStatus();
+        if (cancelled || !r.success) return;
+        const prev = lastJob.current;
+        if (prev?.status === "running" && (r.data?.nextPage !== prev.nextPage || r.data?.status !== "running")) onChanged();
+        lastJob.current = r.data;
+        setCjJob(r.data);
+      } catch { /* keep the last known state */ }
+    };
+    poll();
+    const t = setInterval(poll, 15000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [cjConfigured, onChanged]);
+
   const syncFromCj = async () => {
-    setCjSyncing(true);
-    setCjResult(null);
+    setCjStarting(true);
     try {
-      const res = await mktAdmin.cj.sync({ pageNum: cjPage, pageSize: 10 });
-      if (!res.success || !res.data) { toast.error(res.error ?? "Sync failed — please try again."); return; }
-      setCjResult(res.data);
-      if (res.data.imported > 0 || res.data.updated > 0) onChanged();
+      const res = await mktAdmin.cj.startSync({ pageNum: cjPage, pages: cjPages, pageSize: 20 });
+      if (!res.success || !res.data) { toast.error(res.error ?? "Couldn't start the sync — please try again."); return; }
+      setCjJob(res.data);
+      toast.success(`Syncing ${cjPages} page${cjPages === 1 ? "" : "s"} in the background — about ${cjPages} minute${cjPages === 1 ? "" : "s"}.`);
     } catch {
-      toast.error("Couldn't reach CJdropshipping — please try again.");
+      toast.error("Couldn't reach the server — please try again.");
     } finally {
-      setCjSyncing(false);
+      setCjStarting(false);
     }
   };
 
@@ -1013,24 +1034,32 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
       {cjConfigured === true && (
         <div className="mb-3 flex items-center gap-2 flex-wrap bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
           <span className="text-xs font-semibold text-amber-800">CJdropshipping</span>
-          <input type="number" min={1} value={cjPage} onChange={e => setCjPage(Math.max(1, Number(e.target.value) || 1))}
-            className="w-16 border border-amber-200 rounded px-2 py-1 text-xs" title="Page number" />
-          <button onClick={syncFromCj} disabled={cjSyncing}
+          <label className="text-[11px] text-amber-800">From page
+            <input type="number" min={1} value={cjPage} onChange={e => setCjPage(Math.max(1, Number(e.target.value) || 1))}
+              className="w-16 border border-amber-200 rounded px-2 py-1 text-xs ml-1" /></label>
+          <label className="text-[11px] text-amber-800">Pages
+            <input type="number" min={1} max={500} value={cjPages} onChange={e => setCjPages(Math.min(500, Math.max(1, Number(e.target.value) || 1)))}
+              className="w-16 border border-amber-200 rounded px-2 py-1 text-xs ml-1" /></label>
+          <button onClick={syncFromCj} disabled={cjStarting || cjJob?.status === "running"}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-60" style={{ background: "#B8862E" }}>
-            {cjSyncing ? "Syncing…" : `Sync page ${cjPage} from CJdropshipping`}
+            {cjJob?.status === "running" ? "Sync running…" : cjStarting ? "Starting…" : `Sync ${cjPages * 20} products`}
           </button>
-          <span className="text-[11px] text-amber-700">Imports land as "pending review" below, same as a manual submission — nothing goes live unreviewed.</span>
+          <span className="text-[11px] text-amber-700">Products with photos go live straight away in the Ballylife store at landed cost + markup; the rest wait below for review.</span>
+        </div>
+      )}
+      {cjJob && cjJob.status !== "idle" && (
+        <div className={`mb-3 text-xs font-medium px-3 py-2 rounded-lg border ${cjJob.lastError ? "bg-red-50 text-red-700 border-red-200" : cjJob.status === "running" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-green-50 text-green-700 border-green-200"}`}>
+          {cjJob.status === "running"
+            ? <>Syncing page {cjJob.nextPage} of {cjJob.endPage}{cjJob.totalAvailable ? ` (supplier has ${cjJob.totalAvailable.toLocaleString()} products)` : ""} — </>
+            : <>Last sync finished {cjJob.finishedAt ? new Date(cjJob.finishedAt).toLocaleString() : ""} — </>}
+          {cjJob.totals.listed ?? 0} listed in the Ballylife store, {cjJob.totals.imported ?? 0} new, {cjJob.totals.updated ?? 0} updated
+          {Boolean(cjJob.totals.detailFailures) && <span className="text-amber-700"> — {cjJob.totals.detailFailures} couldn't load full details (retried next sync)</span>}
+          {Boolean(cjJob.totals.skippedNoRate) && <span className="text-amber-700"> — {cjJob.totals.skippedNoRate} skipped (no USD exchange rate on file)</span>}
+          {cjJob.lastError && <p className="mt-1">Last error: {cjJob.lastError} — it will retry automatically.</p>}
         </div>
       )}
       {cjConfigured === false && (
         <p className="text-[11px] text-gray-400 mb-3">CJdropshipping isn't connected yet — set CJ_EMAIL and CJ_API_KEY to enable real product syncing here.</p>
-      )}
-      {cjResult && (
-        <div className="mb-3 text-xs font-medium px-3 py-2 rounded-lg border bg-green-50 text-green-700 border-green-200">
-          Page {cjResult.pageNum} of {Math.ceil(cjResult.totalAvailable / cjResult.pageSize)}: {cjResult.imported} new, {cjResult.updated} updated{cjResult.withPhotos !== undefined && <>, {cjResult.withPhotos} with product photos</>}
-          {Boolean(cjResult.detailFailures) && <span className="text-amber-700"> — {cjResult.detailFailures} used the thumbnail only (full photo set unavailable)</span>}
-          {cjResult.skippedNoRate > 0 && <span className="text-amber-700"> — {cjResult.skippedNoRate} skipped (no USD FX rate on file yet)</span>}.
-        </div>
       )}
 
       {importResult && (

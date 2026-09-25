@@ -4,11 +4,6 @@ import { toast } from "sonner";
 import { ApiConnectionError } from "../services/marketplaceApi";
 import { pathForView, viewForPath, TITLE_FOR_VIEW, setPageMeta, type MarketplaceView } from "../services/routes";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
-import samsungFridgeAd from "../imports/samsung-fridge-ad.jpg";
-import nikeAirMaxAd from "../imports/nike-airmax-ad.jpg";
-import iphone16ProAd from "../imports/iphone16pro-ad.jpg";
-import macbookPro2025Ad from "../imports/macbookpro2025-ad.jpg";
-import samsungTvAd from "../imports/samsung-tv-ad.jpg";
 import businessBoardroomAd from "../imports/business-boardroom-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
@@ -632,32 +627,10 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             products={featured.length ? featured : products}
             onView={onProduct}
             onCart={onCart}
+            // Brand adverts (Samsung, Nike, Apple) were removed: they showed
+            // products this store doesn't sell. The slider now features real
+            // listings, after our own business banner.
             adSlides={[
-              {
-                image: samsungFridgeAd,
-                alt: "Samsung Fridge - Premium Refrigeration for Your Home",
-                onCta: onCategory,
-              },
-              {
-                image: nikeAirMaxAd,
-                alt: "Nike Air Max - More Air. More Comfort. More You.",
-                onCta: onCategory,
-              },
-              {
-                image: iphone16ProAd,
-                alt: "Apple iPhone 16 Pro - Pro. Beyond.",
-                onCta: onCategory,
-              },
-              {
-                image: macbookPro2025Ad,
-                alt: "Apple MacBook Pro 2025 - More Power. More Possibilities.",
-                onCta: onCategory,
-              },
-              {
-                image: samsungTvAd,
-                alt: "Samsung TVs - Bigger Screen. Brighter Moments.",
-                onCta: onCategory,
-              },
               {
                 image: businessBoardroomAd,
                 alt: "Ballylife for Business - Great Ideas. Stronger Together.",

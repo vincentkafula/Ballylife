@@ -11,6 +11,7 @@ import reconciliationRouter from "./routes/reconciliationRouter";
 import cjDropshippingRouter from "./routes/cjDropshippingRouter";
 import mediaRouter from "./routes/mediaRouter";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
+import { startCjCatalogWorker } from "./services/cjCatalog";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 import { logger } from "./utils/logger";
@@ -112,6 +113,7 @@ async function start() {
   }
   await migrate();
   startCjFulfillmentWorker();
+  startCjCatalogWorker();
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);
