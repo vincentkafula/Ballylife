@@ -67,8 +67,22 @@ const FALLBACK_RULES: Rule[] = [
 /** Never auto-listed: not something to put in front of a general audience or advertise. */
 const EXCLUDED = /\badult\b|sexual|erotic|\bsex\b|vape|vaping|e-?cig|cigarettes?|tobacco|hookah|shisha|weapons?|firearms?|ammunition|stun guns?|pepper spray/i;
 
+/**
+ * Cartoon products, and characters owned by someone else -- supplier
+ * "Pokemon"/"Snoopy" items are almost always unlicensed copies, which
+ * invite counterfeit and trademark claims. Word-bounded so e.g.
+ * "cross-stitch" or "frozen food" don't match.
+ */
+const CARTOON_AND_CHARACTERS = new RegExp([
+  "\\bcartoons?\\b", "\\banime\\b", "\\bpok[eé]mon\\b", "\\bpikachu\\b", "\\bgengar\\b", "\\bmimikyu\\b", "\\bsnoopy\\b", "\\bdisney\\b", "\\bmickey\\b", "\\bminnie mouse\\b",
+  "\\bmarvel\\b", "\\bspider-?man\\b", "\\bavengers\\b", "\\bbatman\\b", "\\bsuperman\\b", "\\bhello kitty\\b", "\\bsanrio\\b", "\\bkuromi\\b", "\\bmy melody\\b",
+  "\\bcinnamoroll\\b", "\\bpompompurin\\b", "\\bdoraemon\\b", "\\bnaruto\\b", "\\bdragon ball\\b", "\\bsponge ?bob\\b", "\\bpeppa pig\\b", "\\bpaw patrol\\b",
+  "\\bbluey\\b", "\\blilo (?:and|&) stitch\\b", "\\bminions?\\b", "\\bsonic the hedgehog\\b", "\\bsuper mario\\b", "\\bharry potter\\b", "\\bbarbie\\b",
+  "\\blabubu\\b", "\\bstrawberry shortcake\\b", "\\btom (?:and|&) jerry\\b", "\\bwinnie the pooh\\b", "\\bfrozen (?:elsa|anna|princess)\\b", "\\bcocomelon\\b",
+].join("|"), "i");
+
 export function isExcludedFromStore(...texts: (string | undefined | null)[]): boolean {
-  return texts.some(t => Boolean(t) && EXCLUDED.test(String(t)));
+  return texts.some(t => Boolean(t) && (EXCLUDED.test(String(t)) || CARTOON_AND_CHARACTERS.test(String(t))));
 }
 
 export interface CategoryMatch { fine: string; broad: string }

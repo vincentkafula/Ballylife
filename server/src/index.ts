@@ -18,6 +18,7 @@ import superAdminRouter from "./routes/superAdminRouter";
 import aliexpressRouter from "./routes/aliexpressRouter";
 import { startAliExpressWorker } from "./services/aliexpressFulfillment";
 import { ensureSuperAdminFromEnv } from "./services/superAdmin";
+import { archiveDemoDataOnce } from "./services/demoCleanup";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
 import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce, applyMarkupTiersOnce } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
@@ -146,6 +147,7 @@ async function start() {
   // Background: a few thousand small updates shouldn't hold up startup.
   // Background, in order: re-clean text (English only), re-price with the sliding markup, then 1688 listings.
   void (async () => {
+    await archiveDemoDataOnce().catch(err => logger.error("demo.archive_failed", { error: err instanceof Error ? err.message : String(err) }));
     await tidyCatalogOnce().catch(err => logger.error("catalog.tidy_failed", { error: err instanceof Error ? err.message : String(err) }));
     await applyMarkupTiersOnce().catch(err => logger.error("catalog.reprice_tiers_failed", { error: err instanceof Error ? err.message : String(err) }));
     await retranslateJapanPartsOnce().catch(err => logger.error("jp_parts.retranslate_failed", { error: err instanceof Error ? err.message : String(err) }));

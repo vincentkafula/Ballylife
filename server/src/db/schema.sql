@@ -1149,3 +1149,6 @@ CREATE TABLE IF NOT EXISTS seller_kyc_verifications (
   created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_seller_kyc_seller ON seller_kyc_verifications(seller_id);
+
+-- Demo/test orders are flagged rather than deleted, and left out of every dashboard.
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false;

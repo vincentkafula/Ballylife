@@ -1406,7 +1406,7 @@ router.delete("/wishlist/:userId/:productId", requireAuth, requireSelf, async (r
 // ── SELLERS ───────────────────────────────────────────────────────────────────
 router.get("/sellers", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { status } = req.query as Record<string, string>;
-  const { rows } = await pool!.query(status ? `SELECT * FROM mkt_sellers WHERE status = $1` : `SELECT * FROM mkt_sellers`, status ? [status] : []);
+  const { rows } = await pool!.query(status ? `SELECT * FROM mkt_sellers WHERE status = $1` : `SELECT * FROM mkt_sellers WHERE status <> 'archived'`, status ? [status] : []);
   res.json({ success: true, data: rows.map(r => (canSeeSellerPrivate(req, r) ? mapSeller(r) : mapSellerPublic(r))), meta: { total: rows.length } });
 });
 
@@ -1460,14 +1460,14 @@ router.patch("/sellers/:id", requireAuth, requireSellerOwner, async (req: Reques
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
 router.get("/admin/stats", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
   const [{ rows: p }, { rows: s }, { rows: o }, { rows: rev }, { rows: pr }, { rows: ps }] = await Promise.all([
-    pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_products`),
-    pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_sellers`),
-    pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_orders`),
-    pool!.query(`SELECT COALESCE(SUM(total_amount),0)::float AS n FROM mkt_orders`),
+    pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_products WHERE status = 'active'`),
+    pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_sellers WHERE status <> 'archived'`),
+    pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_orders WHERE NOT is_demo`),
+    pool!.query(`SELECT COALESCE(SUM(total_amount),0)::float AS n FROM mkt_orders WHERE NOT is_demo AND payment_status = 'payment_confirmed'`),
     pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_reviews WHERE status = 'pending'`),
     pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_sellers WHERE status = 'pending_kyc'`),
   ]);
-  const { rows: cats } = await pool!.query(`SELECT c.name, COUNT(p.id)::int AS count FROM mkt_categories c LEFT JOIN mkt_products p ON p.category_id = c.id GROUP BY c.name ORDER BY count DESC LIMIT 5`);
+  const { rows: cats } = await pool!.query(`SELECT c.name, COUNT(p.id)::int AS count FROM mkt_categories c LEFT JOIN mkt_products p ON p.category_id = c.id AND p.status = 'active' GROUP BY c.name ORDER BY count DESC LIMIT 5`);
   res.json({ success: true, data: {
     totalProducts: p[0].n, totalSellers: s[0].n, totalOrders: o[0].n, totalRevenue: rev[0].n,
     activeCustomers: 0, pendingReviews: pr[0].n, pendingSellerApprovals: ps[0].n, topCategories: cats,
@@ -1476,7 +1476,7 @@ router.get("/admin/stats", requireAuth, requireRole(...MANAGER_ROLES), async (_r
 
 router.get("/admin/orders", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { status } = req.query as Record<string, string>;
-  const { rows } = await pool!.query(status ? `SELECT * FROM mkt_orders WHERE status = $1 ORDER BY placed_at DESC` : `SELECT * FROM mkt_orders ORDER BY placed_at DESC`, status ? [status] : []);
+  const { rows } = await pool!.query(status ? `SELECT * FROM mkt_orders WHERE status = $1 AND NOT is_demo ORDER BY placed_at DESC` : `SELECT * FROM mkt_orders WHERE NOT is_demo ORDER BY placed_at DESC`, status ? [status] : []);
   res.json({ success: true, data: rows.map(mapOrder), meta: { total: rows.length } });
 });
 
@@ -1525,7 +1525,7 @@ router.get("/admin/products", requireAuth, requireRole(...MANAGER_ROLES), async 
   const { search, fulfillmentType, page: pg, limit: lim } = req.query as Record<string, string>;
   const page = Math.max(1, Number(pg) || 1);
   const limit = Math.min(60, Number(lim) || 24);
-  const where: string[] = []; const params: unknown[] = [];
+  const where: string[] = [`p.status <> 'archived'`]; const params: unknown[] = [];
   const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
   if (search) where.push(`(LOWER(p.name) LIKE ${p(`%${search.toLowerCase()}%`)} OR LOWER(s.store_name) LIKE ${p(`%${search.toLowerCase()}%`)})`);
   if (fulfillmentType) where.push(`p.fulfillment_type = ${p(fulfillmentType)}`);
@@ -1905,7 +1905,7 @@ router.patch("/admin/sellers/:id/reject", requireAuth, requireRole(...MANAGER_RO
 
 // ── ADMIN: customers list (User Management) ──────────────────────────────────
 router.get("/admin/customers", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
-  const { rows } = await pool!.query(`SELECT id, username, name, email, role, last_login, created_at FROM users WHERE role = 'customer' ORDER BY created_at DESC`);
+  const { rows } = await pool!.query(`SELECT id, username, name, email, role, last_login, created_at FROM users WHERE role = 'customer' AND account_status <> 'removed' ORDER BY created_at DESC`);
   res.json({ success: true, data: rows.map(u => ({ id: u.id, username: u.username, name: u.name, email: u.email, role: u.role, lastLogin: u.last_login, createdAt: u.created_at })), meta: { total: rows.length } });
 });
 
@@ -2043,7 +2043,7 @@ function toCsv(rows: Record<string, unknown>[]): string {
 }
 
 router.get("/admin/reports/orders.csv", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
-  const { rows } = await pool!.query(`SELECT order_number, user_id, status, payment_status, total_amount, currency, placed_at FROM mkt_orders ORDER BY placed_at DESC`);
+  const { rows } = await pool!.query(`SELECT order_number, user_id, status, payment_status, total_amount, currency, placed_at FROM mkt_orders WHERE NOT is_demo ORDER BY placed_at DESC`);
   const csv = toCsv(rows.map(r => ({ orderNumber: r.order_number, userId: r.user_id, status: r.status, paymentStatus: r.payment_status, totalAmount: r.total_amount, currency: r.currency, placedAt: r.placed_at })));
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="orders-${new Date().toISOString().slice(0,10)}.csv"`);
@@ -2051,7 +2051,7 @@ router.get("/admin/reports/orders.csv", requireAuth, requireRole(...MANAGER_ROLE
 });
 
 router.get("/admin/reports/products.csv", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
-  const { rows } = await pool!.query(`SELECT p.name, p.sku, p.brand, p.price, p.stock, p.status, p.total_sold, s.store_name FROM mkt_products p JOIN mkt_sellers s ON s.id = p.seller_id ORDER BY p.total_sold DESC`);
+  const { rows } = await pool!.query(`SELECT p.name, p.sku, p.brand, p.price, p.stock, p.status, p.total_sold, s.store_name FROM mkt_products p JOIN mkt_sellers s ON s.id = p.seller_id WHERE p.status <> 'archived' ORDER BY p.total_sold DESC`);
   const csv = toCsv(rows.map(r => ({ name: r.name, sku: r.sku, brand: r.brand, price: r.price, stock: r.stock, status: r.status, totalSold: r.total_sold, seller: r.store_name })));
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="products-${new Date().toISOString().slice(0,10)}.csv"`);
@@ -2072,7 +2072,7 @@ router.get("/admin/tax-summary", requireAuth, requireRole(...MANAGER_ROLES), asy
        COUNT(*)::int AS order_count, SUM(subtotal) AS subtotal, SUM(tax_amount) AS vat_collected,
        SUM(duty_amount) AS duty_liability, SUM(total_amount) AS total_amount
      FROM mkt_orders
-     WHERE status != 'refunded'
+     WHERE status != 'refunded' AND NOT is_demo
      GROUP BY period, country ORDER BY period DESC, country`
   );
   const { rows: customsByStatus } = await pool!.query(
@@ -2082,8 +2082,8 @@ router.get("/admin/tax-summary", requireAuth, requireRole(...MANAGER_ROLES), asy
   );
   const { rows: totalsRows } = await pool!.query(
     `SELECT
-       COALESCE((SELECT SUM(tax_amount) FROM mkt_orders WHERE status != 'refunded'), 0) AS total_vat_collected,
-       COALESCE((SELECT SUM(duty_amount) FROM mkt_orders WHERE status != 'refunded'), 0) AS total_duty_estimated,
+       COALESCE((SELECT SUM(tax_amount) FROM mkt_orders WHERE status != 'refunded' AND NOT is_demo), 0) AS total_vat_collected,
+       COALESCE((SELECT SUM(duty_amount) FROM mkt_orders WHERE status != 'refunded' AND NOT is_demo), 0) AS total_duty_estimated,
        COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE status = 'cleared'), 0) AS total_duty_cleared,
        COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE status != 'cleared'), 0) AS total_duty_outstanding`
   );
@@ -2106,7 +2106,7 @@ router.get("/admin/reports/tax.csv", requireAuth, requireRole(...MANAGER_ROLES),
     `SELECT to_char(placed_at, 'YYYY-MM') AS period, shipping_address->>'country' AS country,
        COUNT(*)::int AS order_count, SUM(subtotal) AS subtotal, SUM(tax_amount) AS vat_collected,
        SUM(duty_amount) AS duty_liability, SUM(total_amount) AS total_amount
-     FROM mkt_orders WHERE status != 'refunded' GROUP BY period, country ORDER BY period DESC, country`
+     FROM mkt_orders WHERE status != 'refunded' AND NOT is_demo GROUP BY period, country ORDER BY period DESC, country`
   );
   const csv = toCsv(rows.map(r => ({ period: r.period, country: r.country, orderCount: r.order_count, subtotal: r.subtotal, vatCollected: r.vat_collected, dutyLiability: r.duty_liability, totalAmount: r.total_amount })));
   res.setHeader("Content-Type", "text/csv");
@@ -2248,7 +2248,7 @@ router.get("/revenue-authorities/:id/tax-summary", requireAuth, requireAuthority
   const { rows: byPeriod } = await pool!.query(
     `SELECT to_char(placed_at, 'YYYY-MM') AS period, COUNT(*)::int AS order_count, SUM(subtotal) AS subtotal,
        SUM(tax_amount) AS vat_collected, SUM(duty_amount) AS duty_liability, SUM(total_amount) AS total_amount
-     FROM mkt_orders WHERE status != 'refunded' AND shipping_address->>'country' = $1
+     FROM mkt_orders WHERE status != 'refunded' AND NOT is_demo AND shipping_address->>'country' = $1
      GROUP BY period ORDER BY period DESC`,
     [country]
   );
@@ -2260,8 +2260,8 @@ router.get("/revenue-authorities/:id/tax-summary", requireAuth, requireAuthority
   );
   const { rows: totalsRows } = await pool!.query(
     `SELECT
-       COALESCE((SELECT SUM(tax_amount) FROM mkt_orders WHERE status != 'refunded' AND shipping_address->>'country' = $1), 0) AS total_vat_collected,
-       COALESCE((SELECT SUM(duty_amount) FROM mkt_orders WHERE status != 'refunded' AND shipping_address->>'country' = $1), 0) AS total_duty_estimated,
+       COALESCE((SELECT SUM(tax_amount) FROM mkt_orders WHERE status != 'refunded' AND NOT is_demo AND shipping_address->>'country' = $1), 0) AS total_vat_collected,
+       COALESCE((SELECT SUM(duty_amount) FROM mkt_orders WHERE status != 'refunded' AND NOT is_demo AND shipping_address->>'country' = $1), 0) AS total_duty_estimated,
        COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE destination_country = $1 AND status = 'cleared'), 0) AS total_duty_cleared,
        COALESCE((SELECT SUM(total_payable) FROM mkt_customs_records WHERE destination_country = $1 AND status != 'cleared'), 0) AS total_duty_outstanding`,
     [country]
@@ -2429,7 +2429,7 @@ router.post("/credit-providers/:id/orders/:orderId/decline", requireAuth, requir
 // browse route above.
 
 router.get("/admin/suppliers", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
-  const { rows } = await pool!.query(`SELECT * FROM mkt_suppliers ORDER BY created_at DESC`);
+  const { rows } = await pool!.query(`SELECT * FROM mkt_suppliers WHERE status <> 'archived' ORDER BY created_at DESC`);
   res.json({ success: true, data: rows.map(mapSupplier) });
 });
 
@@ -2497,7 +2497,7 @@ router.post("/admin/suppliers/:id/create-login", requireAuth, requireRole(...MAN
 
 router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { supplierId } = req.query as Record<string, string>;
-  const where = supplierId ? `WHERE sp.supplier_id = $1` : "";
+  const where = supplierId ? `WHERE sp.status <> 'archived' AND sp.supplier_id = $1` : `WHERE sp.status <> 'archived'`;
   const { rows } = await pool!.query(
     `SELECT sp.*, s.name AS supplier_name, s.country AS supplier_country FROM mkt_supplier_products sp
      JOIN mkt_suppliers s ON s.id = sp.supplier_id ${where} ORDER BY sp.created_at DESC`,
@@ -2628,7 +2628,7 @@ router.post("/admin/warehouses", requireAuth, requireRole(...MANAGER_ROLES), asy
 // ── ADMIN: supplier orders (per-order-line fulfilment tracking) ────────────
 router.get("/admin/supplier-orders", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { status, originWarehouseId, shipmentId } = req.query as Record<string, string>;
-  const where: string[] = []; const params: unknown[] = [];
+  const where: string[] = [`o.is_demo = false`]; const params: unknown[] = [];
   const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
   if (status)            where.push(`so.status = ${p(status)}`);
   if (originWarehouseId) where.push(`so.origin_warehouse_id = ${p(originWarehouseId)}`);
@@ -2935,7 +2935,7 @@ router.post("/admin/fx-rates", requireAuth, requireRole(...MANAGER_ROLES), async
 // endpoint itself.
 router.get("/admin/settlements", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { sellerId, supplierId, supplierPayoutStatus, sellerPayoutStatus } = req.query as Record<string, string>;
-  const where: string[] = []; const params: unknown[] = [];
+  const where: string[] = [`o.is_demo = false`]; const params: unknown[] = [];
   const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
   if (sellerId) where.push(`s.seller_id = ${p(sellerId)}`);
   if (supplierId) where.push(`s.supplier_id = ${p(supplierId)}`);
