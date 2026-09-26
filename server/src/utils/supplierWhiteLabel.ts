@@ -27,6 +27,9 @@ const SUPPLIER_IMAGE_HOSTS = [
   // UP-GARAGE (Japan used parts) -- proxied so their CDN's hotlink rules can't break our pages.
   /(^|\.)upgarage\.com$/i,
   /(^|\.)up-garage\.com$/i,
+  // AliExpress product photos (Drop Shipping API).
+  /(^|\.)aliexpress-media\.com$/i,
+  /(^|\.)aliexpress\.com$/i,
 ];
 
 export const MAX_PRODUCT_IMAGES = 12;

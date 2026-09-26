@@ -47,3 +47,10 @@ describe("image list parsing", () => {
     expect(dedupeImages(["https://a/1.jpg?x=1", "https://a/1.jpg", "https://a/2.jpg"])).toEqual(["https://a/1.jpg?x=1", "https://a/2.jpg"]);
   });
 });
+
+describe("AliExpress photo hosts", () => {
+  it("are proxied through our own domain", () => {
+    expect(publicImages("p", "abc", ["https://ae-pic-a1.aliexpress-media.com/kf/S1.jpg", "https://ae01.alicdn.com/kf/a.jpg"]))
+      .toEqual(["/api/marketplace/media/p/abc/0", "/api/marketplace/media/p/abc/1"]);
+  });
+});
