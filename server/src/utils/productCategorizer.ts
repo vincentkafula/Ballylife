@@ -13,12 +13,12 @@
 import { broadCategoryFor, matchCjCategory, resolveCategory } from "./cjCategoryMap";
 
 /** Bump when the rules below change: stored products are re-filed once per version. */
-export const CATEGORY_RULES_VERSION = 2;
+export const CATEGORY_RULES_VERSION = 3;
 
 const NAME_RULES: [fine: string, re: RegExp][] = [
   // ── Who it's for ──────────────────────────────────────────────────────────
   ["cat-csv-pets", /\b(?:pets?|dogs?|doggy|pupp(?:y|ies)|cats?|kittens?|kitty|guinea pigs?|hamsters?|rabbits?|ferrets?|parrots?|aquarium|fish tank|bird ?cage|litter box|cat litter|leash)\b(?! ?eye)/i],
-  ["cat-csv-toys", /\b(?:rc|remote control|toy|model) (?:cars?|trucks?|drones?|planes?|boats?|tanks?|excavators?)\b|\btoys?\b|plush (?:toys?|dolls?|animals?|pillows? toy)|\bplushies?\b|\bdolls?\b|\bpuzzles?\b|building blocks?|\blego\b|stuffed animal|fidget|\bslime\b|board games?|\bjigsaw\b|kids'? (?:game|kitchen|tent)/i],
+  ["cat-csv-toys", /\b(?:rc|remote control|toy|model) (?:cars?|trucks?|drones?|planes?|boats?|tanks?|excavators?)\b|\btoys?\b|plush (?:toys?|dolls?|animals?|pillows? toy)|\bplushies?\b|\bdolls?\b|\bpuzzles?\b|building blocks?|\blego\b|stuffed animal|fidget|\bslime\b|board games?|card games?|\bjigsaw\b|kids'? (?:game|kitchen|tent)|action figures?|\bkites?\b|water guns?|bubble (?:machine|gun|maker)s?|magnetic (?:tiles|blocks)|\bstem\b|montessori|dollhouse|play ?sets?|pretend play|ride-?on|\bspinning tops?\b|yo-?yos?/i],
   ["cat-csv-baby", /\b(?:baby|babies|infants?|newborns?|toddlers?|maternity|pregnan\w*|nursing|breast ?pump|strollers?|pacifiers?|teethers?|rompers?|onesies?|bibs?|feeding bottles?|diapers?|napp(?:y|ies)|cribs?|cradles?)\b|\b(?:children'?s|childrens|kids'?|girls'?|boys'?)\b[^,]*\b(?:dress|jumpsuit|clothes|clothing|outfit|set|skirt|pants|shirt|top|pajamas?|hoodie|jacket|coat|shoes|sandals|sneakers|boots)\b/i],
   ["cat-csv-automotive", /\bdash ?cams?\b|\bcars?\b|\bvehicles?\b|in-vehicle|\bmotorcycles?\b|\bmotorbikes?\b|\bobd ?(?:ii|2)?\b|carplay|android auto|\btrucks?\b|\btyres?\b|\btires?\b|windshield|wipers?|steering wheel|rear ?view|\bfor auto\b|\bauto (?:parts?|accessor\w*)|armrest|interior modification|engine fault|diagnostic (?:tool|scanner)|\be-?bikes?\b|\bscooters?\b/i],
 

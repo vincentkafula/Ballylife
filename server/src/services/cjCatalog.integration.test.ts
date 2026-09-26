@@ -216,6 +216,20 @@ describe("Sourcing list (market-research products, searched on CJ)", () => {
     expect(row).toMatchObject({ label: "Wireless earbuds", group: "mass", withVideo: 1 });
     expect(row).not.toHaveProperty("prices");
   });
+
+  it("then runs the toys top-up by itself, once, searching CJ for toys by name", async () => {
+    fetchMock.mockClear();
+    await catalog.runCatalogSyncTick();
+
+    const keywords = fetchMock.mock.calls.map(([u]) => new URL(String(u))).filter(u => u.pathname.endsWith("/product/list"))
+      .map(u => u.searchParams.get("productNameEn"));
+    expect(keywords[0]).toBe("building blocks");
+    const job = await catalog.getSourcingJob();
+    expect(job!.status).toBe("done");
+    expect(job!.plan.map((k: { keyword: string }) => k.keyword)).toEqual(catalog.CATEGORY_TOPUPS[0].items.map(k => k.keyword));
+    const { rows } = await pool.query(`SELECT 1 FROM app_flags WHERE key = 'cj_topup_toys_v1'`);
+    expect(rows).toHaveLength(1);
+  });
 });
 
 describe("Every-category sweep", () => {

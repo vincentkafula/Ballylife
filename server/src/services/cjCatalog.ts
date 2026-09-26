@@ -702,13 +702,34 @@ export const SOURCING_LIST: { keyword: string; group: "mass" | "premium"; label:
 const SOURCING_PAGES = Number(process.env.CJ_SOURCING_PAGES_PER_KEYWORD ?? 2);
 const SOURCING_FLAG = "cj_sourcing_list_v1";
 
+type SourcingItem = { keyword: string; group: string; label: string };
+
+/**
+ * Category top-ups: keyword runs that fill a thin storefront category, each
+ * run once automatically (by its flag) after the main sourcing list. Add a
+ * new entry with a new flag to top up another category.
+ */
+export const CATEGORY_TOPUPS: { flag: string; pages: number; items: SourcingItem[] }[] = [
+  {
+    // Toys & Games was left with ~10 products once pet toys moved to Pet Products.
+    flag: "cj_topup_toys_v1",
+    pages: 3,
+    items: [
+      "building blocks", "magnetic building tiles", "plush toy", "stuffed animal", "doll", "dollhouse",
+      "jigsaw puzzle", "board game", "card game", "educational toys", "montessori toys", "stem toys",
+      "remote control car", "rc drone", "toy car", "action figure", "fidget toys", "kids kitchen toy",
+      "water gun toy", "bubble machine", "kite", "musical toys", "baby toys", "outdoor toys",
+    ].map(keyword => ({ keyword, group: "toys", label: keyword[0].toUpperCase() + keyword.slice(1) })),
+  },
+];
+
 export interface KeywordStats {
   label: string; group: string; cjMatches: number; synced: number; listed: number; withVideo: number;
   priceMinZar: number | null; priceMaxZar: number | null; priceMedianZar: number | null;
 }
 
-export async function startSourcingRun(pages = SOURCING_PAGES): Promise<Row> {
-  const plan = SOURCING_LIST.map(k => ({ ...k }));
+export async function startSourcingRun(pages = SOURCING_PAGES, list: SourcingItem[] = SOURCING_LIST, flag = SOURCING_FLAG): Promise<Row> {
+  const plan = list.map(k => ({ ...k }));
   const { rows } = await pool!.query(
     `INSERT INTO cj_sync_jobs (id, mode, status, plan, plan_index, next_page, end_page, page_size, totals, total_available, last_error, started_at, finished_at, updated_at)
      VALUES ('sourcing', 'sourcing', 'running', $1, 0, 1, $2, 20, '{}', NULL, NULL, now(), NULL, now())
@@ -717,8 +738,8 @@ export async function startSourcingRun(pages = SOURCING_PAGES): Promise<Row> {
      RETURNING *`,
     [JSON.stringify(plan), Math.max(1, pages)]
   );
-  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, 'started') ON CONFLICT (key) DO NOTHING`, [SOURCING_FLAG]);
-  logger.info("cj.sourcing_started", { keywords: plan.length, pagesPerKeyword: pages });
+  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, 'started') ON CONFLICT (key) DO NOTHING`, [flag]);
+  logger.info("cj.sourcing_started", { flag, keywords: plan.length, pagesPerKeyword: pages });
   return rows[0];
 }
 
@@ -780,10 +801,17 @@ async function runSourcingTick(job: Row): Promise<void> {
   }
 }
 
-/** Runs the sourcing list once automatically (flagged), ahead of the every-category sweep. */
+/**
+ * Runs the sourcing list, then each category top-up, once each
+ * automatically (flagged), ahead of the every-category sweep.
+ */
 async function maybeAutoStartSourcing(): Promise<Row | null> {
   const job = await getSourcingJob();
-  if (job) return job;
-  const { rows } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [SOURCING_FLAG]);
-  return rows.length ? null : startSourcingRun();
+  if (job && job.status !== "done") return job; // running, or paused for CJ points
+  const flagged = async (key: string) => (await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [key])).rows.length > 0;
+  if (!(await flagged(SOURCING_FLAG))) return startSourcingRun();
+  for (const t of CATEGORY_TOPUPS) {
+    if (!(await flagged(t.flag))) return startSourcingRun(t.pages, t.items, t.flag);
+  }
+  return job;
 }
