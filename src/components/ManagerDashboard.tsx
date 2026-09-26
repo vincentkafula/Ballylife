@@ -4,7 +4,7 @@ import {
   Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob } from "../services/marketplaceApi";
+import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob } from "../services/marketplaceApi";
 import { toast } from "sonner";
 
 type R = Record<string, unknown>;
@@ -898,6 +898,8 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   const [cjPages, setCjPages] = useState(10);
   const [cjJob, setCjJob] = useState<CjSyncJob | null>(null);
   const lastJob = useRef<CjSyncJob | null>(null);
+  const [cjSweep, setCjSweep] = useState<CjSweepJob | null>(null);
+  const [sweepStarting, setSweepStarting] = useState(false);
 
   useEffect(() => {
     mktAdmin.cj.status().then(r => { if (r.success) setCjConfigured(r.data.configured); }).catch(() => setCjConfigured(false));
@@ -916,12 +918,25 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
         if (prev?.status === "running" && (r.data?.nextPage !== prev.nextPage || r.data?.status !== "running")) onChanged();
         lastJob.current = r.data;
         setCjJob(r.data);
+        const sw = await mktAdmin.cj.sweepStatus();
+        if (!cancelled && sw.success) setCjSweep(sw.data);
       } catch { /* keep the last known state */ }
     };
     poll();
     const t = setInterval(poll, 15000);
     return () => { cancelled = true; clearInterval(t); };
   }, [cjConfigured, onChanged]);
+
+  const restartSweep = async () => {
+    setSweepStarting(true);
+    try {
+      const res = await mktAdmin.cj.startSweep(5);
+      if (!res.success || !res.data) { toast.error(res.error ?? "Couldn't start — please try again."); return; }
+      setCjSweep(res.data);
+      toast.success(`Syncing every category: ${res.data.categories.toLocaleString()} supplier categories.`);
+    } catch { toast.error("Couldn't reach the server — please try again."); }
+    finally { setSweepStarting(false); }
+  };
 
   const syncFromCj = async () => {
     setCjStarting(true);
@@ -1056,6 +1071,30 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           {Boolean(cjJob.totals.detailFailures) && <span className="text-amber-700"> — {cjJob.totals.detailFailures} couldn't load full details (retried next sync)</span>}
           {Boolean(cjJob.totals.skippedNoRate) && <span className="text-amber-700"> — {cjJob.totals.skippedNoRate} skipped (no USD exchange rate on file)</span>}
           {cjJob.lastError && <p className="mt-1">Last error: {cjJob.lastError} — it will retry automatically.</p>}
+        </div>
+      )}
+      {cjConfigured === true && cjSweep && (
+        <div className="mb-3 text-xs px-3 py-2 rounded-lg border bg-white border-gray-200 text-gray-700">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-gray-900">Every-category sync</span>
+            {cjSweep.status === "running" ? (
+              <span>
+                pass {cjSweep.pass} of {cjSweep.passes} · category {Math.min(cjSweep.categoryIndex + 1, cjSweep.categories).toLocaleString()} of {cjSweep.categories.toLocaleString()}
+                {cjSweep.currentCategory ? <span className="text-gray-400"> ({cjSweep.currentCategory})</span> : null}
+              </span>
+            ) : (
+              <span>finished {cjSweep.finishedAt ? new Date(cjSweep.finishedAt).toLocaleString() : ""} · refreshes automatically every 7 days</span>
+            )}
+            <button onClick={restartSweep} disabled={sweepStarting || cjSweep.status === "running"}
+              className="ml-auto text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 disabled:opacity-40">
+              {sweepStarting ? "Starting…" : "Restart"}
+            </button>
+          </div>
+          <p className="mt-1 text-gray-500">
+            {(cjSweep.totals.listed ?? 0).toLocaleString()} listed · {(cjSweep.totals.imported ?? 0).toLocaleString()} new · {(cjSweep.totals.updated ?? 0).toLocaleString()} refreshed · {(cjSweep.totals.pages ?? 0).toLocaleString()} pages
+            {Boolean(cjSweep.totals.excluded) && <> · {cjSweep.totals.excluded} excluded (adult/tobacco/weapons)</>}
+          </p>
+          {cjSweep.lastError && <p className="mt-1 text-red-600">Last error: {cjSweep.lastError} — retrying automatically.</p>}
         </div>
       )}
       {cjConfigured === false && (

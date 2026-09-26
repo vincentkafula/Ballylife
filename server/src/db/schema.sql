@@ -832,3 +832,8 @@ CREATE TABLE IF NOT EXISTS app_flags (
   applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   detail      TEXT
 );
+
+-- Every-category sweep state (services/cjCatalog.ts, job id 'sweep').
+ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'pages';
+ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS plan JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS plan_index INTEGER NOT NULL DEFAULT 0;

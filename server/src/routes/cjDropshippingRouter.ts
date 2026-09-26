@@ -5,7 +5,7 @@ import { isCjConfigured, getCjProductDetail, getCjCategories } from "../services
 import { convertToZar } from "../utils/pricing";
 import { logger } from "../utils/logger";
 import { processFulfillment, syncOne } from "../services/cjFulfillment";
-import { syncCjPage, startCatalogSync, getCatalogSyncJob, hideDemoCatalogOnce } from "../services/cjCatalog";
+import { syncCjPage, startCatalogSync, getCatalogSyncJob, hideDemoCatalogOnce, startCategorySweep, getSweepJob } from "../services/cjCatalog";
 
 const router: ReturnType<typeof Router> = Router();
 const MANAGER_ROLES = ["marketplace_admin"] as const;
@@ -67,6 +67,35 @@ const mapJob = (j: any) => j && ({
 
 router.get("/admin/cj/sync", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
   res.json({ success: true, data: mapJob(await getCatalogSyncJob()) });
+});
+
+// Every-category sweep: starts on its own after the first fill; this lets
+// an admin see its progress or restart it (e.g. with more pages per category).
+const mapSweep = (j: any) => {
+  if (!j) return null;
+  const plan: { path: string[]; target: string }[] = Array.isArray(j.plan) ? j.plan : [];
+  const current = plan[j.plan_index] ?? null;
+  return {
+    ...mapJob(j), pass: j.next_page, passes: j.end_page, categoryIndex: j.plan_index, categories: plan.length,
+    currentCategory: current ? current.path.filter(Boolean).reverse().join(" › ") : null,
+  };
+};
+
+router.get("/admin/cj/sweep", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, data: mapSweep(await getSweepJob()) });
+});
+
+router.post("/admin/cj/sweep", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  if (!isCjConfigured()) { res.status(503).json({ success: false, error: NOT_CONFIGURED }); return; }
+  const pagesPerCategory = Math.min(50, Math.max(1, Number(req.body?.pagesPerCategory) || 5));
+  try {
+    const job = await startCategorySweep(pagesPerCategory);
+    logger.info("cj.sweep_requested", { actorId: req.user!.userId, pagesPerCategory });
+    res.status(202).json({ success: true, data: mapSweep(job) });
+  } catch (err) {
+    logger.error("cj.sweep_start_failed", { error: err instanceof Error ? err.message : String(err) });
+    res.status(502).json({ success: false, error: "Couldn't load the supplier's categories — please try again." });
+  }
 });
 
 router.get("/admin/cj/products/:pid", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {

@@ -2,11 +2,12 @@ import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
 import { convertToZar, round2 } from "../utils/pricing";
 import {
-  isCjConfigured, listCjProducts, getCjProductDetail, calculateCjFreight,
+  isCjConfigured, listCjProducts, getCjProductDetail, calculateCjFreight, getCjCategories,
   type CjProductSummary, type CjProductDetail,
 } from "./cjDropshippingClient";
 import { dedupeImages, isPhotoUrl, parseSupplierImageList, scrubSupplierBranding, splitSupplierDescription } from "../utils/supplierWhiteLabel";
 import { variantIdForVid, type ExternalVariant } from "../utils/cjVariants";
+import { matchCjCategory, resolveCategory, isExcludedFromStore } from "../utils/cjCategoryMap";
 
 /**
  * CJ catalogue -> our own database -> storefront.
@@ -47,23 +48,11 @@ export async function ensureHouseStore(): Promise<void> {
   );
 }
 
-// ── Category mapping ──────────────────────────────────────────────────────
-// CJ's leaf category names ("Wireless Earphones", "Women's Dresses") mapped
-// onto our top-level categories by keyword. First match wins, so the more
-// specific groups come first.
-const CATEGORY_KEYWORDS: [string, RegExp][] = [
-  ["cat-04", /beauty|makeup|cosmetic|skin|hair|nail|lip|eyelash|perfume|fragrance|health|massage|personal care|shaver|razor|oral|tooth/i],
-  ["cat-05", /sport|fitness|gym|yoga|outdoor|camping|hiking|cycling|bicycle|fishing|swim|running|ball|golf|climbing/i],
-  ["cat-08", /car |car-|automobile|motorcycle|vehicle|auto part|auto accessor/i],
-  ["cat-01", /phone|mobile|earphone|headphone|earbud|headset|speaker|audio|electronic|computer|laptop|tablet|keyboard|mouse|camera|charger|cable|usb|power bank|smart ?watch|gadget|drone|gaming|console|projector|led strip|bluetooth|wireless/i],
-  ["cat-02", /women|men's|mens|dress|shirt|t-shirt|blouse|jacket|coat|pants|jeans|skirt|shoe|sneaker|boot|sandal|bag|handbag|wallet|backpack|jewel|necklace|ring|earring|bracelet|watch|sunglass|hat|cap|scarf|sock|underwear|lingerie|clothing|apparel|fashion/i],
-  ["cat-06", /book|stationery|office|school|pen|notebook|art supplies|music|instrument/i],
-  ["cat-03", /home|kitchen|garden|furniture|decor|bed|bath|storage|tool|lighting|lamp|pet|baby|kid|toy|clean|household|curtain|rug|mug|cup/i],
-];
+// ── Category mapping (rules live in utils/cjCategoryMap.ts) ───────────────
 
-export function mapCjCategory(...texts: (string | undefined)[]): string {
-  const hay = texts.filter(Boolean).join(" ");
-  return CATEGORY_KEYWORDS.find(([, re]) => re.test(hay))?.[0] ?? DEFAULT_CATEGORY;
+/** Our category id for a CJ category/product name, most specific first. Defaults to CJ_DEFAULT_CATEGORY_ID. */
+export function mapCjCategory(...levels: (string | undefined)[]): string {
+  return matchCjCategory(...levels)?.fine ?? DEFAULT_CATEGORY;
 }
 
 /** CJ list prices are sometimes a range ("3.25 -- 5.10"); the lowest is the base. */
@@ -77,7 +66,7 @@ export function parseCjPrice(value: unknown): number | null {
 
 export interface WhiteLabelledProduct {
   name: string; description: string; images: string[]; variants: ExternalVariant[];
-  stock: number | null; categoryHint: string; detailOk: boolean;
+  stock: number | null; cjCategoryName: string; detailOk: boolean;
 }
 
 /**
@@ -115,14 +104,14 @@ export async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<Wh
       name: scrubSupplierBranding(d.productNameEn || d.productName) || fallbackName,
       description: desc.text || scrubSupplierBranding(p.remark),
       images, variants, stock,
-      categoryHint: `${d.categoryName ?? p.categoryName ?? ""} ${d.productNameEn ?? p.productNameEn ?? ""}`,
+      cjCategoryName: d.categoryName ?? p.categoryName ?? "",
       detailOk: true,
     };
   } catch (err) {
     logger.warn("cj.product_detail_fallback", { pid: p.pid, error: err instanceof Error ? err.message : String(err) });
     return {
       name: fallbackName, description: scrubSupplierBranding(p.remark), images: parseSupplierImageList(p.productImage),
-      variants: [], stock: null, categoryHint: `${p.categoryName ?? ""} ${p.productNameEn ?? ""}`, detailOk: false,
+      variants: [], stock: null, cjCategoryName: p.categoryName ?? "", detailOk: false,
     };
   }
 }
@@ -143,11 +132,17 @@ async function estimateShippingUsd(vid: string | undefined): Promise<number | nu
 // ── One page ─────────────────────────────────────────────────────────────
 
 export interface PageResult {
-  imported: number; updated: number; skippedNoRate: number; withPhotos: number; detailFailures: number; listed: number;
+  imported: number; updated: number; skippedNoRate: number; withPhotos: number; detailFailures: number; listed: number; skippedFresh: number; excluded: number;
   totalAvailable: number; pageNum: number; pageSize: number;
 }
 
-export async function syncCjPage(opts: { pageNum: number; pageSize: number; categoryId?: string }): Promise<PageResult> {
+export async function syncCjPage(opts: {
+  pageNum: number; pageSize: number; categoryId?: string;
+  /** CJ's own names for `categoryId`, most specific first -- authoritative when given (the category sweep passes it). */
+  categoryPath?: string[];
+  /** Skip the detail + freight calls for products synced within this many hours (saves CJ quota during big sweeps). */
+  skipFreshHours?: number;
+}): Promise<PageResult> {
   const result = await listCjProducts({ pageNum: opts.pageNum, pageSize: opts.pageSize, categoryId: opts.categoryId });
   await ensureCjSupplierExists();
   await ensureHouseStore();
@@ -157,11 +152,25 @@ export async function syncCjPage(opts: { pageNum: number; pageSize: number; cate
 
   const { rows: catRows } = await pool!.query(`SELECT id FROM mkt_categories`);
   const knownCategories = new Set(catRows.map((r: { id: string }) => r.id));
-  const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0 };
+  const pathCategory = opts.categoryPath?.length ? resolveCategory(matchCjCategory(...opts.categoryPath), knownCategories, DEFAULT_CATEGORY) : null;
+  const freshSince = opts.skipFreshHours ? new Date(Date.now() - opts.skipFreshHours * 3600_000) : null;
+
+  const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0, skippedFresh: 0, excluded: 0 };
   for (const p of result.list ?? []) {
     if (usdToZar === null) { counts.skippedNoRate++; continue; } // no USD rate on file -- flagged, never guessed
     const costUsd = parseCjPrice(p.sellPrice);
     if (costUsd === null) continue;
+    if (isExcludedFromStore(p.productNameEn, p.categoryName, ...(opts.categoryPath ?? []))) { counts.excluded++; continue; }
+
+    const { rows: existing } = await pool!.query(
+      `SELECT id, updated_at FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [CJ_SUPPLIER_ID, p.pid]
+    );
+    if (existing.length && freshSince && new Date(existing[0].updated_at) > freshSince) {
+      // Recently synced -- no CJ calls. Just file it under the sweep's category.
+      if (pathCategory) await setCategory(existing[0].id, pathCategory);
+      counts.skippedFresh++;
+      continue;
+    }
 
     const w = await buildWhiteLabelledProduct(p);
     if (!w.detailOk) counts.detailFailures++;
@@ -171,13 +180,9 @@ export async function syncCjPage(opts: { pageNum: number; pageSize: number; cate
     // What sellers see as the base price they mark up from: landed cost
     // (goods + shipping) when CJ quoted shipping, goods only otherwise.
     const baseZar = round2((costUsd + (shippingUsd ?? 0)) * usdToZar);
-    const mapped = mapCjCategory(w.categoryHint);
-    const categoryId = knownCategories.has(mapped) ? mapped : knownCategories.has(DEFAULT_CATEGORY) ? DEFAULT_CATEGORY : null;
+    const categoryId = pathCategory ?? resolveCategory(matchCjCategory(w.cjCategoryName, w.name), knownCategories, DEFAULT_CATEGORY);
     const listable = categoryId !== null && w.detailOk && w.images.length > 0 && w.variants.length > 0 && shippingUsd !== null;
 
-    const { rows: existing } = await pool!.query(
-      `SELECT id FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [CJ_SUPPLIER_ID, p.pid]
-    );
     let supplierProductId: string;
     if (existing.length) {
       supplierProductId = existing[0].id;
@@ -189,6 +194,7 @@ export async function syncCjPage(opts: { pageNum: number; pageSize: number; cate
          WHERE id = $8`,
         [w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), categoryId, shippingUsd, supplierProductId]
       );
+      if (pathCategory) await setCategory(supplierProductId, pathCategory);
       // Only overwrite variants from a successful detail call -- a failed
       // one must never wipe the vids that live orders depend on.
       if (w.detailOk && w.variants.length) {
@@ -216,8 +222,14 @@ export async function syncCjPage(opts: { pageNum: number; pageSize: number; cate
     }
   }
 
-  logger.info("cj.sync_page", { pageNum: opts.pageNum, pageSize: opts.pageSize, ...counts });
+  logger.info("cj.sync_page", { pageNum: opts.pageNum, pageSize: opts.pageSize, cjCategoryId: opts.categoryId, ...counts });
   return { ...counts, totalAvailable: Number(result.total ?? 0), pageNum: Number(result.pageNum ?? opts.pageNum), pageSize: Number(result.pageSize ?? opts.pageSize) };
+}
+
+/** Files a catalogue item (and the Ballylife listing of it) under a category. Sellers' own listings keep theirs. */
+async function setCategory(supplierProductId: string, categoryId: string): Promise<void> {
+  await pool!.query(`UPDATE mkt_supplier_products SET category_id = $1 WHERE id = $2`, [categoryId, supplierProductId]);
+  await pool!.query(`UPDATE mkt_products SET category_id = $1 WHERE supplier_product_id = $2 AND seller_id = $3`, [categoryId, supplierProductId, HOUSE_SELLER_ID]);
 }
 
 /**
@@ -245,9 +257,9 @@ async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProdu
   );
   if (existing.length) {
     await pool!.query(
-      `UPDATE mkt_products SET name = $1, description = $2, short_description = $3, price = $4, images = $5, variants = $6, stock = $7, updated_at = now()
-       WHERE id = $8`,
-      [w.name, w.description, shortDescription, price, JSON.stringify(w.images), JSON.stringify(variants), stock, existing[0].id]
+      `UPDATE mkt_products SET name = $1, description = $2, short_description = $3, price = $4, images = $5, variants = $6, stock = $7, category_id = $8, updated_at = now()
+       WHERE id = $9`,
+      [w.name, w.description, shortDescription, price, JSON.stringify(w.images), JSON.stringify(variants), stock, w.categoryId, existing[0].id]
     );
     return;
   }
@@ -316,7 +328,17 @@ export async function runCatalogSyncTick(): Promise<void> {
     const { rows } = await pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_supplier_products WHERE supplier_id = $1`, [CJ_SUPPLIER_ID]);
     if (!rows[0].n) job = await startCatalogSync({ startPage: 1, pages: INITIAL_SYNC_PAGES, pageSize: 20 });
   }
-  if (!job || job.status !== "running") return;
+  if (!job || job.status !== "running") {
+    // Nothing manual running: work on the every-category sweep instead.
+    try {
+      const sweep = await maybeAutoStartSweep(job);
+      if (sweep?.status === "running") await runSweepTick(sweep);
+    } catch (err) {
+      logger.error("cj.sweep_tick_failed", { error: err instanceof Error ? err.message : String(err) });
+    }
+    await hideDemoCatalogOnce();
+    return;
+  }
 
   const page = Number(job.next_page);
   try {
@@ -355,4 +377,119 @@ export function startCjCatalogWorker(intervalMs = 60_000): NodeJS.Timeout | null
   setTimeout(() => { void tick(); }, 5_000).unref(); // don't wait a full minute after deploy
   logger.info("cj.catalog_worker_started", { intervalMs, markupPct: MARKUP * 100, pricingCountry: PRICING_COUNTRY });
   return timer;
+}
+
+// ── Every-category sweep ────────────────────────────────────────────────────
+// Walks CJ's whole category tree breadth-first: page 1 of every leaf
+// category, then page 2 of every leaf, and so on up to pages_per_category.
+// That fills every storefront category within the first pass instead of
+// exhausting one category before starting the next. Leaves are interleaved
+// round-robin by the storefront category they map to, so even the first
+// hour touches every department. Runs as its own job row ('sweep') so a
+// manual page sync never clobbers it, and restarts every CJ_RESWEEP_DAYS to
+// pick up new CJ products and refresh prices/stock.
+
+const SWEEP_PAGES_PER_CATEGORY = Number(process.env.CJ_SWEEP_PAGES_PER_CATEGORY ?? 5);
+const RESWEEP_DAYS = Number(process.env.CJ_RESWEEP_DAYS ?? 7);
+const TICK_BUDGET_MS = 50_000;
+const SWEEP_PAGE_SIZE = 20;
+
+export interface SweepEntry { id: string; path: string[]; target: string; lastPage?: number }
+
+interface CjCategoryTree {
+  categoryFirstName: string;
+  categoryFirstList?: { categorySecondName: string; categorySecondList?: { categoryId: string; categoryName: string }[] }[];
+}
+
+export function buildSweepPlan(tree: CjCategoryTree[]): SweepEntry[] {
+  const groups = new Map<string, SweepEntry[]>();
+  for (const first of tree ?? []) {
+    for (const second of first.categoryFirstList ?? []) {
+      for (const leaf of second.categorySecondList ?? []) {
+        const path = [leaf.categoryName, second.categorySecondName, first.categoryFirstName];
+        if (!leaf.categoryId || isExcludedFromStore(...path)) continue;
+        const target = matchCjCategory(...path)?.fine ?? DEFAULT_CATEGORY;
+        if (!groups.has(target)) groups.set(target, []);
+        groups.get(target)!.push({ id: leaf.categoryId, path, target });
+      }
+    }
+  }
+  // Round-robin across storefront categories.
+  const queues = [...groups.values()];
+  const plan: SweepEntry[] = [];
+  for (let i = 0; queues.some(q => i < q.length); i++) for (const q of queues) if (i < q.length) plan.push(q[i]);
+  return plan;
+}
+
+export async function startCategorySweep(pagesPerCategory = SWEEP_PAGES_PER_CATEGORY): Promise<Row> {
+  const plan = buildSweepPlan((await getCjCategories()) as unknown as CjCategoryTree[]);
+  const { rows } = await pool!.query(
+    `INSERT INTO cj_sync_jobs (id, mode, status, plan, plan_index, next_page, end_page, page_size, totals, total_available, last_error, started_at, finished_at, updated_at)
+     VALUES ('sweep', 'sweep', 'running', $1, 0, 1, $2, $3, '{}', NULL, NULL, now(), NULL, now())
+     ON CONFLICT (id) DO UPDATE SET status = 'running', plan = $1, plan_index = 0, next_page = 1, end_page = $2, page_size = $3,
+       totals = '{}', total_available = NULL, last_error = NULL, started_at = now(), finished_at = NULL, updated_at = now()
+     RETURNING *`,
+    [JSON.stringify(plan), Math.max(1, pagesPerCategory), SWEEP_PAGE_SIZE]
+  );
+  const perTarget: Record<string, number> = {};
+  for (const e of plan) perTarget[e.target] = (perTarget[e.target] ?? 0) + 1;
+  logger.info("cj.sweep_started", { cjCategories: plan.length, pagesPerCategory, perStorefrontCategory: perTarget });
+  return rows[0];
+}
+
+export async function getSweepJob(): Promise<Row | null> {
+  const { rows } = await pool!.query(`SELECT * FROM cj_sync_jobs WHERE id = 'sweep'`);
+  return rows[0] ?? null;
+}
+
+/** Advances a running sweep for up to ~50s (as many pages as fit). */
+async function runSweepTick(job: Row): Promise<void> {
+  const plan: SweepEntry[] = Array.isArray(job.plan) ? job.plan : [];
+  let index = Number(job.plan_index);
+  let pass = Number(job.next_page);
+  const endPass = Number(job.end_page);
+  const pageSize = Number(job.page_size);
+  const totals = { ...(job.totals ?? {}) } as Record<string, number>;
+  const deadline = Date.now() + TICK_BUDGET_MS;
+  let done = false;
+
+  while (Date.now() < deadline) {
+    if (index >= plan.length) { index = 0; pass++; }
+    if (pass > endPass || !plan.length) { done = true; break; }
+    const entry = plan[index];
+    if (entry.lastPage !== undefined && pass > entry.lastPage) { index++; continue; } // this CJ category has no more pages
+
+    try {
+      const r = await syncCjPage({ pageNum: pass, pageSize, categoryId: entry.id, categoryPath: entry.path, skipFreshHours: 24 });
+      entry.lastPage = Math.max(1, Math.ceil(r.totalAvailable / pageSize));
+      for (const k of ["imported", "updated", "listed", "withPhotos", "detailFailures", "skippedFresh", "excluded", "skippedNoRate"] as const) totals[k] = (totals[k] ?? 0) + r[k];
+      totals.pages = (totals.pages ?? 0) + 1;
+      index++;
+      await pool!.query(
+        `UPDATE cj_sync_jobs SET plan = $1, plan_index = $2, next_page = $3, totals = $4, last_error = NULL, updated_at = now() WHERE id = 'sweep'`,
+        [JSON.stringify(plan), index, pass, JSON.stringify(totals)]
+      );
+    } catch (err) {
+      // Leave the cursor where it is; the next tick retries this page.
+      const message = err instanceof Error ? err.message : String(err);
+      await pool!.query(`UPDATE cj_sync_jobs SET last_error = $1, updated_at = now() WHERE id = 'sweep'`, [`${entry.path[0]}: ${message}`.slice(0, 500)]);
+      logger.error("cj.sweep_page_failed", { cjCategory: entry.path.join(" < "), page: pass, error: message });
+      return;
+    }
+  }
+
+  if (done) {
+    await pool!.query(`UPDATE cj_sync_jobs SET status = 'done', finished_at = now(), updated_at = now() WHERE id = 'sweep'`);
+    logger.info("cj.sweep_finished", totals);
+  }
+}
+
+/** Starts the sweep automatically once the first fill is done, and again every CJ_RESWEEP_DAYS after it finishes. */
+async function maybeAutoStartSweep(catalogJob: Row | null): Promise<Row | null> {
+  if (SWEEP_PAGES_PER_CATEGORY <= 0) return null;
+  if (catalogJob?.status === "running") return null; // let the first fill / a manual sync finish first
+  const sweep = await getSweepJob();
+  if (sweep?.status === "running") return sweep;
+  const due = !sweep || (sweep.finished_at && Date.now() - new Date(sweep.finished_at).getTime() > RESWEEP_DAYS * 86400_000);
+  return due ? startCategorySweep() : null;
 }

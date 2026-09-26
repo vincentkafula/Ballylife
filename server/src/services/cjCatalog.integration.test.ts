@@ -66,7 +66,16 @@ beforeEach(() => {
   fetchMock = vi.fn(async (input: unknown): Promise<unknown> => {
     const url = String(input);
     if (url.includes("getAccessToken")) return ok({ accessToken: "t", accessTokenExpiryDate: new Date(Date.now() + 864e5).toISOString(), refreshToken: "r", refreshTokenExpiryDate: new Date(Date.now() + 864e5).toISOString() });
-    if (url.includes("/product/list")) return ok(LIST);
+    if (url.includes("/product/list")) {
+      const cat = new URL(url).searchParams.get("categoryId");
+      const list = cat === "c1" ? [LIST.list[0]] : cat === "c2" ? [LIST.list[1]] : LIST.list;
+      return ok({ ...LIST, total: list.length, list });
+    }
+    if (url.includes("/product/getCategory")) return ok([
+      { categoryFirstName: "Consumer Electronics", categoryFirstList: [{ categorySecondName: "Audio", categorySecondList: [{ categoryId: "c1", categoryName: "Earphones" }] }] },
+      { categoryFirstName: "Home, Garden & Furniture", categoryFirstList: [{ categorySecondName: "Kitchen", categorySecondList: [{ categoryId: "c2", categoryName: "Mugs" }] }] },
+      { categoryFirstName: "Adult Products", categoryFirstList: [{ categorySecondName: "Adult", categorySecondList: [{ categoryId: "c9", categoryName: "Adult Toys" }] }] },
+    ]);
     if (url.includes("/product/query")) return ok(DETAIL[new URL(url).searchParams.get("pid")!]);
     if (url.includes("/logistic/freightCalculate")) return ok([{ logisticName: "A", logisticPrice: 8 }, { logisticName: "B", logisticPrice: 5 }]);
     throw new Error(`unexpected fetch ${url}`);
@@ -83,11 +92,23 @@ describe("helpers", () => {
     expect(catalog.parseCjPrice(7.5)).toBe(7.5);
     expect(catalog.parseCjPrice("")).toBeNull();
   });
-  it("maps CJ category names onto ours", () => {
-    expect(catalog.mapCjCategory("Wireless Earphones")).toBe("cat-01");
-    expect(catalog.mapCjCategory("Women's Dresses")).toBe("cat-02");
-    expect(catalog.mapCjCategory("Makeup Brushes")).toBe("cat-04");
+  it("maps CJ category names onto our most specific category", () => {
+    expect(catalog.mapCjCategory("Wireless Earphones")).toBe("cat-csv-audio");
+    expect(catalog.mapCjCategory("Women's Dresses")).toBe("cat-csv-fashion");
+    expect(catalog.mapCjCategory("Makeup Brushes")).toBe("cat-csv-beauty");
     expect(catalog.mapCjCategory("Something Unheard Of")).toBe("cat-03");
+  });
+
+  it("plans the sweep breadth-first and round-robin across storefront categories, skipping excluded ones", () => {
+    const plan = catalog.buildSweepPlan([
+      { categoryFirstName: "Consumer Electronics", categoryFirstList: [{ categorySecondName: "Audio", categorySecondList: [
+        { categoryId: "e1", categoryName: "Earphones" }, { categoryId: "e2", categoryName: "Speakers" }, { categoryId: "e3", categoryName: "Headphones" }] }] },
+      { categoryFirstName: "Women's Clothing", categoryFirstList: [{ categorySecondName: "Tops", categorySecondList: [
+        { categoryId: "f1", categoryName: "Blouses" }, { categoryId: "f2", categoryName: "T-Shirts" }] }] },
+      { categoryFirstName: "Adult Products", categoryFirstList: [{ categorySecondName: "Adult Toys", categorySecondList: [{ categoryId: "x1", categoryName: "Toys" }] }] },
+    ]);
+    expect(plan.map(e => e.id)).toEqual(["e1", "f1", "e2", "f2", "e3"]);
+    expect(plan[1].path).toEqual(["Blouses", "Tops", "Women's Clothing"]);
   });
 });
 
@@ -163,5 +184,43 @@ describe("Admin background sync", () => {
 
   it("is admin-only", async () => {
     expect((await request(app).get("/api/marketplace/admin/cj/sync")).status).toBe(401);
+    expect((await request(app).get("/api/marketplace/admin/cj/sweep")).status).toBe(401);
+  });
+});
+
+describe("Every-category sweep", () => {
+  it("starts by itself once the first fill is done, and files products under their CJ category", async () => {
+    // Make both products "stale" so the sweep re-fetches them rather than skipping.
+    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 3 * 86400_000)]);
+    await catalog.runCatalogSyncTick();
+
+    const sweep = await catalog.getSweepJob();
+    expect(sweep!.status).toBe("done"); // 2 categories x 1 page each, all within one tick
+    expect(sweep!.plan.map((e: { id: string }) => e.id)).toEqual(["c1", "c2"]); // adult category never planned
+    expect(sweep!.totals).toMatchObject({ pages: 2, updated: 2 });
+
+    const listing = (await houseListing())[0];
+    expect(listing.category_id).toBe("cat-01"); // Earphones -> Audio, rolled up to Electronics in this test DB
+    const { rows } = await pool.query(`SELECT category_id FROM mkt_supplier_products WHERE external_id = 'pid-noimg'`);
+    expect(rows[0].category_id).toBe("cat-03"); // Mugs -> Kitchen, rolled up to Home & Garden
+  });
+
+  it("skips CJ calls for products it synced in the last 24 hours", async () => {
+    const res = await request(app).post("/api/marketplace/admin/cj/sweep").set("Authorization", `Bearer ${adminToken}`).send({ pagesPerCategory: 1 });
+    expect(res.status).toBe(202);
+    expect(res.body.data).toMatchObject({ status: "running", categories: 2, passes: 1 });
+
+    fetchMock.mockClear();
+    await catalog.runCatalogSyncTick();
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes("/product/query")).length).toBe(0);
+    const status = await request(app).get("/api/marketplace/admin/cj/sweep").set("Authorization", `Bearer ${adminToken}`);
+    expect(status.body.data).toMatchObject({ status: "done" });
+    expect(status.body.data.totals.skippedFresh).toBe(2);
+  });
+
+  it("doesn't restart a finished sweep until it's due", async () => {
+    const before = (await catalog.getSweepJob())!.started_at;
+    await catalog.runCatalogSyncTick();
+    expect((await catalog.getSweepJob())!.started_at).toEqual(before);
   });
 });

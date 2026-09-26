@@ -2080,7 +2080,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     if (authUser) promises.push(mktCart.get(authUser.id), mktWishlist.get(authUser.id), mktAddresses(authUser.id));
     const results = await Promise.allSettled(promises);
     const [catRes, prodRes, cartRes, wishRes, addrRes] = results as PromiseSettledResult<{ data: unknown }>[];
-    if (catRes.status  === "fulfilled") setCategories(catRes.value.data as R[]);
+    // Empty categories are hidden from shoppers -- a menu of empty aisles
+    // makes the whole shop look empty.
+    if (catRes.status  === "fulfilled") setCategories((catRes.value.data as R[]).filter(c => Number(c.productCount ?? 0) > 0));
     else showLoadError(catRes.reason);
     if (prodRes.status === "fulfilled") setProducts(prodRes.value.data as R[]);
     else showLoadError(prodRes.reason);
@@ -2250,7 +2252,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     { id:"admin" as View,    label:"Manager Dashboard", icon:<Settings className="w-4 h-4" />, roles:["manager"] },
   ].filter(n => role && n.roles.includes(role));
 
-  const CATEGORY_QUICK_LINKS = (categories as R[]).slice(0, 8);
+  const CATEGORY_QUICK_LINKS = [...(categories as R[])].sort((a, b) => Number(b.productCount ?? 0) - Number(a.productCount ?? 0)).slice(0, 8);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#EAEDED]" style={{ fontFamily: "'Amazon Ember', Arial, sans-serif" }}>

@@ -51,8 +51,12 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 export interface CjSyncJob {
   status: "idle" | "running" | "done" | "failed"; nextPage: number; endPage: number; pageSize: number;
-  totals: Partial<Record<"imported" | "updated" | "listed" | "withPhotos" | "detailFailures" | "skippedNoRate", number>>;
+  totals: Partial<Record<"imported" | "updated" | "listed" | "withPhotos" | "detailFailures" | "skippedNoRate" | "skippedFresh" | "excluded" | "pages", number>>;
   totalAvailable: number | null; lastError: string | null; startedAt: string | null; finishedAt: string | null;
+}
+
+export interface CjSweepJob extends CjSyncJob {
+  pass: number; passes: number; categoryIndex: number; categories: number; currentCategory: string | null;
 }
 
 // ─── API exports ───────────────────────────────────────────────────────────────
@@ -140,6 +144,9 @@ export const mktAdmin = {
   cj: {
     status: () => api<{ success: boolean; data: { configured: boolean } }>("/api/marketplace/admin/cj/status"),
     syncStatus: () => api<{ success: boolean; data: CjSyncJob | null }>("/api/marketplace/admin/cj/sync"),
+    sweepStatus: () => api<{ success: boolean; data: CjSweepJob | null }>("/api/marketplace/admin/cj/sweep"),
+    startSweep: (pagesPerCategory: number) =>
+      api<{ success: boolean; data?: CjSweepJob; error?: string }>("/api/marketplace/admin/cj/sweep", { method: "POST", body: JSON.stringify({ pagesPerCategory }) }),
     startSync: (body: { pageNum?: number; pages: number; pageSize?: number; categoryId?: string }) =>
       api<{ success: boolean; data?: CjSyncJob; error?: string }>("/api/marketplace/admin/cj/sync", { method: "POST", body: JSON.stringify(body) }),
     sync: (body: { pageNum?: number; pageSize?: number; categoryId?: string }) =>
