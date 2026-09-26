@@ -17,11 +17,13 @@ interface CurrencyState {
   loading: boolean;
   country: CountryOption;
   countries: CountryOption[];
-  rate: number | null; // 1 ZMW = `rate` units of country.code (function names kept as formatZAR/convertZAR from the original — base currency is ZMW here, not ZAR)
+  rate: number | null; // 1 ZAR = `rate` units of country.code. Every price in the catalogue is in ZAR; null = rate not known (yet)
   ratesStale: boolean;
 }
 
-let state: CurrencyState = { loading: true, country: ZM_DEFAULT, countries: [ZM_DEFAULT], rate: 1, ratesStale: false };
+// rate starts null: until the real rate for the detected currency is known,
+// prices show in ZAR rather than as ZAR numbers wearing another symbol.
+let state: CurrencyState = { loading: true, country: ZM_DEFAULT, countries: [ZM_DEFAULT], rate: null, ratesStale: false };
 const listeners = new Set<() => void>();
 
 function setState(patch: Partial<CurrencyState>) {
@@ -36,14 +38,31 @@ function setState(patch: Partial<CurrencyState>) {
  *  call useCurrency()/useCurrencySubscription() once near their root. */
 export function formatZAR(zarAmount: number): string {
   const n = Number(zarAmount ?? 0);
-  const converted = state.rate !== null ? n * state.rate : n;
-  const decimals = ["JPY", "UGX", "TZS"].includes(state.country.code) ? 0 : 2;
+  if (state.rate === null || state.country.code === "ZAR") {
+    return `R${n.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  const converted = n * state.rate;
+  const decimals = ZERO_DECIMAL.has(state.country.code) ? 0 : 2;
   const formatted = converted.toLocaleString("en", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
   return `${state.country.symbol}${formatted}`;
 }
 
+// Currencies whose minor unit isn't used day to day.
+const ZERO_DECIMAL = new Set(["JPY", "KRW", "UGX", "TZS", "RWF", "BIF", "XAF", "XOF", "KMF", "GNF", "DJF", "MGA", "NGN", "CDF", "SOS", "SLL", "IDR", "VND", "CLP", "PYG", "ISK"]);
+
+/** True when prices are being shown in a currency other than the one customers are charged in (ZAR). */
+export function isShowingConvertedPrices(): boolean {
+  return state.rate !== null && state.country.code !== "ZAR";
+}
+
 export function convertZAR(zarAmount: number): number {
   return state.rate !== null ? Number(zarAmount ?? 0) * state.rate : Number(zarAmount ?? 0);
+}
+
+/** The `/api/currency/rates` table is "1 ZAR = N units" for every currency (ZAR itself = 1). */
+function rateFor(code: string, rates: Record<string, number>): number | null {
+  const r = rates[code];
+  return typeof r === "number" && r > 0 ? r : null;
 }
 
 let initialized = false;
@@ -77,7 +96,7 @@ export async function initCurrency(): Promise<void> {
   try {
     const r = await fetch(`${BASE}/api/currency/rates`).then(res => res.json());
     if (r.success) {
-      const rate = resolvedCountry.code === "ZMW" ? 1 : (r.data.rates[resolvedCountry.code] ?? null);
+      const rate = rateFor(resolvedCountry.code, r.data.rates);
       setState({ rate, ratesStale: Boolean(r.stale) });
     }
   } catch { /* keep whatever rate state already had (initial default: 1) */ }
@@ -87,11 +106,11 @@ export function setCountryManually(countryCode: string): void {
   const match = state.countries.find(c => c.countryCode === countryCode);
   if (!match) return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(match));
-  setState({ country: match });
+  setState({ country: match, rate: null });
   // Re-fetch/resolve the rate for the newly selected currency.
   fetch(`${BASE}/api/currency/rates`).then(r => r.json()).then(r => {
     if (!r.success) return;
-    const rate = match.code === "ZMW" ? 1 : (r.data.rates[match.code] ?? null);
+    const rate = rateFor(match.code, r.data.rates);
     setState({ rate });
   }).catch(() => {});
 }
@@ -119,7 +138,7 @@ export function useLiveLocation(): Promise<boolean> {
           setState({ country: match });
           const ratesRes = await fetch(`${BASE}/api/currency/rates`).then(r => r.json());
           if (ratesRes.success) {
-            const rate = match.code === "ZMW" ? 1 : (ratesRes.data.rates[match.code] ?? null);
+            const rate = rateFor(match.code, ratesRes.data.rates);
             setState({ rate });
           }
           resolve(true);

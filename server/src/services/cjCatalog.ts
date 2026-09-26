@@ -6,7 +6,7 @@ import {
   type CjProductSummary, type CjProductDetail,
 } from "./cjDropshippingClient";
 import { dedupeImages, isPhotoUrl, parseSupplierImageList, scrubSupplierBranding, splitSupplierDescription } from "../utils/supplierWhiteLabel";
-import { variantIdForVid, type ExternalVariant } from "../utils/cjVariants";
+import { variantIdForVid, parseExternalVariants, type ExternalVariant } from "../utils/cjVariants";
 import { matchCjCategory, resolveCategory, isExcludedFromStore } from "../utils/cjCategoryMap";
 
 /**
@@ -268,16 +268,46 @@ async function setCategory(supplierProductId: string, categoryId: string): Promi
  * rounded up to the next whole rand. The catalogue item is marked active
  * so sellers can add it to their own stores too.
  */
+/** Ballylife-store price: landed cost (goods + shipping, USD) x rate x (1 + markup), rounded up to a whole rand. */
+export function houseListingPrice(costUsd: number, shippingUsd: number, usdToZar: number): number {
+  return Math.ceil((costUsd + shippingUsd) * usdToZar * (1 + MARKUP));
+}
+
+/** Customer-selectable options for a multi-variant listing; pricier options carry the same markup. */
+export function houseListingVariants(variants: ExternalVariant[], costUsd: number, usdToZar: number, stock: number) {
+  if (variants.length <= 1) return [];
+  const factor = usdToZar * (1 + MARKUP);
+  return variants.map(v => ({
+    id: variantIdForVid(v.vid), type: "Option", value: v.key, sku: null, stock,
+    additionalPrice: Math.max(0, Math.ceil((v.priceUsd - costUsd) * factor)),
+  }));
+}
+
+/**
+ * Re-prices every Ballylife-store listing from its stored CJ cost and
+ * shipping at a new USD rate -- no CJ API calls. Run when the exchange rate
+ * moves so listings don't drift from what the goods actually cost.
+ */
+export async function repriceHouseListings(usdToZar: number): Promise<number> {
+  const { rows } = await pool!.query(
+    `SELECT p.id, p.stock, sp.cost_price, sp.est_shipping_usd, sp.external_variants
+     FROM mkt_products p JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
+     WHERE p.seller_id = $1 AND sp.est_shipping_usd IS NOT NULL`, [HOUSE_SELLER_ID]
+  );
+  for (const r of rows) {
+    const cost = Number(r.cost_price);
+    const price = houseListingPrice(cost, Number(r.est_shipping_usd), usdToZar);
+    const variants = houseListingVariants(parseExternalVariants(r.external_variants), cost, usdToZar, Number(r.stock) || 100);
+    await pool!.query(`UPDATE mkt_products SET price = $1, variants = $2, updated_at = now() WHERE id = $3`, [price, JSON.stringify(variants), r.id]);
+  }
+  logger.info("catalog.house_listings_repriced", { count: rows.length, usdToZar });
+  return rows.length;
+}
+
 async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProduct & { costUsd: number; shippingUsd: number; usdToZar: number; categoryId: string }): Promise<number> {
-  const factor = w.usdToZar * (1 + MARKUP);
-  const price = Math.ceil((w.costUsd + w.shippingUsd) * factor);
-  const variants = w.variants.length > 1
-    ? w.variants.map(v => ({
-        id: variantIdForVid(v.vid), type: "Option", value: v.key, sku: null, stock: w.stock ?? 100,
-        additionalPrice: Math.max(0, Math.ceil((v.priceUsd - w.costUsd) * factor)),
-      }))
-    : [];
   const stock = w.stock ?? 100;
+  const price = houseListingPrice(w.costUsd, w.shippingUsd, w.usdToZar);
+  const variants = houseListingVariants(w.variants, w.costUsd, w.usdToZar, stock);
   const shortDescription = w.description.split("\n")[0].slice(0, 160);
 
   await pool!.query(`UPDATE mkt_supplier_products SET status = 'active' WHERE id = $1 AND status = 'pending_review'`, [supplierProductId]);
