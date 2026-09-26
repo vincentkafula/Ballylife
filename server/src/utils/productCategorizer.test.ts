@@ -47,3 +47,16 @@ describe("categorizeProduct", () => {
     expect(categorizeProduct("Urban Simplicity", [], known, "cat-02")).toBe("cat-02");
   });
 });
+
+describe("handmade flowers", () => {
+  it.each([
+    "Fully Handmade Crochet Open Tulip Yarn Flower Artificial Knitted Flower",
+    "Handmade Finished Pointed Artificial Rose Crochet Knitted Yarn Flower Hand Hooked Flower",
+  ])("%s is decor, not school supplies", name => {
+    expect(classifyProductName(name)).toBe("cat-csv-decor");
+  });
+
+  it("a flower-print dress is still clothing", () => {
+    expect(classifyProductName("Women's Summer Flower Print Dress")).toBe("cat-csv-fashion");
+  });
+});
