@@ -67,6 +67,8 @@ export function parseCjPrice(value: unknown): number | null {
 export interface WhiteLabelledProduct {
   name: string; description: string; images: string[]; variants: ExternalVariant[];
   stock: number | null; cjCategoryName: string; detailOk: boolean;
+  /** CJ's product video references (features=enable_video), as CJ returns them. */
+  videos: string[];
 }
 
 /**
@@ -105,15 +107,33 @@ export async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<Wh
       description: desc.text || scrubSupplierBranding(p.remark),
       images, variants, stock,
       cjCategoryName: d.categoryName ?? p.categoryName ?? "",
+      videos: parseVideoList(d.productVideo, p.pid),
       detailOk: true,
     };
   } catch (err) {
     logger.warn("cj.product_detail_fallback", { pid: p.pid, error: err instanceof Error ? err.message : String(err) });
     return {
       name: fallbackName, description: scrubSupplierBranding(p.remark), images: parseSupplierImageList(p.productImage),
-      variants: [], stock: null, cjCategoryName: p.categoryName ?? "", detailOk: false,
+      variants: [], stock: null, cjCategoryName: p.categoryName ?? "", detailOk: false, videos: [],
     };
   }
+}
+
+let videoSampleLogged = false;
+
+/** CJ documents productVideo as a "video ID list"; accept an array, JSON string or comma list. */
+function parseVideoList(value: unknown, pid: string): string[] {
+  let list: string[] = [];
+  if (Array.isArray(value)) list = value.map(String);
+  else if (typeof value === "string" && value.trim()) {
+    const v = value.trim();
+    try { list = v.startsWith("[") ? (JSON.parse(v) as unknown[]).map(String) : v.split(","); } catch { list = v.split(","); }
+  }
+  list = list.map(x => x.trim()).filter(Boolean).slice(0, 5);
+  // Logged once so the format (bare ids vs playable URLs) can be confirmed
+  // against live data before the storefront starts rendering videos.
+  if (list.length && !videoSampleLogged) { videoSampleLogged = true; logger.info("cj.video_sample", { pid, sample: list[0].slice(0, 200) }); }
+  return list;
 }
 
 /** CJ's cheapest shipping quote (USD) for one unit to the pricing country, or null if unavailable. */
@@ -132,7 +152,8 @@ async function estimateShippingUsd(vid: string | undefined): Promise<number | nu
 // ── One page ─────────────────────────────────────────────────────────────
 
 export interface PageResult {
-  imported: number; updated: number; skippedNoRate: number; withPhotos: number; detailFailures: number; listed: number; skippedFresh: number; excluded: number;
+  imported: number; updated: number; skippedNoRate: number; withPhotos: number; detailFailures: number; listed: number; skippedFresh: number; excluded: number; withVideo: number;
+  listedPricesZar: number[];
   totalAvailable: number; pageNum: number; pageSize: number;
 }
 
@@ -142,8 +163,10 @@ export async function syncCjPage(opts: {
   categoryPath?: string[];
   /** Skip the detail + freight calls for products synced within this many hours (saves CJ quota during big sweeps). */
   skipFreshHours?: number;
+  /** Search CJ by English product name instead of browsing a category. */
+  keyword?: string;
 }): Promise<PageResult> {
-  const result = await listCjProducts({ pageNum: opts.pageNum, pageSize: opts.pageSize, categoryId: opts.categoryId });
+  const result = await listCjProducts({ pageNum: opts.pageNum, pageSize: opts.pageSize, categoryId: opts.categoryId, productNameEn: opts.keyword });
   await ensureCjSupplierExists();
   await ensureHouseStore();
 
@@ -155,7 +178,8 @@ export async function syncCjPage(opts: {
   const pathCategory = opts.categoryPath?.length ? resolveCategory(matchCjCategory(...opts.categoryPath), knownCategories, DEFAULT_CATEGORY) : null;
   const freshSince = opts.skipFreshHours ? new Date(Date.now() - opts.skipFreshHours * 3600_000) : null;
 
-  const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0, skippedFresh: 0, excluded: 0 };
+  const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0, skippedFresh: 0, excluded: 0, withVideo: 0 };
+  const listedPricesZar: number[] = [];
   for (const p of result.list ?? []) {
     if (usdToZar === null) { counts.skippedNoRate++; continue; } // no USD rate on file -- flagged, never guessed
     const costUsd = parseCjPrice(p.sellPrice);
@@ -175,6 +199,7 @@ export async function syncCjPage(opts: {
     const w = await buildWhiteLabelledProduct(p);
     if (!w.detailOk) counts.detailFailures++;
     if (w.images.length) counts.withPhotos++;
+    if (w.videos.length) counts.withVideo++;
 
     const shippingUsd = w.detailOk ? await estimateShippingUsd(w.variants[0]?.vid) : null;
     // What sellers see as the base price they mark up from: landed cost
@@ -198,7 +223,7 @@ export async function syncCjPage(opts: {
       // Only overwrite variants from a successful detail call -- a failed
       // one must never wipe the vids that live orders depend on.
       if (w.detailOk && w.variants.length) {
-        await pool!.query(`UPDATE mkt_supplier_products SET external_variants = $1 WHERE id = $2`, [JSON.stringify(w.variants), supplierProductId]);
+        await pool!.query(`UPDATE mkt_supplier_products SET external_variants = $1, videos = $2 WHERE id = $3`, [JSON.stringify(w.variants), JSON.stringify(w.videos), supplierProductId]);
       }
       // Seller listings copied the catalogue photos at import time -- keep them on CJ's current set.
       if (w.images.length) {
@@ -208,22 +233,22 @@ export async function syncCjPage(opts: {
     } else {
       const { rows } = await pool!.query(
         `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status,
-           external_source, external_id, external_variants, est_shipping_usd)
-         VALUES ($1,$2,$3,$4,$5,'USD',$6,1,$7,'CN','pending_review','cjdropshipping',$8,$9,$10) RETURNING id`,
-        [CJ_SUPPLIER_ID, categoryId, w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), p.pid, JSON.stringify(w.variants), shippingUsd]
+           external_source, external_id, external_variants, est_shipping_usd, videos)
+         VALUES ($1,$2,$3,$4,$5,'USD',$6,1,$7,'CN','pending_review','cjdropshipping',$8,$9,$10,$11) RETURNING id`,
+        [CJ_SUPPLIER_ID, categoryId, w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), p.pid, JSON.stringify(w.variants), shippingUsd, JSON.stringify(w.videos)]
       );
       supplierProductId = rows[0].id;
       counts.imported++;
     }
 
     if (listable) {
-      await listInHouseStore(supplierProductId, { ...w, costUsd, shippingUsd: shippingUsd!, usdToZar, categoryId: categoryId! });
+      listedPricesZar.push(await listInHouseStore(supplierProductId, { ...w, costUsd, shippingUsd: shippingUsd!, usdToZar, categoryId: categoryId! }));
       counts.listed++;
     }
   }
 
-  logger.info("cj.sync_page", { pageNum: opts.pageNum, pageSize: opts.pageSize, cjCategoryId: opts.categoryId, ...counts });
-  return { ...counts, totalAvailable: Number(result.total ?? 0), pageNum: Number(result.pageNum ?? opts.pageNum), pageSize: Number(result.pageSize ?? opts.pageSize) };
+  logger.info("cj.sync_page", { pageNum: opts.pageNum, pageSize: opts.pageSize, cjCategoryId: opts.categoryId, keyword: opts.keyword, ...counts });
+  return { ...counts, listedPricesZar, totalAvailable: Number(result.total ?? 0), pageNum: Number(result.pageNum ?? opts.pageNum), pageSize: Number(result.pageSize ?? opts.pageSize) };
 }
 
 /** Files a catalogue item (and the Ballylife listing of it) under a category. Sellers' own listings keep theirs. */
@@ -238,7 +263,7 @@ async function setCategory(supplierProductId: string, categoryId: string): Promi
  * rounded up to the next whole rand. The catalogue item is marked active
  * so sellers can add it to their own stores too.
  */
-async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProduct & { costUsd: number; shippingUsd: number; usdToZar: number; categoryId: string }) {
+async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProduct & { costUsd: number; shippingUsd: number; usdToZar: number; categoryId: string }): Promise<number> {
   const factor = w.usdToZar * (1 + MARKUP);
   const price = Math.ceil((w.costUsd + w.shippingUsd) * factor);
   const variants = w.variants.length > 1
@@ -261,7 +286,7 @@ async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProdu
        WHERE id = $9`,
       [w.name, w.description, shortDescription, price, JSON.stringify(w.images), JSON.stringify(variants), stock, w.categoryId, existing[0].id]
     );
-    return;
+    return price;
   }
   const slug = `${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   await pool!.query(
@@ -270,6 +295,7 @@ async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProdu
      VALUES ($1,$2,$3,$4,$5,$6,$7,'ZAR',$8,'📦','active',$9,'Ballylife',$10,'imported',$11,'international')`,
     [HOUSE_SELLER_ID, w.categoryId, w.name, slug, shortDescription, w.description, price, JSON.stringify(w.images), stock, JSON.stringify(variants), supplierProductId]
   );
+  return price;
 }
 
 // ── Hide the generated demo catalogue, once ────────────────────────────────
@@ -331,8 +357,14 @@ export async function runCatalogSyncTick(): Promise<void> {
   if (!job || job.status !== "running") {
     // Nothing manual running: work on the every-category sweep instead.
     try {
-      const sweep = await maybeAutoStartSweep(job);
-      if (sweep?.status === "running") await runSweepTick(sweep);
+      // The sourcing list (targeted products) goes first; the sweep resumes after.
+      const sourcing = await maybeAutoStartSourcing();
+      if (sourcing?.status === "running") {
+        await runSourcingTick(sourcing);
+      } else {
+        const sweep = await maybeAutoStartSweep(job);
+        if (sweep?.status === "running") await runSweepTick(sweep);
+      }
     } catch (err) {
       logger.error("cj.sweep_tick_failed", { error: err instanceof Error ? err.message : String(err) });
     }
@@ -492,4 +524,161 @@ async function maybeAutoStartSweep(catalogJob: Row | null): Promise<Row | null> 
   if (sweep?.status === "running") return sweep;
   const due = !sweep || (sweep.finished_at && Date.now() - new Date(sweep.finished_at).getTime() > RESWEEP_DAYS * 86400_000);
   return due ? startCategorySweep() : null;
+}
+
+// ── CJ-only catalogue enforcement ───────────────────────────────────────────
+
+/**
+ * With the CJ-only policy on (utils/catalogPolicy.ts), takes every product
+ * and catalogue item that did NOT come from CJ off sale. Runs at boot;
+ * idempotent, deletes nothing (status -> 'inactive').
+ */
+export async function enforceCjOnlyCatalog(): Promise<{ products: number; catalogItems: number }> {
+  const { rows: products } = await pool!.query(
+    `UPDATE mkt_products SET status = 'inactive', updated_at = now()
+     WHERE status IN ('active', 'out_of_stock', 'pending_review')
+       AND (supplier_product_id IS NULL
+            OR supplier_product_id NOT IN (SELECT id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping'))
+     RETURNING id`
+  );
+  const { rows: items } = await pool!.query(
+    `UPDATE mkt_supplier_products SET status = 'inactive', updated_at = now()
+     WHERE status <> 'inactive' AND (external_source IS NULL OR external_source <> 'cjdropshipping')
+     RETURNING id`
+  );
+  if (products.length || items.length) logger.info("catalog.cj_only_enforced", { products: products.length, catalogItems: items.length });
+  return { products: products.length, catalogItems: items.length };
+}
+
+// ── Sourcing list (market-research products, all from CJ) ────────────────
+// The products from the African-market sourcing report, searched on CJ's
+// Product API by name. Each keyword's CJ matches are synced and listed like
+// any other CJ product, and the job records what CJ actually offers --
+// how many matches, the rand prices they list at, how many have video --
+// so the report is built from CJ's real catalogue, not estimates.
+
+export const SOURCING_LIST: { keyword: string; group: "mass" | "premium"; label: string }[] = [
+  { keyword: "wireless earbuds", group: "mass", label: "Wireless earbuds" },
+  { keyword: "power bank", group: "mass", label: "Power banks" },
+  { keyword: "smart watch", group: "mass", label: "Smartwatches / fitness bands" },
+  { keyword: "phone case", group: "mass", label: "Phone cases" },
+  { keyword: "fast charger", group: "mass", label: "Chargers & cables" },
+  { keyword: "car phone holder", group: "mass", label: "Car phone mounts" },
+  { keyword: "dash cam", group: "mass", label: "Dash cams" },
+  { keyword: "car vacuum cleaner", group: "mass", label: "Car vacuums" },
+  { keyword: "solar lantern", group: "mass", label: "Solar lanterns / lights" },
+  { keyword: "sneakers", group: "mass", label: "Sneakers" },
+  { keyword: "handbag", group: "mass", label: "Handbags" },
+  { keyword: "hair straightener", group: "mass", label: "Hair straighteners" },
+  { keyword: "wig", group: "mass", label: "Wigs" },
+  { keyword: "vegetable chopper", group: "mass", label: "Kitchen gadgets (choppers)" },
+  { keyword: "led strip light", group: "mass", label: "LED strip lights" },
+  { keyword: "smart plug", group: "mass", label: "Smart plugs" },
+  { keyword: "wifi camera", group: "mass", label: "Wi-Fi security cameras" },
+  { keyword: "gamepad", group: "mass", label: "Gaming controllers" },
+  { keyword: "baby carrier", group: "mass", label: "Baby products (carriers)" },
+  { keyword: "laptop", group: "premium", label: "Laptops" },
+  { keyword: "mini pc", group: "premium", label: "Mini PCs" },
+  { keyword: "standing desk", group: "premium", label: "Standing desks" },
+  { keyword: "computer desk", group: "premium", label: "Computer / compact desks" },
+  { keyword: "office desk", group: "premium", label: "Executive / office desks" },
+  { keyword: "ergonomic office chair", group: "premium", label: "Ergonomic office chairs" },
+  { keyword: "usb microphone", group: "premium", label: "USB streaming microphones" },
+  { keyword: "podcast microphone", group: "premium", label: "Podcast microphones" },
+  { keyword: "conference speakerphone", group: "premium", label: "Conference speakerphones" },
+  { keyword: "portable monitor", group: "premium", label: "Monitors (portable)" },
+  { keyword: "monitor", group: "premium", label: "Monitors" },
+  { keyword: "webcam", group: "premium", label: "Webcams" },
+  { keyword: "laptop stand", group: "premium", label: "Laptop stands" },
+  { keyword: "monitor arm", group: "premium", label: "Monitor arms" },
+  { keyword: "mechanical keyboard", group: "premium", label: "Mechanical keyboards" },
+  { keyword: "usb c hub", group: "premium", label: "USB-C docks / hubs" },
+];
+
+const SOURCING_PAGES = Number(process.env.CJ_SOURCING_PAGES_PER_KEYWORD ?? 2);
+const SOURCING_FLAG = "cj_sourcing_list_v1";
+
+export interface KeywordStats {
+  label: string; group: string; cjMatches: number; synced: number; listed: number; withVideo: number;
+  priceMinZar: number | null; priceMaxZar: number | null; priceMedianZar: number | null;
+}
+
+export async function startSourcingRun(pages = SOURCING_PAGES): Promise<Row> {
+  const plan = SOURCING_LIST.map(k => ({ ...k }));
+  const { rows } = await pool!.query(
+    `INSERT INTO cj_sync_jobs (id, mode, status, plan, plan_index, next_page, end_page, page_size, totals, total_available, last_error, started_at, finished_at, updated_at)
+     VALUES ('sourcing', 'sourcing', 'running', $1, 0, 1, $2, 20, '{}', NULL, NULL, now(), NULL, now())
+     ON CONFLICT (id) DO UPDATE SET status = 'running', plan = $1, plan_index = 0, next_page = 1, end_page = $2, page_size = 20,
+       totals = '{}', total_available = NULL, last_error = NULL, started_at = now(), finished_at = NULL, updated_at = now()
+     RETURNING *`,
+    [JSON.stringify(plan), Math.max(1, pages)]
+  );
+  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, 'started') ON CONFLICT (key) DO NOTHING`, [SOURCING_FLAG]);
+  logger.info("cj.sourcing_started", { keywords: plan.length, pagesPerKeyword: pages });
+  return rows[0];
+}
+
+export async function getSourcingJob(): Promise<Row | null> {
+  const { rows } = await pool!.query(`SELECT * FROM cj_sync_jobs WHERE id = 'sourcing'`);
+  return rows[0] ?? null;
+}
+
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+
+/** Works through the sourcing list: each keyword's pages, one keyword after another, for up to ~50s. */
+async function runSourcingTick(job: Row): Promise<void> {
+  const plan: { keyword: string; group: string; label: string }[] = Array.isArray(job.plan) ? job.plan : [];
+  let index = Number(job.plan_index);
+  let page = Number(job.next_page);
+  const endPage = Number(job.end_page);
+  const totals = { ...(job.totals ?? {}) } as { byKeyword?: Record<string, KeywordStats & { prices?: number[] }> };
+  const byKeyword = totals.byKeyword ?? {};
+  const deadline = Date.now() + TICK_BUDGET_MS;
+
+  while (Date.now() < deadline && index < plan.length) {
+    const k = plan[index];
+    const stats = byKeyword[k.keyword] ?? { label: k.label, group: k.group, cjMatches: 0, synced: 0, listed: 0, withVideo: 0, priceMinZar: null, priceMaxZar: null, priceMedianZar: null, prices: [] };
+    try {
+      const r = await syncCjPage({ pageNum: page, pageSize: 20, keyword: k.keyword, skipFreshHours: 24 });
+      stats.cjMatches = r.totalAvailable;
+      stats.synced += r.imported + r.updated + r.skippedFresh;
+      stats.listed += r.listed;
+      stats.withVideo += r.withVideo;
+      stats.prices = [...(stats.prices ?? []), ...r.listedPricesZar];
+      stats.priceMinZar = stats.prices.length ? Math.min(...stats.prices) : null;
+      stats.priceMaxZar = stats.prices.length ? Math.max(...stats.prices) : null;
+      stats.priceMedianZar = median(stats.prices);
+      byKeyword[k.keyword] = stats;
+      const lastPage = Math.max(1, Math.ceil(r.totalAvailable / 20));
+      if (page >= endPage || page >= lastPage) { index++; page = 1; } else page++;
+      await pool!.query(
+        `UPDATE cj_sync_jobs SET plan_index = $1, next_page = $2, totals = $3, last_error = NULL, updated_at = now() WHERE id = 'sourcing'`,
+        [index, page, JSON.stringify({ byKeyword }), ]
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await pool!.query(`UPDATE cj_sync_jobs SET last_error = $1, updated_at = now() WHERE id = 'sourcing'`, [`${k.keyword}: ${message}`.slice(0, 500)]);
+      logger.error("cj.sourcing_page_failed", { keyword: k.keyword, page, error: message });
+      return;
+    }
+  }
+
+  if (index >= plan.length) {
+    await pool!.query(`UPDATE cj_sync_jobs SET status = 'done', finished_at = now(), updated_at = now() WHERE id = 'sourcing'`);
+    // One line per keyword, without the raw price arrays, for the sourcing report.
+    const report = Object.fromEntries(Object.entries(byKeyword).map(([kw, { prices: _p, ...rest }]) => [kw, rest]));
+    logger.info("cj.sourcing_report", report);
+  }
+}
+
+/** Runs the sourcing list once automatically (flagged), ahead of the every-category sweep. */
+async function maybeAutoStartSourcing(): Promise<Row | null> {
+  const job = await getSourcingJob();
+  if (job) return job;
+  const { rows } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [SOURCING_FLAG]);
+  return rows.length ? null : startSourcingRun();
 }

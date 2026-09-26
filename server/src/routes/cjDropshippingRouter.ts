@@ -5,7 +5,7 @@ import { isCjConfigured, getCjProductDetail, getCjCategories } from "../services
 import { convertToZar } from "../utils/pricing";
 import { logger } from "../utils/logger";
 import { processFulfillment, syncOne } from "../services/cjFulfillment";
-import { syncCjPage, startCatalogSync, getCatalogSyncJob, hideDemoCatalogOnce, startCategorySweep, getSweepJob } from "../services/cjCatalog";
+import { syncCjPage, startCatalogSync, getCatalogSyncJob, hideDemoCatalogOnce, startCategorySweep, getSweepJob, startSourcingRun, getSourcingJob } from "../services/cjCatalog";
 
 const router: ReturnType<typeof Router> = Router();
 const MANAGER_ROLES = ["marketplace_admin"] as const;
@@ -80,6 +80,27 @@ const mapSweep = (j: any) => {
     currentCategory: current ? current.path.filter(Boolean).reverse().join(" › ") : null,
   };
 };
+
+// Sourcing list: the market-research products searched on CJ by name, with
+// what CJ actually offers for each (matches, listed rand prices, videos).
+const mapSourcing = (j: any) => {
+  if (!j) return null;
+  const byKeyword = (j.totals?.byKeyword ?? {}) as Record<string, any>;
+  return {
+    ...mapJob(j), keywordIndex: j.plan_index, keywords: Array.isArray(j.plan) ? j.plan.length : 0,
+    results: Object.entries(byKeyword).map(([keyword, { prices: _p, ...s }]) => ({ keyword, ...s })),
+  };
+};
+
+router.get("/admin/cj/sourcing", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, data: mapSourcing(await getSourcingJob()) });
+});
+
+router.post("/admin/cj/sourcing", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  if (!isCjConfigured()) { res.status(503).json({ success: false, error: NOT_CONFIGURED }); return; }
+  const pages = Math.min(10, Math.max(1, Number(req.body?.pagesPerKeyword) || 2));
+  res.status(202).json({ success: true, data: mapSourcing(await startSourcingRun(pages)) });
+});
 
 router.get("/admin/cj/sweep", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
   res.json({ success: true, data: mapSweep(await getSweepJob()) });

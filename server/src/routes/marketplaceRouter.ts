@@ -18,6 +18,7 @@ import { checkPaymentVelocity } from "../services/fraudChecks";
 import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
 import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
+import { cjOnlyCatalog, CJ_ONLY_MESSAGE } from "../utils/catalogPolicy";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
@@ -444,8 +445,9 @@ router.get("/supplier-catalog", requireAuth, async (req: Request, res: Response)
   const page = Math.max(1, Number(pg) || 1);
   const limit = Math.min(60, Number(lim) || 20);
   const where: string[] = [`sp.status = 'active'`];
+  if (cjOnlyCatalog()) where.push(`sp.external_source = 'cjdropshipping'`);
   const params: unknown[] = [];
-  const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
+  const p = (val: unknown) => { params.push(val); return `${params.length}`; };
   if (country)  where.push(`sp.origin_country = ${p(country)}`);
   if (category) where.push(`sp.category_id = ${p(category)}`);
   if (search)   where.push(`LOWER(sp.name) LIKE ${p(`%${search.toLowerCase()}%`)}`);
@@ -1372,6 +1374,14 @@ router.get("/admin/products/pending", requireAuth, requireRole(...MANAGER_ROLES)
 });
 
 router.patch("/admin/products/:id/approve", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog()) {
+    const { rows: src } = await pool!.query(
+      `SELECT sp.external_source FROM mkt_products p LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id WHERE p.id::text = $1`, [req.params.id]
+    );
+    if (src.length && src[0].external_source !== "cjdropshipping") {
+      res.status(409).json({ success: false, error: "Only products sourced from the supplier catalogue can go live.", code: "CJ_ONLY_CATALOG" }); return;
+    }
+  }
   const { rows } = await pool!.query(`UPDATE mkt_products SET status = 'active', updated_at = now() WHERE id::text = $1 RETURNING *`, [req.params.id]);
   if (!rows.length) { res.status(404).json({ success: false, error: "Product not found" }); return; }
   res.json({ success: true, data: mapProduct(rows[0]) });
@@ -1598,6 +1608,7 @@ router.get("/sellers/:id/supplier-orders", requireAuth, requireSellerOwner, asyn
 });
 
 router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog()) { res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return; }
   const { categoryId, name, shortDescription, description, price, compareAtPrice, stock, sku, brand, tags, attributes, emoji, images } = req.body;
   if (!categoryId || !name || !price) { res.status(400).json({ success: false, error: "categoryId, name and price are required" }); return; }
   const slug = `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
@@ -1628,6 +1639,9 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
   );
   if (!spRows.length) { res.status(404).json({ success: false, error: "Supplier catalog item not found or no longer available" }); return; }
   const sp = spRows[0];
+  if (cjOnlyCatalog() && sp.external_source !== "cjdropshipping") {
+    res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return;
+  }
 
   if (!sp.category_id) { res.status(400).json({ success: false, error: "This catalog item has no category set — ask the marketplace team to assign one before importing." }); return; }
   // Seller's own price if they gave one; otherwise fall back to the
@@ -2011,6 +2025,7 @@ router.get("/suppliers/:id/products", requireAuth, requireSupplierOwner, async (
 // product listing) before it's importable. originCountry is fixed to the
 // supplier's own country, not something they choose per item.
 router.post("/suppliers/:id/products", requireAuth, requireSupplierOwner, async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog()) { res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return; }
   const { name, description, costPrice, currency, moq, images, emoji, vehicleDetails, condition } = req.body;
   if (!name || costPrice === undefined) { res.status(400).json({ success: false, error: "name and costPrice are required" }); return; }
   const { rows: supRows } = await pool!.query(`SELECT country FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
@@ -2358,6 +2373,7 @@ router.get("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES
 // would break on. Not a full RFC 4180 implementation, but covers what a
 // spreadsheet export (Excel/Google Sheets/Numbers) actually produces.
 router.post("/admin/supplier-products/bulk-import", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog()) { res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return; }
   const { csv } = req.body;
   if (!csv || typeof csv !== "string") { res.status(400).json({ success: false, error: "csv (raw CSV text) is required" }); return; }
 
@@ -2416,6 +2432,7 @@ router.post("/admin/supplier-products/bulk-import", requireAuth, requireRole(...
 });
 
 router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog()) { res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return; }
   const { supplierId, categoryId, name, description, costPrice, currency, retailPrice, compareAtPrice, moq, images, emoji, originCountry, vehicleDetails, condition, nrcsApproved, nrcsReference } = req.body;
   if (!supplierId || !name || costPrice === undefined || !originCountry) {
     res.status(400).json({ success: false, error: "supplierId, name, costPrice and originCountry are required" }); return;
@@ -2430,6 +2447,12 @@ router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLE
 });
 
 router.patch("/admin/supplier-products/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog() && req.body?.status === "active") {
+    const { rows: src } = await pool!.query(`SELECT external_source FROM mkt_supplier_products WHERE id::text = $1`, [req.params.id]);
+    if (src.length && src[0].external_source !== "cjdropshipping") {
+      res.status(409).json({ success: false, error: "Only supplier-catalogue items can be active.", code: "CJ_ONLY_CATALOG" }); return;
+    }
+  }
   const fields = ["categoryId","name","description","costPrice","currency","retailPrice","compareAtPrice","moq","emoji","status","vehicleDetails","condition","nrcsApproved","nrcsReference"] as const;
   const colMap: Record<string,string> = { categoryId:"category_id", name:"name", description:"description", costPrice:"cost_price", currency:"currency", retailPrice:"retail_price", compareAtPrice:"compare_at_price", moq:"moq", emoji:"emoji", status:"status", vehicleDetails:"vehicle_details", condition:"condition", nrcsApproved:"nrcs_approved", nrcsReference:"nrcs_reference" };
   const sets: string[] = []; const vals: unknown[] = [];

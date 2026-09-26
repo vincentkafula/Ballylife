@@ -844,3 +844,6 @@ ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS plan_index INTEGER NOT NULL DE
 ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS delivery_profile TEXT;
 UPDATE mkt_products SET delivery_profile = 'international'
  WHERE delivery_profile IS NULL AND supplier_product_id IN (SELECT id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping');
+
+-- CJ product video references (productVideo, requested with features=enable_video).
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS videos JSONB NOT NULL DEFAULT '[]';

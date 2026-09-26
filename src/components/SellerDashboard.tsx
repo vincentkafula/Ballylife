@@ -301,25 +301,8 @@ function ProductManagement({ sellerId, products, onChanged }: { sellerId: string
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
         <span className="text-sm font-bold text-gray-900">My Products</span>
-        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#14110D" }}>
-          <Plus className="w-3.5 h-3.5" /> Add product
-        </button>
+        <span className="text-[11px] text-gray-500">To add products, use <b>Import from Suppliers</b> and set your price.</span>
       </div>
-
-      {adding && (
-        <div className="p-4 border-b border-gray-100 grid sm:grid-cols-3 gap-2">
-          <input placeholder="Product name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-          <input placeholder="Price (ZAR)" type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-          <input placeholder="Stock" type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-          <input placeholder="Brand" value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-          <input placeholder="Emoji (e.g. 📱)" value={form.emoji} onChange={e => setForm({ ...form, emoji: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm" />
-          <select value={form.categoryId} onChange={e => setForm({ ...form, categoryId: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm">
-            {["cat-01","cat-02","cat-03","cat-04","cat-05","cat-06","cat-07","cat-08","cat-09"].map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input placeholder="Short description" value={form.shortDescription} onChange={e => setForm({ ...form, shortDescription: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-sm sm:col-span-2" />
-          <button onClick={submit} disabled={saving} className="py-1.5 rounded text-white text-sm font-semibold" style={{ background: "#B8862E" }}>{saving ? "Saving..." : "Submit for approval"}</button>
-        </div>
-      )}
 
       {products.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No products yet.</p> : (
         <div className="overflow-x-auto">

@@ -30,6 +30,7 @@ const DETAIL: Record<string, unknown> = {
     pid: "pid-earbuds", productNameEn: "CJ Wireless Earbuds", categoryName: "Earphones", sellPrice: 10,
     productImageSet: ["https://cf.cjdropshipping.com/e1.jpg", "https://cf.cjdropshipping.com/e2.jpg"],
     description: "<p>Deep bass. Ships in CJ packaging.</p>",
+    productVideo: ["https://cc-west-usa.oss-us-west-1.aliyuncs.com/earbuds-demo.mp4"],
     variants: [
       { vid: "vid-black", variantKey: "Black", variantSellPrice: 10, inventories: [{ countryCode: "CN", totalInventory: 40 }] },
       { vid: "vid-white", variantKey: "White", variantSellPrice: 12, inventories: [{ countryCode: "CN", totalInventory: 20 }] },
@@ -185,6 +186,35 @@ describe("Admin background sync", () => {
   it("is admin-only", async () => {
     expect((await request(app).get("/api/marketplace/admin/cj/sync")).status).toBe(401);
     expect((await request(app).get("/api/marketplace/admin/cj/sweep")).status).toBe(401);
+  });
+});
+
+describe("Sourcing list (market-research products, searched on CJ)", () => {
+  it("runs once by itself, searches CJ by product name, and records what CJ offers for each", async () => {
+    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 3 * 86400_000)]);
+    fetchMock.mockClear();
+    await catalog.runCatalogSyncTick();
+
+    const listCalls = fetchMock.mock.calls.map(([u]) => new URL(String(u))).filter(u => u.pathname.endsWith("/product/list"));
+    expect(listCalls[0].searchParams.get("productNameEn")).toBe("wireless earbuds");
+    const detail = fetchMock.mock.calls.map(([u]) => new URL(String(u))).find(u => u.pathname.endsWith("/product/query"));
+    expect(detail!.searchParams.get("features")).toBe("enable_video");
+
+    const job = await catalog.getSourcingJob();
+    expect(job!.status).toBe("done");
+    const earbuds = job!.totals.byKeyword["wireless earbuds"];
+    expect(earbuds).toMatchObject({ cjMatches: 2, listed: 1, withVideo: 1, priceMinZar: 417, priceMaxZar: 417 });
+
+    const { rows } = await pool.query(`SELECT videos FROM mkt_supplier_products WHERE external_id = 'pid-earbuds'`);
+    expect(rows[0].videos).toEqual(["https://cc-west-usa.oss-us-west-1.aliyuncs.com/earbuds-demo.mp4"]);
+  });
+
+  it("shows the results to admins", async () => {
+    const res = await request(app).get("/api/marketplace/admin/cj/sourcing").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.body.data.keywords).toBe(catalog.SOURCING_LIST.length);
+    const row = res.body.data.results.find((r: { keyword: string }) => r.keyword === "wireless earbuds");
+    expect(row).toMatchObject({ label: "Wireless earbuds", group: "mass", withVideo: 1 });
+    expect(row).not.toHaveProperty("prices");
   });
 });
 

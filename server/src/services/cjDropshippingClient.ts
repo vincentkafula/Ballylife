@@ -212,10 +212,27 @@ export interface CjProductDetail extends Omit<CjProductSummary, "productImage"> 
   productImage?: string | string[];
   description?: string;
   productImageSet?: string[] | string;
+  /** Returned only when requested with features=enable_video (see getCjProductDetail). */
+  productVideo?: string[] | string;
   variants?: { vid: string; variantSku: string; variantSellPrice: number | string; variantImage?: string; variantNameEn?: string; variantKey?: string; inventories?: { countryCode?: string; totalInventory?: number }[] }[];
 }
 
-export function getCjProductDetail(pid: string): Promise<CjProductDetail> {
+// CJ only includes a product's videos when asked (features=enable_video).
+// If CJ ever rejects that parameter, stop sending it rather than failing
+// every product sync -- videos are a bonus, the product data isn't.
+let videoFeatureSupported = true;
+
+export async function getCjProductDetail(pid: string): Promise<CjProductDetail> {
+  if (videoFeatureSupported) {
+    try {
+      return await cjFetch<CjProductDetail>("/product/query", { pid, features: "enable_video" });
+    } catch (err) {
+      if (!(err instanceof CjApiError) || err.httpStatus >= 500) throw err;
+      const plain = await cjFetch<CjProductDetail>("/product/query", { pid }); // throws if the product itself is the problem
+      videoFeatureSupported = false;
+      return plain;
+    }
+  }
   return cjFetch<CjProductDetail>("/product/query", { pid });
 }
 
