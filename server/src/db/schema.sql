@@ -1135,3 +1135,17 @@ CREATE TABLE IF NOT EXISTS aliexpress_fulfillments (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Seller identity checks (read by the admin seller-approval list). Was
+-- referenced before it existed, which crashed that page.
+CREATE TABLE IF NOT EXISTS seller_kyc_verifications (
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_id                 TEXT NOT NULL,
+  status                    TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
+  provider                  TEXT,
+  document_types_submitted  JSONB NOT NULL DEFAULT '[]',
+  rejection_reason          TEXT,
+  submitted_at              TIMESTAMPTZ,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_seller_kyc_seller ON seller_kyc_verifications(seller_id);

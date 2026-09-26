@@ -1,4 +1,5 @@
 import express from "express";
+import { catchAsyncErrors } from "./utils/asyncErrors";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -127,6 +128,11 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
   res.status(500).json({ success: false, error: "Internal server error" });
 });
 
+// Async route errors go to the error handler above instead of crashing the server.
+const wrappedRoutes = catchAsyncErrors(app);
+// Last resort: a stray rejection outside a request is logged, not fatal.
+process.on("unhandledRejection", err => logger.error("process.unhandled_rejection", { error: err instanceof Error ? err.stack ?? err.message : String(err) }));
+
 async function start() {
   if (!hasDb) {
     console.error("[fatal] DATABASE_URL is not set. Set it in Railway's environment variables — this backend has no in-memory fallback mode.");
@@ -152,6 +158,7 @@ async function start() {
   startJapanPartsWorker();
   start1688Worker();
   startAliExpressWorker();
+  logger.info("http.async_errors_caught", { routes: wrappedRoutes });
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);
