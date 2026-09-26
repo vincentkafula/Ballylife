@@ -4,7 +4,7 @@ import {
   Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob } from "../services/marketplaceApi";
+import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob, type CjSourcingJob } from "../services/marketplaceApi";
 import { toast } from "sonner";
 
 type R = Record<string, unknown>;
@@ -899,6 +899,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
   const [cjJob, setCjJob] = useState<CjSyncJob | null>(null);
   const lastJob = useRef<CjSyncJob | null>(null);
   const [cjSweep, setCjSweep] = useState<CjSweepJob | null>(null);
+  const [cjSourcing, setCjSourcing] = useState<CjSourcingJob | null>(null);
   const [sweepStarting, setSweepStarting] = useState(false);
 
   useEffect(() => {
@@ -920,6 +921,8 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
         setCjJob(r.data);
         const sw = await mktAdmin.cj.sweepStatus();
         if (!cancelled && sw.success) setCjSweep(sw.data);
+        const so = await mktAdmin.cj.sourcingStatus();
+        if (!cancelled && so.success) setCjSourcing(so.data);
       } catch { /* keep the last known state */ }
     };
     poll();
@@ -1071,6 +1074,40 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           {Boolean(cjJob.totals.detailFailures) && <span className="text-amber-700"> — {cjJob.totals.detailFailures} couldn't load full details (retried next sync)</span>}
           {Boolean(cjJob.totals.skippedNoRate) && <span className="text-amber-700"> — {cjJob.totals.skippedNoRate} skipped (no USD exchange rate on file)</span>}
           {cjJob.lastError && <p className="mt-1">Last error: {cjJob.lastError} — it will retry automatically.</p>}
+        </div>
+      )}
+      {cjConfigured === true && cjSourcing && (
+        <div className="mb-3 rounded-lg border border-gray-200 bg-white overflow-hidden">
+          <div className="px-3 py-2 text-xs flex items-center gap-2 border-b border-gray-100">
+            <span className="font-semibold text-gray-900">Sourcing list — what the supplier offers</span>
+            <span className="text-gray-500">
+              {cjSourcing.status === "running" ? `searching ${Math.min(cjSourcing.keywordIndex + 1, cjSourcing.keywords)} of ${cjSourcing.keywords}` : "complete"}
+            </span>
+            {cjSourcing.lastError && <span className="text-amber-700 ml-auto">{cjSourcing.lastError}</span>}
+          </div>
+          {cjSourcing.results.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="text-left text-[10px] text-gray-400 border-b border-gray-100">
+                  <th className="px-3 py-1.5 font-medium">Product</th><th className="px-3 py-1.5 font-medium">Line</th>
+                  <th className="px-3 py-1.5 font-medium">Supplier matches</th><th className="px-3 py-1.5 font-medium">Listed</th>
+                  <th className="px-3 py-1.5 font-medium">Our price range</th><th className="px-3 py-1.5 font-medium">With video</th>
+                </tr></thead>
+                <tbody>
+                  {cjSourcing.results.map(r => (
+                    <tr key={r.keyword} className="border-b border-gray-50 last:border-0">
+                      <td className="px-3 py-1.5 font-semibold text-gray-800">{r.label}</td>
+                      <td className="px-3 py-1.5 text-gray-500">{r.group === "premium" ? "Premium" : "Mass market"}</td>
+                      <td className="px-3 py-1.5">{r.cjMatches.toLocaleString()}</td>
+                      <td className="px-3 py-1.5">{r.listed}</td>
+                      <td className="px-3 py-1.5">{r.priceMinZar !== null ? `${fmtZAR(r.priceMinZar)} – ${fmtZAR(r.priceMaxZar ?? r.priceMinZar)}` : "—"}</td>
+                      <td className="px-3 py-1.5">{r.withVideo}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
       {cjConfigured === true && cjSweep && (

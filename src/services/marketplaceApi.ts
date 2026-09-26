@@ -55,6 +55,12 @@ export interface CjSyncJob {
   totalAvailable: number | null; lastError: string | null; startedAt: string | null; finishedAt: string | null;
 }
 
+export interface CjSourcingResult {
+  keyword: string; label: string; group: "mass" | "premium"; cjMatches: number; synced: number; listed: number; withVideo: number;
+  priceMinZar: number | null; priceMaxZar: number | null; priceMedianZar: number | null;
+}
+export interface CjSourcingJob extends CjSyncJob { keywordIndex: number; keywords: number; results: CjSourcingResult[] }
+
 export interface CjSweepJob extends CjSyncJob {
   pass: number; passes: number; categoryIndex: number; categories: number; currentCategory: string | null;
 }
@@ -145,6 +151,7 @@ export const mktAdmin = {
     status: () => api<{ success: boolean; data: { configured: boolean } }>("/api/marketplace/admin/cj/status"),
     syncStatus: () => api<{ success: boolean; data: CjSyncJob | null }>("/api/marketplace/admin/cj/sync"),
     sweepStatus: () => api<{ success: boolean; data: CjSweepJob | null }>("/api/marketplace/admin/cj/sweep"),
+    sourcingStatus: () => api<{ success: boolean; data: CjSourcingJob | null }>("/api/marketplace/admin/cj/sourcing"),
     startSweep: (pagesPerCategory: number) =>
       api<{ success: boolean; data?: CjSweepJob; error?: string }>("/api/marketplace/admin/cj/sweep", { method: "POST", body: JSON.stringify({ pagesPerCategory }) }),
     startSync: (body: { pageNum?: number; pages: number; pageSize?: number; categoryId?: string }) =>
