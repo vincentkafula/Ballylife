@@ -191,7 +191,7 @@ describe("Admin background sync", () => {
 
 describe("Sourcing list (market-research products, searched on CJ)", () => {
   it("runs once by itself, searches CJ by product name, and records what CJ offers for each", async () => {
-    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 3 * 86400_000)]);
+    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 10 * 86400_000)]);
     fetchMock.mockClear();
     await catalog.runCatalogSyncTick();
 
@@ -221,7 +221,7 @@ describe("Sourcing list (market-research products, searched on CJ)", () => {
 describe("Every-category sweep", () => {
   it("starts by itself once the first fill is done, and files products under their CJ category", async () => {
     // Make both products "stale" so the sweep re-fetches them rather than skipping.
-    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 3 * 86400_000)]);
+    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 10 * 86400_000)]);
     await catalog.runCatalogSyncTick();
 
     const sweep = await catalog.getSweepJob();
@@ -252,5 +252,51 @@ describe("Every-category sweep", () => {
     const before = (await catalog.getSweepJob())!.started_at;
     await catalog.runCatalogSyncTick();
     expect((await catalog.getSweepJob())!.started_at).toEqual(before);
+  });
+});
+
+describe("CJ API points", () => {
+  const client = () => import("./cjDropshippingClient");
+
+  it("stores each product's cheapest shipping line for order placement", async () => {
+    const { rows } = await pool.query(`SELECT est_logistic_name FROM mkt_supplier_products WHERE external_id = 'pid-earbuds'`);
+    expect(rows[0].est_logistic_name).toBe("B"); // the mock's cheapest line
+  });
+
+  it("paces the catalogue sync: with too few points budgeted it doesn't call CJ at all", async () => {
+    (await client())._setCatalogPointsForTests(30); // a product list costs 50
+    fetchMock.mockClear();
+    await expect(catalog.syncCjPage({ pageNum: 1, pageSize: 20 })).rejects.toMatchObject({ name: "CjPointsError" });
+    expect(fetchMock.mock.calls.filter(([u]) => !String(u).includes("getAccessToken")).length).toBe(0);
+    (await client())._setCatalogPointsForTests(100_000_000);
+  });
+
+  it("when CJ says points are exhausted, stops the page without saving a half-fetched product, and pauses quietly", async () => {
+    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 10 * 86400_000)]);
+    const beforeVariants = (await pool.query(`SELECT external_variants FROM mkt_supplier_products WHERE external_id = 'pid-earbuds'`)).rows[0].external_variants;
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input: unknown, init?: unknown) =>
+      String(input).includes("/product/query")
+        ? { ok: true, status: 200, json: async () => ({ code: 1600000, result: false, message: "Insufficient API points. Used today: 72670, Remaining: 0, Required: 10." }) }
+        : base(input, init));
+
+    const res = await request(app).post("/api/marketplace/admin/cj/sourcing").set("Authorization", `Bearer ${adminToken}`).send({ pagesPerKeyword: 1 });
+    expect(res.status).toBe(202);
+    await catalog.runCatalogSyncTick();
+
+    const job = await catalog.getSourcingJob();
+    expect(job!.status).toBe("running");            // still to do, not failed
+    expect(job!.plan_index).toBe(0);                // cursor didn't move past the page
+    expect(job!.last_error).toMatch(/Paused until about .* UTC/);
+    const after = (await pool.query(`SELECT external_variants FROM mkt_supplier_products WHERE external_id = 'pid-earbuds'`)).rows[0].external_variants;
+    expect(after).toEqual(beforeVariants);          // no fallback import wiping its variants
+
+    // While paused, the next tick doesn't spend anything with CJ.
+    fetchMock.mockClear();
+    await catalog.runCatalogSyncTick();
+    expect(fetchMock.mock.calls.filter(([u]) => /\/product\//.test(String(u))).length).toBe(0);
+
+    fetchMock.mockImplementation(base);
+    (await client())._setCatalogPointsForTests(100_000_000);
   });
 });

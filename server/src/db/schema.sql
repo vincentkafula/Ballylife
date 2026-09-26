@@ -847,3 +847,7 @@ UPDATE mkt_products SET delivery_profile = 'international'
 
 -- CJ product video references (productVideo, requested with features=enable_video).
 ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS videos JSONB NOT NULL DEFAULT '[]';
+
+-- Cheapest CJ shipping line to the pricing country, captured at sync, so
+-- order placement can usually skip a (points-costing) freight quote.
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS est_logistic_name TEXT;

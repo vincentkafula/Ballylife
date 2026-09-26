@@ -155,7 +155,7 @@ async function findCjOrder(orderNumber: string): Promise<CjOrderDetail | null> {
 
 export async function buildCjOrderRequest(order: Row): Promise<CjCreateOrderRequest> {
   const { rows: lines } = await pool!.query(
-    `SELECT so.product_id, so.quantity, sp.external_variants, sp.name AS catalog_name
+    `SELECT so.product_id, so.quantity, sp.external_variants, sp.name AS catalog_name, sp.est_logistic_name
      FROM mkt_supplier_orders so JOIN mkt_supplier_products sp ON sp.id = so.supplier_product_id
      WHERE so.order_id = $1 AND sp.external_source = 'cjdropshipping'`,
     [order.id]
@@ -192,7 +192,7 @@ export async function buildCjOrderRequest(order: Row): Promise<CjCreateOrderRequ
     ...(a.postalCode ? { shippingZip: String(a.postalCode) } : {}),
     ...(a.phone ? { shippingPhone: String(a.phone) } : {}),
     shippingCustomerName: name,
-    logisticName: await chooseLogistic(countryCode, a.postalCode, products),
+    logisticName: await chooseLogistic(countryCode, a.postalCode, products, lines.map(l => l.est_logistic_name)),
     fromCountryCode: FROM_COUNTRY,
     payType: AUTO_PAY ? 2 : 3,
     ...(SANDBOX ? { isSandbox: 1 as const } : {}),
@@ -202,9 +202,16 @@ export async function buildCjOrderRequest(order: Row): Promise<CjCreateOrderRequ
   };
 }
 
-async function chooseLogistic(countryCode: string, zip: string | undefined, products: { vid: string; quantity: number }[]): Promise<string> {
+const PRICING_COUNTRY = (process.env.CJ_PRICING_COUNTRY || "ZA").toUpperCase();
+
+async function chooseLogistic(countryCode: string, zip: string | undefined, products: { vid: string; quantity: number }[], savedLines: (string | null)[] = []): Promise<string> {
   if (FIXED_LOGISTIC) return FIXED_LOGISTIC;
-  const options = await calculateCjFreight({ startCountryCode: FROM_COUNTRY, endCountryCode: countryCode, ...(zip ? { zip: String(zip) } : {}), products });
+  // The catalogue sync already found the cheapest line to the pricing country
+  // for each product. If every item shares that line and the order goes
+  // there, use it -- no freight quote, so no CJ API points spent.
+  const saved = [...new Set(savedLines)];
+  if (countryCode === PRICING_COUNTRY && saved.length === 1 && saved[0]) return saved[0];
+  const options = await calculateCjFreight({ startCountryCode: FROM_COUNTRY, endCountryCode: countryCode, ...(zip ? { zip: String(zip) } : {}), products }, "order");
   const cheapest = [...(options ?? [])].sort((x, y) => Number(x.logisticPrice) - Number(y.logisticPrice))[0];
   if (!cheapest?.logisticName) throw new NeedsAttention(`The supplier has no shipping route from ${FROM_COUNTRY} to ${countryCode} for these items.`);
   return cheapest.logisticName;

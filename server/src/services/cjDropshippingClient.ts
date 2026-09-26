@@ -155,7 +155,67 @@ export class CjApiError extends Error {
   }
 }
 
-async function cjRequest<T>(method: "GET" | "POST" | "PATCH", path: string, opts: { params?: Record<string, string | undefined>; body?: unknown } = {}): Promise<T> {
+// ── API points ───────────────────────────────────────────────────────────
+// CJ meters its API in points: 50,000/day base (+100 per USD of the largest
+// monthly transaction amount in the last 3 months), replenished per minute
+// (total / 1440), reset 00:00 UTC. Only some endpoints cost points
+// (developers.cjdropshipping.cn .../standard/points.html); order placement
+// and order status are free. Catalogue syncing is the big spender, so it
+// draws from a local budget that refills at CJ_CATALOG_POINTS_PER_MIN --
+// below CJ's own refill rate -- leaving headroom for order-time calls.
+export const POINT_COSTS: Record<string, number> = {
+  "/product/list": 50,
+  "/product/listV2": 50,
+  "/product/query": 10,
+  "/logistic/freightCalculate": 10,
+};
+
+export type CjPurpose = "catalog" | "order";
+
+const CATALOG_POINTS_PER_MIN = Number(process.env.CJ_CATALOG_POINTS_PER_MIN ?? 25);
+const CATALOG_BUCKET_MAX = Number(process.env.CJ_CATALOG_POINTS_BUCKET ?? 3000);
+let catalogBucket = CATALOG_BUCKET_MAX / 2;
+let catalogBucketAt = Date.now();
+let pausedUntil = 0; // set when CJ itself says we're out of points
+
+function refillCatalogBucket() {
+  const now = Date.now();
+  catalogBucket = Math.min(CATALOG_BUCKET_MAX, catalogBucket + ((now - catalogBucketAt) / 60_000) * CATALOG_POINTS_PER_MIN);
+  catalogBucketAt = now;
+}
+
+/** Thrown before calling CJ when the catalogue budget can't cover a call, or after CJ reports points exhausted. */
+export class CjPointsError extends Error {
+  constructor(message: string, readonly retryAt: Date) {
+    super(message);
+    this.name = "CjPointsError";
+  }
+}
+
+export function isCjPointsError(err: unknown): err is CjPointsError {
+  return err instanceof CjPointsError;
+}
+
+/** Points the catalogue budget currently holds (for progress displays / tests). */
+export function catalogPointsAvailable(): number {
+  refillCatalogBucket();
+  return Math.floor(catalogBucket);
+}
+
+export function _setCatalogPointsForTests(points: number) { catalogBucket = points; catalogBucketAt = Date.now(); pausedUntil = 0; }
+
+async function cjRequest<T>(method: "GET" | "POST" | "PATCH", path: string, opts: { params?: Record<string, string | undefined>; body?: unknown; purpose?: CjPurpose } = {}): Promise<T> {
+  const cost = POINT_COSTS[path] ?? 0;
+  if (cost > 0 && (opts.purpose ?? "catalog") === "catalog") {
+    if (Date.now() < pausedUntil) throw new CjPointsError("Waiting for CJ API points to replenish.", new Date(pausedUntil));
+    refillCatalogBucket();
+    if (catalogBucket < cost) {
+      const wait = ((cost - catalogBucket) / Math.max(1, CATALOG_POINTS_PER_MIN)) * 60_000;
+      throw new CjPointsError("Catalogue sync is pacing itself to stay within CJ's daily API points.", new Date(Date.now() + wait));
+    }
+    catalogBucket -= cost;
+  }
+
   const token = await getValidAccessToken();
   const url = new URL(`${BASE_URL}${path}`);
   if (opts.params) for (const [k, v] of Object.entries(opts.params)) if (v) url.searchParams.set(k, v);
@@ -174,7 +234,18 @@ async function cjRequest<T>(method: "GET" | "POST" | "PATCH", path: string, opts
     }
     // Error text carries only CJ's message and the path -- never the token or full URL.
     if (!res.ok || !json?.result) {
-      throw new CjApiError(`CJ API error (${path}): ${json?.message ?? res.status}`, json?.code ?? null, res.status);
+      const message = json?.message ?? "";
+      if (/insufficient api points/i.test(message)) {
+        // "Used today: N, Remaining: R, Required: C" -- wait long enough for
+        // CJ's per-minute refill to cover it, and hold all catalogue calls.
+        const remaining = Number(/Remaining:\s*(\d+)/i.exec(message)?.[1] ?? 0);
+        const required = Number(/Required:\s*(\d+)/i.exec(message)?.[1] ?? cost) || 50;
+        const refillPerMin = 50_000 / 1440;
+        pausedUntil = Date.now() + Math.max(5, Math.ceil((required * 20 - remaining) / refillPerMin)) * 60_000;
+        catalogBucket = 0;
+        throw new CjPointsError(`CJ API points exhausted for now (${path}).`, new Date(pausedUntil));
+      }
+      throw new CjApiError(`CJ API error (${path}): ${message || res.status}`, json?.code ?? null, res.status);
     }
     return json.data;
   }
@@ -227,6 +298,7 @@ export async function getCjProductDetail(pid: string): Promise<CjProductDetail> 
     try {
       return await cjFetch<CjProductDetail>("/product/query", { pid, features: "enable_video" });
     } catch (err) {
+      // Only a rejected parameter disables videos -- not an outage or a points pause.
       if (!(err instanceof CjApiError) || err.httpStatus >= 500) throw err;
       const plain = await cjFetch<CjProductDetail>("/product/query", { pid }); // throws if the product itself is the problem
       videoFeatureSupported = false;
@@ -255,8 +327,8 @@ export interface CjFreightOption {
 
 export function calculateCjFreight(body: {
   startCountryCode: string; endCountryCode: string; zip?: string; products: { vid: string; quantity: number }[];
-}): Promise<CjFreightOption[]> {
-  return cjRequest<CjFreightOption[]>("POST", "/logistic/freightCalculate", { body });
+}, purpose: CjPurpose = "catalog"): Promise<CjFreightOption[]> {
+  return cjRequest<CjFreightOption[]>("POST", "/logistic/freightCalculate", { body, purpose });
 }
 
 export interface CjCreateOrderRequest {

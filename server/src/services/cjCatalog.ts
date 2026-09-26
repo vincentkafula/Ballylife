@@ -2,7 +2,7 @@ import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
 import { convertToZar, round2 } from "../utils/pricing";
 import {
-  isCjConfigured, listCjProducts, getCjProductDetail, calculateCjFreight, getCjCategories,
+  isCjConfigured, listCjProducts, getCjProductDetail, calculateCjFreight, getCjCategories, isCjPointsError, type CjPointsError,
   type CjProductSummary, type CjProductDetail,
 } from "./cjDropshippingClient";
 import { dedupeImages, isPhotoUrl, parseSupplierImageList, scrubSupplierBranding, splitSupplierDescription } from "../utils/supplierWhiteLabel";
@@ -111,6 +111,7 @@ export async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<Wh
       detailOk: true,
     };
   } catch (err) {
+    if (isCjPointsError(err)) throw err; // out of points: stop the page, don't save a half-fetched product
     logger.warn("cj.product_detail_fallback", { pid: p.pid, error: err instanceof Error ? err.message : String(err) });
     return {
       name: fallbackName, description: scrubSupplierBranding(p.remark), images: parseSupplierImageList(p.productImage),
@@ -137,13 +138,16 @@ function parseVideoList(value: unknown, pid: string): string[] {
 }
 
 /** CJ's cheapest shipping quote (USD) for one unit to the pricing country, or null if unavailable. */
-async function estimateShippingUsd(vid: string | undefined): Promise<number | null> {
+async function estimateShipping(vid: string | undefined): Promise<{ usd: number; logisticName: string } | null> {
   if (!vid) return null;
   try {
     const options = await calculateCjFreight({ startCountryCode: FROM_COUNTRY, endCountryCode: PRICING_COUNTRY, products: [{ vid, quantity: 1 }] });
-    const prices = (options ?? []).map(o => Number(o.logisticPrice)).filter(n => Number.isFinite(n) && n >= 0);
-    return prices.length ? Math.min(...prices) : null;
+    const valid = (options ?? []).filter(o => o.logisticName && Number.isFinite(Number(o.logisticPrice)) && Number(o.logisticPrice) >= 0);
+    if (!valid.length) return null;
+    const cheapest = valid.reduce((a, b) => (Number(b.logisticPrice) < Number(a.logisticPrice) ? b : a));
+    return { usd: Number(cheapest.logisticPrice), logisticName: cheapest.logisticName };
   } catch (err) {
+    if (isCjPointsError(err)) throw err;
     logger.warn("cj.freight_estimate_failed", { error: err instanceof Error ? err.message : String(err) });
     return null;
   }
@@ -201,7 +205,8 @@ export async function syncCjPage(opts: {
     if (w.images.length) counts.withPhotos++;
     if (w.videos.length) counts.withVideo++;
 
-    const shippingUsd = w.detailOk ? await estimateShippingUsd(w.variants[0]?.vid) : null;
+    const shipping = w.detailOk ? await estimateShipping(w.variants[0]?.vid) : null;
+    const shippingUsd = shipping?.usd ?? null;
     // What sellers see as the base price they mark up from: landed cost
     // (goods + shipping) when CJ quoted shipping, goods only otherwise.
     const baseZar = round2((costUsd + (shippingUsd ?? 0)) * usdToZar);
@@ -215,9 +220,9 @@ export async function syncCjPage(opts: {
       // wipes out a price a manager has already marked up by hand.
       await pool!.query(
         `UPDATE mkt_supplier_products SET name = $1, description = $2, cost_price = $3, retail_price = GREATEST(retail_price, $4::numeric),
-           images = $5, category_id = COALESCE(category_id, $6), est_shipping_usd = COALESCE($7, est_shipping_usd), updated_at = now()
+           images = $5, category_id = COALESCE(category_id, $6), est_shipping_usd = COALESCE($7, est_shipping_usd), est_logistic_name = COALESCE($9, est_logistic_name), updated_at = now()
          WHERE id = $8`,
-        [w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), categoryId, shippingUsd, supplierProductId]
+        [w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), categoryId, shippingUsd, supplierProductId, shipping?.logisticName ?? null]
       );
       if (pathCategory) await setCategory(supplierProductId, pathCategory);
       // Only overwrite variants from a successful detail call -- a failed
@@ -233,9 +238,9 @@ export async function syncCjPage(opts: {
     } else {
       const { rows } = await pool!.query(
         `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status,
-           external_source, external_id, external_variants, est_shipping_usd, videos)
-         VALUES ($1,$2,$3,$4,$5,'USD',$6,1,$7,'CN','pending_review','cjdropshipping',$8,$9,$10,$11) RETURNING id`,
-        [CJ_SUPPLIER_ID, categoryId, w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), p.pid, JSON.stringify(w.variants), shippingUsd, JSON.stringify(w.videos)]
+           external_source, external_id, external_variants, est_shipping_usd, videos, est_logistic_name)
+         VALUES ($1,$2,$3,$4,$5,'USD',$6,1,$7,'CN','pending_review','cjdropshipping',$8,$9,$10,$11,$12) RETURNING id`,
+        [CJ_SUPPLIER_ID, categoryId, w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), p.pid, JSON.stringify(w.variants), shippingUsd, JSON.stringify(w.videos), shipping?.logisticName ?? null]
       );
       supplierProductId = rows[0].id;
       counts.imported++;
@@ -345,6 +350,16 @@ export async function getCatalogSyncJob(): Promise<Row | null> {
   return rows[0] ?? null;
 }
 
+let lastPauseLogAt = 0;
+
+/** Records a points pause on a job without logging an error every minute. */
+async function notePointsPause(jobId: string, err: CjPointsError): Promise<void> {
+  const until = err.retryAt.toISOString().slice(11, 16);
+  await pool!.query(`UPDATE cj_sync_jobs SET last_error = $1, updated_at = now() WHERE id = $2`,
+    [`Paused until about ${until} UTC — pacing to stay within CJ's daily API points. Resumes automatically.`, jobId]);
+  if (Date.now() - lastPauseLogAt > 30 * 60_000) { lastPauseLogAt = Date.now(); logger.info("cj.catalog_paused_for_points", { job: jobId, retryAt: err.retryAt.toISOString(), reason: err.message }); }
+}
+
 /** Processes one page of a running job. Safe to call often; does nothing when idle. */
 export async function runCatalogSyncTick(): Promise<void> {
   let job = await getCatalogSyncJob();
@@ -384,6 +399,7 @@ export async function runCatalogSyncTick(): Promise<void> {
       [page + 1, JSON.stringify(totals), r.totalAvailable, done ? "done" : "running", done ? new Date() : null]
     );
   } catch (err) {
+    if (isCjPointsError(err)) { await notePointsPause("catalog", err); return; }
     // Leave it running; the next tick retries the same page. The CJ client
     // already retried rate limits, so this is an outage or bad credentials.
     const message = err instanceof Error ? err.message : String(err);
@@ -424,6 +440,9 @@ export function startCjCatalogWorker(intervalMs = 60_000): NodeJS.Timeout | null
 const SWEEP_PAGES_PER_CATEGORY = Number(process.env.CJ_SWEEP_PAGES_PER_CATEGORY ?? 5);
 const RESWEEP_DAYS = Number(process.env.CJ_RESWEEP_DAYS ?? 7);
 const TICK_BUDGET_MS = 50_000;
+// Products synced within this many days aren't re-fetched by the sweep: every
+// re-fetch costs CJ API points (about 20 per product) that new products need.
+const REFRESH_DAYS = Number(process.env.CJ_REFRESH_DAYS ?? 7);
 const SWEEP_PAGE_SIZE = 20;
 
 export interface SweepEntry { id: string; path: string[]; target: string; lastPage?: number }
@@ -492,7 +511,7 @@ async function runSweepTick(job: Row): Promise<void> {
     if (entry.lastPage !== undefined && pass > entry.lastPage) { index++; continue; } // this CJ category has no more pages
 
     try {
-      const r = await syncCjPage({ pageNum: pass, pageSize, categoryId: entry.id, categoryPath: entry.path, skipFreshHours: 24 });
+      const r = await syncCjPage({ pageNum: pass, pageSize, categoryId: entry.id, categoryPath: entry.path, skipFreshHours: REFRESH_DAYS * 24 });
       entry.lastPage = Math.max(1, Math.ceil(r.totalAvailable / pageSize));
       for (const k of ["imported", "updated", "listed", "withPhotos", "detailFailures", "skippedFresh", "excluded", "skippedNoRate"] as const) totals[k] = (totals[k] ?? 0) + r[k];
       totals.pages = (totals.pages ?? 0) + 1;
@@ -503,6 +522,7 @@ async function runSweepTick(job: Row): Promise<void> {
       );
     } catch (err) {
       // Leave the cursor where it is; the next tick retries this page.
+      if (isCjPointsError(err)) { await notePointsPause("sweep", err); return; }
       const message = err instanceof Error ? err.message : String(err);
       await pool!.query(`UPDATE cj_sync_jobs SET last_error = $1, updated_at = now() WHERE id = 'sweep'`, [`${entry.path[0]}: ${message}`.slice(0, 500)]);
       logger.error("cj.sweep_page_failed", { cjCategory: entry.path.join(" < "), page: pass, error: message });
@@ -660,6 +680,7 @@ async function runSourcingTick(job: Row): Promise<void> {
         [index, page, JSON.stringify({ byKeyword }), ]
       );
     } catch (err) {
+      if (isCjPointsError(err)) { await notePointsPause("sourcing", err); return; }
       const message = err instanceof Error ? err.message : String(err);
       await pool!.query(`UPDATE cj_sync_jobs SET last_error = $1, updated_at = now() WHERE id = 'sourcing'`, [`${k.keyword}: ${message}`.slice(0, 500)]);
       logger.error("cj.sourcing_page_failed", { keyword: k.keyword, page, error: message });
