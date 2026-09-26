@@ -156,3 +156,62 @@ describe("Auth requirement", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("Checkout payment methods", () => {
+  beforeAll(async () => {
+    // Earlier tests leave items (and pg-mem-mangled stock) behind; start clean.
+    await pool.query(`UPDATE mkt_carts SET items = '[]' WHERE user_id = $1`, [customerUserId]);
+    await pool.query(`UPDATE mkt_products SET stock = 50 WHERE id = '33333333-3333-3333-3333-333333333333'`);
+  });
+
+  it("offers only what's configured -- no card without PayFast, no EFT without bank details", async () => {
+    const res = await request(app).get("/api/marketplace/payments/methods");
+    expect(res.status).toBe(200);
+    expect(res.body.data.card).toMatchObject({ available: false, provider: "PayFast" });
+    expect(res.body.data.eft).toEqual({ available: false, details: null });
+    expect(Array.isArray(res.body.data.bnpl.providers)).toBe(true);
+  });
+
+  it("shows EFT with the bank details once they're set", async () => {
+    Object.assign(process.env, { EFT_BANK_NAME: "FNB", EFT_ACCOUNT_NAME: "Ballylife (Pty) Ltd", EFT_ACCOUNT_NUMBER: "62000000000", EFT_BRANCH_CODE: "250655" });
+    try {
+      const res = await request(app).get("/api/marketplace/payments/methods");
+      expect(res.body.data.eft.available).toBe(true);
+      expect(res.body.data.eft.details).toMatchObject({ bankName: "FNB", accountNumber: "62000000000", branchCode: "250655", accountType: "Current" });
+    } finally {
+      for (const k of ["EFT_BANK_NAME", "EFT_ACCOUNT_NAME", "EFT_ACCOUNT_NUMBER", "EFT_BRANCH_CODE"]) delete process.env[k];
+    }
+  });
+
+  it("rejects methods the server can't take (e.g. the old PayPal / wallet buttons)", async () => {
+    await request(app).post(`/api/marketplace/cart/${customerUserId}/add`).set("Authorization", `Bearer ${customerToken}`)
+      .send({ productId: "33333333-3333-3333-3333-333333333333", quantity: 1 });
+    for (const paymentMethod of ["paypal", "wallet", "apple_pay"]) {
+      const res = await request(app).post("/api/marketplace/orders").set("Authorization", `Bearer ${customerToken}`).send({ paymentMethod });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("rejects a pay-later provider that doesn't exist instead of sending it to the card gateway", async () => {
+    const res = await request(app).post("/api/marketplace/orders").set("Authorization", `Bearer ${customerToken}`).send({ paymentMethod: "bnpl_nosuchprovider" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/pay-later provider/i);
+  });
+
+  it("won't start a card payment for someone else's order, or when PayFast isn't configured", async () => {
+    await pool.query(`UPDATE mkt_products SET stock = 50 WHERE id = '33333333-3333-3333-3333-333333333333'`); // see pg-mem note above
+    const placed = await request(app).post("/api/marketplace/orders").set("Authorization", `Bearer ${customerToken}`).send({ paymentMethod: "card" });
+    expect([200, 201, 202]).toContain(placed.status);
+    const orderId = placed.body.data.id;
+
+    const other = await registerAndVerifyCustomer(app, pool, { username: "payothercustomer", email: "payother@example.com", name: "Pay Other" });
+    const notMine = await request(app).post(`/api/marketplace/orders/${orderId}/pay`).set("Authorization", `Bearer ${other.token}`);
+    expect(notMine.status).toBe(404);
+
+    const mine = await request(app).post(`/api/marketplace/orders/${orderId}/pay`).set("Authorization", `Bearer ${customerToken}`);
+    expect(mine.status).toBe(503);
+
+    const anon = await request(app).post(`/api/marketplace/orders/${orderId}/pay`);
+    expect(anon.status).toBe(401);
+  });
+});

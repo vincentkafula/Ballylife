@@ -5,7 +5,7 @@ import rateLimit from "express-rate-limit";
 import { pool } from "../db/pool";
 import { requireAuth, requireRole, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
 import { submitOrderPayment, getOrderTransactions, refundOrder } from "../services/mktPay";
-import { verifyItnSignature, confirmWithPayfast } from "../services/payfastProcessor";
+import { verifyItnSignature, confirmWithPayfast, isPayfastConfigured, payfastIsSandbox } from "../services/payfastProcessor";
 import { sendOrderConfirmationEmail } from "../services/emailService";
 import { parseCsv } from "../utils/csv";
 import { calculateVat, convertToZar, calculatePercentageDuty, calculateZmVehicleDuty, calculatePlatformFee, calculateSellerPayout, zmVehicleAgeBand, round2 } from "../utils/pricing";
@@ -865,6 +865,50 @@ router.post("/orders/:id/cancel", requireAuth, async (req: Request, res: Respons
   }
 });
 
+// ── PAYMENT METHODS ─────────────────────────────────────────────────────────
+// What checkout may offer, decided by what's actually configured -- never a
+// method the server can't take. Card details are only ever entered on
+// PayFast's hosted page (PCI DSS SAQ-A): this server never receives a card
+// number. Bank details for EFT come from EFT_* env vars.
+function eftDetails() {
+  const bankName = process.env.EFT_BANK_NAME, accountName = process.env.EFT_ACCOUNT_NAME;
+  const accountNumber = process.env.EFT_ACCOUNT_NUMBER, branchCode = process.env.EFT_BRANCH_CODE;
+  return bankName && accountName && accountNumber && branchCode ? { bankName, accountName, accountNumber, branchCode, accountType: process.env.EFT_ACCOUNT_TYPE ?? "Current" } : null;
+}
+
+router.get("/payments/methods", async (_req: Request, res: Response): Promise<void> => {
+  const { rows: providers } = await pool!.query(`SELECT provider_key, name FROM mkt_credit_providers WHERE status = 'active' ORDER BY name`);
+  const eft = eftDetails();
+  res.json({
+    success: true,
+    data: {
+      card: { available: isPayfastConfigured(), provider: "PayFast", sandbox: isPayfastConfigured() && payfastIsSandbox() },
+      eft: { available: Boolean(eft), details: eft },
+      bnpl: { available: providers.length > 0, providers: providers.map((r: any) => ({ key: r.provider_key, name: r.name })) },
+    },
+  });
+});
+
+// Pay (again) for an order still awaiting card payment -- e.g. the shopper
+// closed PayFast's page. Returns a fresh signed redirect for the same order.
+router.post("/orders/:id/pay", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT * FROM mkt_orders WHERE id::text = $1`, [req.params.id]);
+  const order = rows[0];
+  if (!order || order.user_id !== req.user!.userId) { res.status(404).json({ success: false, error: "Order not found" }); return; }
+  if (order.payment_status !== "pending_payment" || order.status !== "pending") {
+    res.status(409).json({ success: false, error: "This order doesn't need paying." }); return;
+  }
+  if (!isPayfastConfigured()) { res.status(503).json({ success: false, error: "Card payments aren't available right now." }); return; }
+  const { rows: userRows } = await pool!.query(`SELECT email FROM users WHERE id = $1`, [req.user!.userId]);
+  const submission = await submitOrderPayment({
+    orderId: order.id, orderNumber: order.order_number, amount: Number(order.total_amount), currency: order.currency,
+    paymentMethod: "card", customerEmail: userRows[0]?.email ?? order.customer_email ?? "",
+  });
+  if (!submission.accepted || !submission.redirect) { res.status(502).json({ success: false, error: submission.error ?? "Couldn't start the payment — please try again." }); return; }
+  await pool!.query(`UPDATE mkt_orders SET payment_method = 'card' WHERE id = $1`, [order.id]);
+  res.json({ success: true, data: { redirect: submission.redirect } });
+});
+
 router.post("/orders/:id/request-return", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { rows } = await pool!.query(`SELECT * FROM mkt_orders WHERE id::text = $1`, [req.params.id]);
   if (!rows.length) { res.status(404).json({ success: false, error: "Order not found" }); return; }
@@ -891,6 +935,12 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
   ]);
   const cart = cartRows[0];
   if (!cart || !cart.items.length) { res.status(400).json({ success: false, error: "Cart is empty" }); return; }
+  // Only methods the server can actually take (see GET /payments/methods). Card details
+  // never come through here -- they're entered on PayFast's own page.
+  const method = String(paymentMethod ?? "card");
+  if (!(method === "card" || method === "bank_transfer" || /^bnpl_[a-z0-9_]+$/.test(method))) {
+    res.status(400).json({ success: false, error: "That payment method isn't available. Please choose card, bank transfer or pay later." }); return;
+  }
   const customerEmail = userRows[0]?.email ?? "customer@example.com";
 
   // Delivery is charged by each product's CURRENT delivery profile, not
@@ -1078,8 +1128,9 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     let creditProviderId: string | null = null;
     const bnplMatch = /^bnpl_(.+)$/.exec(paymentMethod ?? "");
     if (bnplMatch) {
-      const { rows: providerRows } = await client.query(`SELECT id FROM mkt_credit_providers WHERE provider_key = $1`, [bnplMatch[1]]);
+      const { rows: providerRows } = await client.query(`SELECT id FROM mkt_credit_providers WHERE provider_key = $1 AND status = 'active'`, [bnplMatch[1]]);
       creditProviderId = providerRows[0]?.id ?? null;
+      if (!creditProviderId) throw { code: "BAD_PAYMENT_METHOD", message: "That pay-later provider isn't available. Please choose another payment method." };
     }
 
     const { rows } = await client.query(
@@ -1194,9 +1245,8 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
       orderNumber: order.order_number,
       amount: Number(order.total_amount),
       currency: order.currency,
-      paymentMethod: (paymentMethod === "bank_transfer" ? "bank_transfer" : "card"),
+      paymentMethod: creditProviderId ? "credit" : paymentMethod === "bank_transfer" ? "bank_transfer" : "card",
       customerEmail,
-      paymentDetails: req.body.paymentDetails,
     });
 
     if (submission.accepted) {
@@ -1268,6 +1318,7 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     await client.query("ROLLBACK");
     if (err?.code === "OUT_OF_STOCK") { res.status(409).json({ success: false, error: err.message }); return; }
     if (err?.code === "VEHICLE_COMPLIANCE") { res.status(409).json({ success: false, error: err.message }); return; }
+    if (err?.code === "BAD_PAYMENT_METHOD") { res.status(400).json({ success: false, error: err.message }); return; }
     console.error("[marketplace] Order placement failed:", err);
     res.status(500).json({ success: false, error: "Could not place order, please try again." });
     return;

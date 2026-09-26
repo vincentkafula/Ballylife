@@ -94,6 +94,7 @@ function cartDeliveryWindow(items: R[]): string {
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { DefaultPasswordBanner } from "./DefaultPasswordBanner";
 import { MorePlansPage } from "./MembershipPanels";
+import { CardPaymentPanel, CardSchemeMarks, EftDetailsTable, SecureCheckoutNote, type PaymentMethodsInfo } from "./PaymentBadges";
 import { OrderTracking } from "./OrderTracking";
 // These five are static content pages (legal/policy text with large
 // embedded HTML) reachable only from footer links most shoppers never
@@ -1517,10 +1518,8 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
           style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
           Proceed to Checkout <ChevronRight className="w-4 h-4" />
         </button>
-        <div className="flex items-center justify-center gap-3 mt-4 text-xl">
-          {["💳","🏦","📱","💰"].map((e, i) => <span key={i}>{e}</span>)}
-        </div>
-        <p className="text-center text-[10px] text-gray-500 mt-1">Secure checkout · PCI DSS</p>
+        <div className="flex items-center justify-center mt-4"><CardSchemeMarks /></div>
+        <SecureCheckoutNote />
       </div>
     </div>
   );
@@ -1549,8 +1548,21 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
   const checkoutItemsRef = useRef<R[]>([]);
   if (((cart?.items as R[]) ?? []).length) checkoutItemsRef.current = cart!.items as R[];
   const checkoutItems = checkoutItemsRef.current;
-  const [payment, setPayment] = useState("card");
-  const [bnplProvider, setBnplProvider] = useState<"payflex" | "payjustnow">("payflex");
+  const [payment, setPayment] = useState("");
+  const [bnplProvider, setBnplProvider] = useState("");
+  const [methods, setMethods] = useState<PaymentMethodsInfo | null>(null);
+  const [methodsError, setMethodsError] = useState(false);
+  const [placedOrder, setPlacedOrder] = useState<{ orderNumber: string; method: string } | null>(null);
+  useEffect(() => {
+    import("../services/marketplaceApi").then(({ mktPayments }) => mktPayments.methods())
+      .then(r => {
+        if (!r.success) { setMethodsError(true); return; }
+        setMethods(r.data);
+        setPayment(r.data.card.available ? "card" : r.data.eft.available ? "bank_transfer" : r.data.bnpl.available ? "bnpl" : "");
+        setBnplProvider(r.data.bnpl.providers[0]?.key ?? "");
+      })
+      .catch(() => setMethodsError(true));
+  }, []);
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [addingAddress, setAddingAddress] = useState(addresses.length === 0);
@@ -1600,7 +1612,8 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
     setPlaceError(null);
     try {
       const { mktOrders: api } = await import("../services/marketplaceApi");
-      const paymentMethod = payment === "bnpl" ? `bnpl_${bnplProvider}` : payment;
+      // Fully covered by store credit: nothing to collect, whatever's selected.
+      const paymentMethod = amountDue === 0 && creditToApply > 0 ? "card" : payment === "bnpl" ? `bnpl_${bnplProvider}` : payment;
       const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod, useStoreCredit: creditToApply > 0 });
       if ((res as { success: boolean }).success) {
         // If PayFast (or any future redirect-based processor) is
@@ -1612,18 +1625,11 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
         // go via POST.
         const redirect = res.meta?.redirect;
         if (redirect) {
-          const form = document.createElement("form");
-          form.method = "POST";
-          form.action = redirect.url;
-          Object.entries(redirect.fields).forEach(([k, v]) => {
-            const input = document.createElement("input");
-            input.type = "hidden"; input.name = k; input.value = v;
-            form.appendChild(input);
-          });
-          document.body.appendChild(form);
-          form.submit();
+          const { submitToPayfast } = await import("../services/marketplaceApi");
+          submitToPayfast(redirect.url, redirect.fields);
           return; // browser is navigating away — nothing left to do here
         }
+        setPlacedOrder({ orderNumber: String((res.data as R)?.orderNumber ?? ""), method: paymentMethod });
         setStep("confirmation");
         // Honest reading of what the backend actually did: it only ever
         // auto-confirms a demo account's order (see marketplaceRouter.ts).
@@ -1760,46 +1766,49 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
       {step === "payment" && (
         <div className="max-w-lg mx-auto space-y-4">
           <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Payment Method</h2>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id:"card",       label:"Card",              icon:"💳" },
-              { id:"paypal",     label:"PayPal",            icon:"🔵" },
-              { id:"apple_pay",  label:"Apple Pay",         icon:"🍎" },
-              { id:"google_pay", label:"Google Pay",        icon:"🔴" },
-              { id:"bnpl",       label:"Buy Now Pay Later", icon:"📅" },
-              { id:"wallet",     label:"Ballylife Wallet",       icon:"👛" },
-            ].map(opt => (
-              <button key={opt.id} onClick={() => setPayment(opt.id)}
-                className={`flex flex-col items-center gap-1.5 p-3 rounded-2xl border transition-all ${payment === opt.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
-                <span className="text-xl">{opt.icon}</span>
-                <span className="text-[10px] font-medium text-gray-700">{opt.label}</span>
-              </button>
-            ))}
-          </div>
-          {payment === "card" && (
+          {!methods && !methodsError && (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-4"><Loader2 className="w-4 h-4 animate-spin" />Loading payment options…</div>
+          )}
+          {amountDue > 0 && methods && (() => {
+            const options = [
+              methods.card.available && { id: "card", label: "Card", sub: "Visa · Mastercard" },
+              methods.eft.available && { id: "bank_transfer", label: "Bank transfer", sub: "EFT" },
+              methods.bnpl.available && { id: "bnpl", label: "Pay later", sub: methods.bnpl.providers.map(pr => pr.name).join(" · ") },
+            ].filter(Boolean) as { id: string; label: string; sub: string }[];
+            if (options.length === 0) return (
+              <div className="rounded-xl px-4 py-3 text-sm text-amber-800 bg-amber-50 border border-amber-100">
+                Online payment is temporarily unavailable. Your cart is saved — please try again a little later.
+              </div>
+            );
+            return (
+              <div className={`grid gap-2 ${options.length === 1 ? "grid-cols-1" : options.length === 2 ? "grid-cols-2" : "grid-cols-3"}`} role="radiogroup" aria-label="Payment method">
+                {options.map(opt => (
+                  <button key={opt.id} onClick={() => setPayment(opt.id)} role="radio" aria-checked={payment === opt.id}
+                    className={`flex flex-col items-start gap-0.5 p-3 rounded-2xl border text-left transition-all ${payment === opt.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
+                    <span className="text-sm font-semibold text-gray-900">{opt.label}</span>
+                    <span className="text-[10px] text-gray-500 leading-tight">{opt.sub}</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          {methodsError && (
+            <div className="rounded-xl px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-100">We couldn't load payment options — please refresh the page.</div>
+          )}
+          {amountDue > 0 && payment === "card" && methods?.card.available && <CardPaymentPanel sandbox={methods.card.sandbox} />}
+          {amountDue > 0 && payment === "bank_transfer" && methods?.eft.details && (
             <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
-              {[
-                { label:"Card Number", placeholder:"1234 5678 9012 3456" },
-                { label:"Expiry",      placeholder:"MM / YY" },
-                { label:"CVV",         placeholder:"•••" },
-              ].map(f => (
-                <div key={f.label}>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1">{f.label}</label>
-                  <input placeholder={f.placeholder}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-emerald-400" />
-                </div>
-              ))}
+              <p className="text-sm font-semibold text-gray-900">Pay by bank transfer (EFT)</p>
+              <EftDetailsTable details={methods.eft.details} />
+              <p className="text-[11px] text-gray-500">Use your order number as the payment reference. We'll confirm your order once the money reflects in our account — usually 1–2 business days. Nothing ships until then.</p>
             </div>
           )}
-          {payment === "bnpl" && (
+          {amountDue > 0 && payment === "bnpl" && methods?.bnpl.available && (
             <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-4">
               <div>
                 <p className="text-xs font-semibold text-gray-600 mb-2">In partnership with</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {([
-                    { id: "payflex" as const, label: "PayFlex", tagline: "Pay in 4, interest-free" },
-                    { id: "payjustnow" as const, label: "PayJustNow", tagline: "Pay in 3, interest-free" },
-                  ]).map(p => (
+                  {(methods?.bnpl.providers ?? []).map(pr => ({ id: pr.key, label: pr.name, tagline: pr.key === "payjustnow" ? "Pay in 3, interest-free" : "Pay in 4, interest-free" })).map(p => (
                     <button key={p.id} onClick={() => setBnplProvider(p.id)}
                       className={`text-left p-3 rounded-xl border transition-all ${bnplProvider === p.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
                       <p className="text-sm font-bold text-gray-900">{p.label}</p>
@@ -1810,10 +1819,10 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               </div>
 
               {(() => {
-                const total = Number(cart?.total ?? 0);
-                const installments = bnplProvider === "payflex" ? 4 : 3;
+                const total = amountDue;
+                const installments = bnplProvider === "payjustnow" ? 3 : 4;
                 const perInstalment = total / installments;
-                const providerLabel = bnplProvider === "payflex" ? "PayFlex" : "PayJustNow";
+                const providerLabel = methods?.bnpl.providers.find(pr => pr.key === bnplProvider)?.name ?? "The provider";
                 return (
                   <div>
                     <p className="text-xs font-semibold text-gray-600 mb-2">Your payment plan</p>
@@ -1838,7 +1847,15 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               <span className="text-gray-500">Order total</span>
               <span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
             </div>
-            <p className="text-[10px] text-gray-500 mt-1 flex items-center gap-1"><Shield className="w-3 h-3" />256-bit SSL · PCI DSS compliant</p>
+            {creditToApply > 0 && (
+              <div className="flex justify-between text-sm mt-1">
+                <span className="text-gray-500">Store credit</span><span className="font-semibold text-green-700">-{fmtZAR(creditToApply)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm mt-1 pt-1 border-t border-gray-50">
+              <span className="font-semibold text-gray-900">To pay now</span>
+              <span className="font-black text-gray-900">{fmtZAR(amountDue)}</span>
+            </div>
           </div>
           {placeError && (
             <div className="rounded-xl px-4 py-3 text-sm font-medium text-red-700 bg-red-50 border border-red-100">
@@ -1854,10 +1871,10 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           <ChargedInZarNote zarTotal={amountDue} />
           <div className="flex gap-3">
             <button onClick={() => setStep("shipping")} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold border border-gray-200">Back</button>
-            <button onClick={handlePlace} disabled={placing}
+            <button onClick={handlePlace} disabled={placing || (amountDue > 0 && !payment)}
               className="flex-[2] py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-60"
               style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-              {placing ? <><Loader2 className="w-4 h-4 animate-spin" />Processing…</> : <>{amountDue === 0 && creditToApply > 0 ? "Pay with store credit" : "Place Order"} · {fmtZAR(amountDue)}</>}
+              {placing ? <><Loader2 className="w-4 h-4 animate-spin" />Processing…</> : <>{amountDue === 0 && creditToApply > 0 ? "Pay with store credit" : payment === "card" ? "Continue to secure payment" : "Place Order"} · {fmtZAR(amountDue)}</>}
             </button>
           </div>
         </div>
@@ -1869,8 +1886,16 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
             <>
               <div className="w-24 h-24 rounded-full mx-auto flex items-center justify-center mb-5 text-5xl" style={{ background: "#FFF8E8" }}>⏳</div>
               <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed — Payment Pending</h2>
-              <p className="text-gray-500 mb-6">Your order is saved, but payment hasn't been confirmed yet. We'll email you as soon as it clears — nothing ships until then.</p>
+              <p className="text-gray-500 mb-6">{placedOrder?.method === "bank_transfer"
+                ? "Your order is saved. Pay by bank transfer using the details below — we'll email you when the payment reflects. Nothing ships until then."
+                : placedOrder?.method.startsWith("bnpl_")
+                  ? "Your order is saved. Your pay-later provider will be in touch to complete their quick check — we'll email you once they approve it."
+                  : "Your order is saved, but payment hasn't been confirmed yet. We'll email you as soon as it clears — nothing ships until then."}</p>
+              {placedOrder?.method === "bank_transfer" && methods?.eft.details && (
+                <div className="mb-4"><EftDetailsTable details={methods.eft.details} reference={placedOrder.orderNumber} /></div>
+              )}
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
+                {placedOrder?.orderNumber && <div className="flex justify-between text-sm"><span className="text-gray-500">Order number</span><span className="font-semibold">{placedOrder.orderNumber}</span></div>}
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Payment status</span><span className="font-semibold text-amber-600">Pending confirmation</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)} after payment clears</span></div>
@@ -1900,6 +1925,19 @@ function OrdersView() {
   const [orders, setOrders] = useState<R[]>([]);
   const [selected, setSelected] = useState<R | null>(null);
   const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const payOrder = async (order: R) => {
+    setPaying(true);
+    try {
+      const { submitToPayfast } = await import("../services/marketplaceApi");
+      const res = await mktOrders.pay(String(order.id));
+      if (res.success && res.data?.redirect) { submitToPayfast(res.data.redirect.url, res.data.redirect.fields); return; }
+      toast.error(res.error ?? "Couldn't start the payment — please try again.");
+    } catch (err) {
+      toast.error(err instanceof ApiConnectionError ? err.message : "Couldn't start the payment — please try again.");
+    }
+    setPaying(false);
+  };
 
   useEffect(() => {
     mktOrders.list().then(r => { setOrders(r.data as R[]); setLoading(false); });
@@ -1937,6 +1975,16 @@ function OrdersView() {
             </div>
           ))}
         </div>
+        {selected.paymentStatus === "pending_payment" && selected.status === "pending" && selected.paymentMethod === "card" && (
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-100 space-y-2">
+            <p className="text-xs font-semibold text-amber-800">This order is waiting for payment. It ships once your payment clears.</p>
+            <button onClick={() => payOrder(selected)} disabled={paying}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: "#14110D" }}>
+              {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}Complete payment · {fmtZAR(Number(selected.totalAmount))}
+            </button>
+            <div className="flex justify-center"><CardSchemeMarks /></div>
+          </div>
+        )}
         {selected.trackingNumber && (
           <div className="flex items-center gap-3 p-3.5 rounded-xl bg-emerald-50">
             <Truck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
@@ -1971,6 +2019,9 @@ function OrdersView() {
                 {(o.items as R[]).slice(0, 3).map((it, j) => <span key={j} className="text-xl">{it.emoji as string}</span>)}
                 {(o.items as R[]).length > 3 && <span className="text-xs text-gray-500">+{(o.items as R[]).length - 3}</span>}
               </div>
+              {o.paymentStatus === "pending_payment" && o.status === "pending" && (
+                <p className="text-[11px] font-semibold text-amber-700 mb-1.5">Awaiting payment</p>
+              )}
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>{new Date(o.placedAt as string).toLocaleDateString()}</span>
                 <span className="font-bold text-gray-800">{fmtZAR(Number(o.totalAmount))}</span>
@@ -2131,6 +2182,18 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   }, [authUser]);
 
   useEffect(() => { loadInitial(); }, [loadInitial]);
+  // Back from PayFast's payment page for an order.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("payfast");
+    if (!result) return;
+    const order = params.get("order") ?? "your order";
+    if (result === "success") toast.success(`Payment submitted for ${order}. We'll confirm your order by email as soon as PayFast clears it.`);
+    else toast(`Payment cancelled — ${order} is saved and you haven't been charged. You can pay any time from My Orders.`);
+    setView("orders");
+    params.delete("payfast"); params.delete("order");
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+  }, []);
   // Back from PayFast's card authorisation for a BallylifeMORE subscription.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

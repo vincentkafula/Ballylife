@@ -83,7 +83,9 @@ const manualProcessor: MktPayProcessor = {
 const PROCESSORS: Record<string, MktPayProcessor> = {
   card: payfastProcessor.isConfigured() ? payfastProcessor : manualProcessor,
   bank_transfer: manualProcessor,
-  wallet: manualProcessor,
+  // Pay-later (PayFlex, PayJustNow): the credit provider settles the order after its
+  // own lending decision (credit provider dashboard); nothing is charged here.
+  credit: manualProcessor,
   payfast: payfastProcessor,
 };
 

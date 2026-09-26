@@ -90,6 +90,8 @@ export const mktOrders = {
   place:  (body: unknown) => api<{ success: boolean; data: unknown; error?: string; meta?: { paymentStatus?: string; mktPayTransactionId?: string; redirect?: { url: string; fields: Record<string, string> } } }>("/api/marketplace/orders", { method: "POST", body: JSON.stringify(body) }),
   cancel: (id: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/${id}/cancel`, { method: "POST" }),
   requestReturn: (id: string, reason: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/${id}/request-return`, { method: "POST", body: JSON.stringify({ reason }) }),
+  /** Fresh PayFast redirect for an order still awaiting card payment. */
+  pay: (id: string) => api<{ success: boolean; data?: { redirect: { url: string; fields: Record<string, string> } }; error?: string }>(`/api/marketplace/orders/${id}/pay`, { method: "POST" }),
   track: (orderNumber: string, email: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/orders/track?${new URLSearchParams({ orderNumber, email })}`),
 };
 
@@ -445,6 +447,10 @@ export interface SubscriptionInfo {
   cancelAt: string | null; commencedAt: string | null; benefitsActive: boolean; missedPeriods: number;
 }
 type Ok<T> = { success: boolean; data: T; error?: string; meta?: Record<string, unknown> };
+
+export const mktPayments = {
+  methods: () => api<Ok<import("../components/PaymentBadges").PaymentMethodsInfo>>("/api/marketplace/payments/methods"),
+};
 
 export const mktProgrammes = {
   plans: () => api<Ok<PlansInfo>>("/api/marketplace/plans"),

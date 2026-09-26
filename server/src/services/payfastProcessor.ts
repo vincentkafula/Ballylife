@@ -158,6 +158,10 @@ export async function confirmWithPayfast(rawBody: string): Promise<boolean> {
 // Secure without charging it -- how the free trial works. Every later
 // charge arrives as an ITN with the same m_payment_id and a `token`.
 
+export function payfastIsSandbox(): boolean {
+  return SANDBOX;
+}
+
 export function isPayfastConfigured(): boolean {
   return payfastProcessor.isConfigured();
 }
