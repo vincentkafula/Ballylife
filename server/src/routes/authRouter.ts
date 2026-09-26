@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import { OAuth2Client } from "google-auth-library";
 import { pool } from "../db/pool";
 import { requireAuth, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
+import { hashPassword, needsRehash, compareAgainstDummy, loginLockedFor, recordLoginFailure, recordLoginSuccess, passwordProblem, DEMO_DEFAULT_PASSWORD } from "../utils/authSecurity";
 import { sendPasswordResetEmail, isEmailConfigured } from "../services/emailService";
 import { computeAccountStatus, sendEmailVerification, sendPhoneVerification } from "../services/accountVerification";
 
@@ -137,7 +138,7 @@ async function respondWithSessionOrVerificationNeeded(user: any, res: Response):
   }
   await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
   const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  res.json({ success: true, data: { token, user: mapUser(user) } });
+  res.json({ success: true, data: { token, user: { ...mapUser(user), ...(user.must_change_password ? { mustChangePassword: true } : {}) } } });
 }
 
 router.get("/oauth-config", (_req: Request, res: Response) => {
@@ -202,8 +203,9 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     res.status(400).json({ success: false, error: "username, password, name and email are required" });
     return;
   }
-  if (typeof password !== "string" || password.length < 8) {
-    res.status(400).json({ success: false, error: "Password must be at least 8 characters" });
+  const pwProblem = passwordProblem(password, username, email);
+  if (pwProblem) {
+    res.status(400).json({ success: false, error: pwProblem });
     return;
   }
   if (typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -225,7 +227,7 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await hashPassword(password);
   const accountStatus = computeAccountStatus(false, false, Boolean(phone));
   const { rows } = await pool!.query(
     `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status)
@@ -253,12 +255,30 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  const lockedFor = loginLockedFor(username);
+  if (lockedFor > 0) {
+    res.status(429).json({ success: false, error: `Too many failed attempts for this account. Try again in ${Math.ceil(lockedFor / 60)} minute(s), or reset your password.` });
+    return;
+  }
+
   const { rows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [username]);
   const user = rows[0];
-  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+  // Unknown usernames still pay for a bcrypt comparison, so timing doesn't
+  // reveal which accounts exist; failures count against the username
+  // whatever IP they come from.
+  const ok = user ? await bcrypt.compare(password, user.password_hash) : (await compareAgainstDummy(password), false);
+  if (!ok) {
+    recordLoginFailure(username);
     res.status(401).json({ success: false, error: "Invalid username or password" });
     return;
   }
+  recordLoginSuccess(username);
+  if (needsRehash(user.password_hash)) {
+    user.password_hash = await hashPassword(password); // transparent upgrade to the current work factor
+    await pool!.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [user.password_hash, user.id]);
+  }
+  // Still on the public demo password: the frontend nags until it's changed.
+  user.must_change_password = password === DEMO_DEFAULT_PASSWORD;
 
   // Credentials being correct but the account not yet active gets a
   // 403 (not 401) inside the shared helper below, deliberately distinct
@@ -383,8 +403,9 @@ router.post("/change-password", requireAuth, async (req: Request, res: Response)
     res.status(400).json({ success: false, error: "currentPassword and newPassword are required" });
     return;
   }
-  if (typeof newPassword !== "string" || newPassword.length < 8) {
-    res.status(400).json({ success: false, error: "New password must be at least 8 characters" });
+  const pwProblem = passwordProblem(newPassword, req.user!.username);
+  if (pwProblem) {
+    res.status(400).json({ success: false, error: pwProblem.replace(/^Password/, "New password") });
     return;
   }
 
@@ -395,7 +416,7 @@ router.post("/change-password", requireAuth, async (req: Request, res: Response)
     return;
   }
 
-  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const passwordHash = await hashPassword(newPassword);
   // Bumping token_version invalidates every other token issued for this
   // account (e.g. a session on another device) the moment this request
   // completes -- the whole point of a password change, security-wise.
@@ -450,8 +471,9 @@ router.post("/forgot-password", async (req: Request, res: Response): Promise<voi
 router.post("/reset-password", async (req: Request, res: Response): Promise<void> => {
   const { token, newPassword } = req.body ?? {};
   if (!token || !newPassword) { res.status(400).json({ success: false, error: "token and newPassword are required" }); return; }
-  if (typeof newPassword !== "string" || newPassword.length < 8) {
-    res.status(400).json({ success: false, error: "New password must be at least 8 characters" });
+  const pwProblem = passwordProblem(newPassword);
+  if (pwProblem) {
+    res.status(400).json({ success: false, error: pwProblem.replace(/^Password/, "New password") });
     return;
   }
 
@@ -463,7 +485,7 @@ router.post("/reset-password", async (req: Request, res: Response): Promise<void
   if (!rows.length) { res.status(400).json({ success: false, error: "This reset link is invalid or has expired — request a new one." }); return; }
   const resetRow = rows[0];
 
-  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const passwordHash = await hashPassword(newPassword);
   // Bumps token_version too -- a forgot-password reset is exactly the
   // case where any existing session (possibly the compromised one that
   // prompted the reset) should stop working, not just the password.

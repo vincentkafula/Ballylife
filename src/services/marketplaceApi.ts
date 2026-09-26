@@ -271,7 +271,7 @@ export const mktCustomer = {
 };
 
 // ── Marketplace auth (separate from the site's admin login) ─────────────────
-export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; phone?: string | null; emailVerified?: boolean; phoneVerified?: boolean; accountStatus?: string; }
+export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; phone?: string | null; emailVerified?: boolean; phoneVerified?: boolean; accountStatus?: string; mustChangePassword?: boolean; }
 
 // The shape login/register/verify-*/google/facebook all return when the
 // account isn't active yet -- carried through to the caller (rather than
@@ -394,8 +394,14 @@ export const mktAuth = {
     return r;
   },
   logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); localStorage.removeItem("mkt_authority"); localStorage.removeItem("mkt_shipping"); localStorage.removeItem("mkt_credit"); },
-  changePassword: (currentPassword: string, newPassword: string) =>
-    api<{ success: boolean; message?: string; error?: string }>("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
+  // A password change signs out every other session (token_version bump) and
+  // returns a fresh token for this one -- keep it, or this session is
+  // signed out on its next request too.
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const r = await api<{ success: boolean; message?: string; error?: string; data?: { token?: string } }>("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) });
+    if (r.success && r.data?.token) setMktToken(r.data.token);
+    return r;
+  },
   forgotPassword: (email: string) =>
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
   resetPassword: (token: string, newPassword: string) =>

@@ -9,6 +9,11 @@ export default defineConfig({
     // switch it back on explicitly.
     // A generous CJ points budget too: tests fire many CJ calls in quick
     // succession; the pacing itself is tested with _setCatalogPointsForTests.
-    env: { CJ_ONLY_CATALOG: "false", CJ_CATALOG_POINTS_BUCKET: "100000000", CJ_CATALOG_POINTS_PER_MIN: "100000000" },
+    // DEMO_MODE keeps the demo-account order walkthrough the older order tests
+    // exercise (off in production); a low BCRYPT_COST just keeps hashing fast.
+    env: {
+      CJ_ONLY_CATALOG: "false", CJ_CATALOG_POINTS_BUCKET: "100000000", CJ_CATALOG_POINTS_PER_MIN: "100000000",
+      DEMO_MODE: "true", BCRYPT_COST: "5",
+    },
   },
 });

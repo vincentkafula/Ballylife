@@ -19,6 +19,7 @@ import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
 import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 import { cjOnlyCatalog, CJ_ONLY_MESSAGE } from "../utils/catalogPolicy";
+import { hashPassword, passwordProblem, demoModeEnabled } from "../utils/authSecurity";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
@@ -148,6 +149,17 @@ const mapSeller = (r: any) => ({
   avgRating: Number(r.avg_rating), reviewCount: r.review_count, joinedAt: r.joined_at, commissionPct: Number(r.commission_pct),
   applicationData: r.application_data ?? {},
 });
+
+// What anyone may see about a store. Contact details, tax id and the KYC
+// application data are private to the store's owner and the marketplace team.
+const mapSellerPublic = (r: any) => ({
+  id: r.id, storeName: r.store_name, storeSlug: r.store_slug, description: r.description,
+  logoUrl: r.logo_url, bannerUrl: r.banner_url, country: r.country, status: r.status, kycVerified: r.kyc_verified,
+  totalProducts: Number(r.total_products ?? 0), totalSales: r.total_sales,
+  avgRating: Number(r.avg_rating), reviewCount: r.review_count, joinedAt: r.joined_at,
+});
+const canSeeSellerPrivate = (req: Request, sellerRow: any) =>
+  (MANAGER_ROLES as readonly string[]).includes(req.user?.role ?? "") || (sellerRow?.user_id && sellerRow.user_id === req.user?.userId);
 
 const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   id: r.id, sellerId: r.seller_id, sellerName: sellerName ?? r.seller_name,
@@ -430,7 +442,7 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
   res.json({
     success: true,
     data: {
-      product, seller: sellerRows[0] ? mapSeller(sellerRows[0]) : null,
+      product, seller: sellerRows[0] ? mapSellerPublic(sellerRows[0]) : null, // public page: never contact/KYC details
       reviews: reviewRows.map(mapReview), related: relatedRows.map(r => mapProduct(r)),
     },
   });
@@ -1164,7 +1176,10 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
       // webhook or reconciliation job confirms it. That's the whole
       // point of the distinction -- a demo teaches the procedure, a real
       // account has to actually be paid for before it's done.
-      const isDemoAccount = DEMO_USERNAMES.has(req.user!.username);
+      // Only when DEMO_MODE is explicitly on: on a live store these accounts'
+      // password is public, and an auto-confirmed order goes straight to the
+      // supplier without anyone having paid.
+      const isDemoAccount = demoModeEnabled() && DEMO_USERNAMES.has(req.user!.username);
       let paymentStatus: string = "pending_payment";
       if (isDemoAccount && !submission.redirect && !creditProviderId) {
         const { rows: confirmedRows } = await pool!.query(
@@ -1277,7 +1292,7 @@ router.delete("/wishlist/:userId/:productId", requireAuth, requireSelf, async (r
 router.get("/sellers", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { status } = req.query as Record<string, string>;
   const { rows } = await pool!.query(status ? `SELECT * FROM mkt_sellers WHERE status = $1` : `SELECT * FROM mkt_sellers`, status ? [status] : []);
-  res.json({ success: true, data: rows.map(mapSeller), meta: { total: rows.length } });
+  res.json({ success: true, data: rows.map(r => (canSeeSellerPrivate(req, r) ? mapSeller(r) : mapSellerPublic(r))), meta: { total: rows.length } });
 });
 
 // Looks up the seller record owned by a given user — needed on a plain
@@ -1299,7 +1314,8 @@ router.get("/sellers/:id", requireAuth, async (req: Request, res: Response): Pro
   if (!rows.length) { res.status(404).json({ success: false, error: "Seller not found" }); return; }
   const { rows: productRows } = await pool!.query(`SELECT p.*, s.store_name AS seller_name, c.name AS category_name FROM mkt_products p JOIN mkt_sellers s ON s.id=p.seller_id JOIN mkt_categories c ON c.id=p.category_id WHERE p.seller_id = $1`, [req.params.id]);
   const { rows: orderCountRows } = await pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_orders WHERE items::text LIKE $1`, [`%"sellerId":"${req.params.id}"%`]);
-  res.json({ success: true, data: { seller: mapSeller(rows[0]), products: productRows.map(r => mapProduct(r)), orderCount: orderCountRows[0].n } });
+  const seller = canSeeSellerPrivate(req, rows[0]) ? mapSeller(rows[0]) : mapSellerPublic(rows[0]);
+  res.json({ success: true, data: { seller, products: productRows.map(r => mapProduct(r)), orderCount: orderCountRows[0].n } });
 });
 
 router.get("/sellers/:id/analytics", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
@@ -1514,7 +1530,7 @@ router.post("/sellers/register", async (req: Request, res: Response): Promise<vo
     res.status(400).json({ success: false, error: "username, password, name, email and storeName are required" });
     return;
   }
-  if (password.length < 8) { res.status(400).json({ success: false, error: "password must be at least 8 characters" }); return; }
+  { const pw = passwordProblem(password, username, email); if (pw) { res.status(400).json({ success: false, error: pw }); return; } }
 
   const { rows: existing } = await pool!.query(`SELECT 1 FROM users WHERE username = $1 OR email = $2`, [username, email]);
   if (existing.length) { res.status(409).json({ success: false, error: "An account with that username or email already exists" }); return; }
@@ -1526,7 +1542,7 @@ router.post("/sellers/register", async (req: Request, res: Response): Promise<vo
   const client = await pool!.connect();
   try {
     await client.query("BEGIN");
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await hashPassword(password);
     // email_verified/phone_verified/account_status genuinely reflect
     // reality now, same as a customer signup -- previously
     // SellerApplicationWizard.tsx's identity-check step was a UI
@@ -2324,7 +2340,7 @@ router.patch("/admin/suppliers/:id", requireAuth, requireRole(...MANAGER_ROLES),
 router.post("/admin/suppliers/:id/create-login", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
   if (!username || !password) { res.status(400).json({ success: false, error: "username and password are required" }); return; }
-  if (typeof password !== "string" || password.length < 8) { res.status(400).json({ success: false, error: "Password must be at least 8 characters" }); return; }
+  { const pw = passwordProblem(password); if (pw) { res.status(400).json({ success: false, error: pw }); return; } }
 
   const { rows: supRows } = await pool!.query(`SELECT * FROM mkt_suppliers WHERE id = $1`, [req.params.id]);
   if (!supRows.length) { res.status(404).json({ success: false, error: "Supplier not found" }); return; }
@@ -2336,7 +2352,7 @@ router.post("/admin/suppliers/:id/create-login", requireAuth, requireRole(...MAN
   const client = await pool!.connect();
   try {
     await client.query("BEGIN");
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await hashPassword(password);
     const { rows: userRows } = await client.query(
       `INSERT INTO users (username, password_hash, role, name, email) VALUES ($1,$2,'supplier',$3,$4) RETURNING id`,
       [username, passwordHash, supRows[0].name, supRows[0].contact_email ?? `${username}@ballylife.example`]
@@ -2882,7 +2898,7 @@ router.patch("/admin/revenue-authorities/:id", requireAuth, requireRole(...MANAG
 router.post("/admin/revenue-authorities/:id/create-login", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
   if (!username || !password) { res.status(400).json({ success: false, error: "username and password are required" }); return; }
-  if (typeof password !== "string" || password.length < 8) { res.status(400).json({ success: false, error: "Password must be at least 8 characters" }); return; }
+  { const pw = passwordProblem(password); if (pw) { res.status(400).json({ success: false, error: pw }); return; } }
 
   const { rows: authRows } = await pool!.query(`SELECT * FROM mkt_revenue_authorities WHERE id = $1`, [req.params.id]);
   if (!authRows.length) { res.status(404).json({ success: false, error: "Revenue authority not found" }); return; }
@@ -2894,7 +2910,7 @@ router.post("/admin/revenue-authorities/:id/create-login", requireAuth, requireR
   const client = await pool!.connect();
   try {
     await client.query("BEGIN");
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await hashPassword(password);
     const { rows: userRows } = await client.query(
       `INSERT INTO users (username, password_hash, role, name, email) VALUES ($1,$2,'revenue_authority',$3,$4) RETURNING id`,
       [username, passwordHash, authRows[0].name, authRows[0].contact_email ?? `${username}@ballylife.example`]

@@ -13,6 +13,8 @@ import mediaRouter from "./routes/mediaRouter";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
 import { startCjCatalogWorker, enforceCjOnlyCatalog } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
+import { startFxRefreshWorker } from "./services/fxRates";
+import { secureDemoAccounts } from "./services/demoAccounts";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 import { logger } from "./utils/logger";
@@ -61,6 +63,9 @@ app.use(rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHea
 // 300/min was generous enough to make credential-stuffing/brute-force
 // login attempts cheap; this caps login/register attempts specifically.
 app.use("/api/auth", rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false }));
+// Same limit for the account-creating routes that live under /api/marketplace
+// (seller, supplier, shipping-company, credit-provider sign-up).
+app.use(/^\/api\/marketplace\/[a-z-]+\/register$/, rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false }));
 
 const startedAt = Date.now();
 app.get("/health", async (_req, res) => {
@@ -114,8 +119,10 @@ async function start() {
   }
   await migrate();
   startCjFulfillmentWorker();
+  await secureDemoAccounts().catch(err => logger.error("security.demo_check_failed", { error: err instanceof Error ? err.message : String(err) }));
   if (cjOnlyCatalog()) await enforceCjOnlyCatalog();
   startCjCatalogWorker();
+  startFxRefreshWorker();
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);
