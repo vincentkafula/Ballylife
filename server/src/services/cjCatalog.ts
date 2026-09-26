@@ -9,6 +9,7 @@ import { dedupeImages, isPhotoUrl, parseSupplierImageList, scrubSupplierBranding
 import { variantIdForVid, parseExternalVariants, type ExternalVariant } from "../utils/cjVariants";
 import { matchCjCategory, isExcludedFromStore } from "../utils/cjCategoryMap";
 import { categorizeProduct, CATEGORY_RULES_VERSION } from "../utils/productCategorizer";
+import { priceWithMarkup, markupTiers } from "../utils/markupTiers";
 import { cleanProductName, cleanDescriptionText, NAMING_RULES_VERSION } from "../utils/productNaming";
 
 /**
@@ -17,13 +18,13 @@ import { cleanProductName, cleanDescriptionText, NAMING_RULES_VERSION } from "..
  * Every synced CJ product lands in mkt_supplier_products (the catalogue
  * sellers browse). Products with real photos, a known shipping cost and at
  * least one orderable variant are also listed straight away in the
- * platform's own "Ballylife" store at landed cost x (1 + CJ_MARKUP_PCT).
+ * platform's own "Ballylife" store at landed cost plus a sliding markup (HOUSE_MARKUP_TIERS).
  * Search and browsing only ever read our database, never CJ live.
  */
 
 export const CJ_SUPPLIER_ID = "sup-cjdropshipping";
 export const HOUSE_SELLER_ID = "sel-ballylife";
-const MARKUP = (Number(process.env.CJ_MARKUP_PCT ?? 50) || 0) / 100;
+// Markup: sliding scale on landed cost -- see utils/markupTiers.ts (HOUSE_MARKUP_TIERS).
 const PRICING_COUNTRY = (process.env.CJ_PRICING_COUNTRY || "ZA").toUpperCase();
 const FROM_COUNTRY = (process.env.CJ_FROM_COUNTRY || "CN").toUpperCase();
 const DEFAULT_CATEGORY = process.env.CJ_DEFAULT_CATEGORY_ID || "cat-03";
@@ -309,18 +310,18 @@ async function setCategory(supplierProductId: string, categoryId: string): Promi
  * rounded up to the next whole rand. The catalogue item is marked active
  * so sellers can add it to their own stores too.
  */
-/** Ballylife-store price: landed cost (goods + shipping, USD) x rate x (1 + markup), rounded up to a whole rand. */
+/** Ballylife-store price: landed cost (goods + shipping, USD) x rate, plus the sliding markup, rounded up to a whole rand. */
 export function houseListingPrice(costUsd: number, shippingUsd: number, usdToZar: number): number {
-  return Math.ceil((costUsd + shippingUsd) * usdToZar * (1 + MARKUP));
+  return priceWithMarkup((costUsd + shippingUsd) * usdToZar);
 }
 
-/** Customer-selectable options for a multi-variant listing; pricier options carry the same markup. */
-export function houseListingVariants(variants: ExternalVariant[], costUsd: number, usdToZar: number, stock: number) {
+/** Customer-selectable options for a multi-variant listing; each option priced the same way as the base. */
+export function houseListingVariants(variants: ExternalVariant[], costUsd: number, usdToZar: number, stock: number, shippingUsd = 0) {
   if (variants.length <= 1) return [];
-  const factor = usdToZar * (1 + MARKUP);
+  const base = houseListingPrice(costUsd, shippingUsd, usdToZar);
   return variants.map(v => ({
     id: variantIdForVid(v.vid), type: "Option", value: v.key, sku: null, stock,
-    additionalPrice: Math.max(0, Math.ceil((v.priceUsd - costUsd) * factor)),
+    additionalPrice: Math.max(0, houseListingPrice(v.priceUsd, shippingUsd, usdToZar) - base),
   }));
 }
 
@@ -338,7 +339,7 @@ export async function repriceHouseListings(usdToZar: number): Promise<number> {
   for (const r of rows) {
     const cost = Number(r.cost_price);
     const price = houseListingPrice(cost, Number(r.est_shipping_usd), usdToZar);
-    const variants = houseListingVariants(parseExternalVariants(r.external_variants), cost, usdToZar, Number(r.stock) || 100);
+    const variants = houseListingVariants(parseExternalVariants(r.external_variants), cost, usdToZar, Number(r.stock) || 100, Number(r.est_shipping_usd));
     await pool!.query(`UPDATE mkt_products SET price = $1, variants = $2, updated_at = now() WHERE id = $3`, [price, JSON.stringify(variants), r.id]);
   }
   logger.info("catalog.house_listings_repriced", { count: rows.length, usdToZar });
@@ -348,7 +349,7 @@ export async function repriceHouseListings(usdToZar: number): Promise<number> {
 async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProduct & { costUsd: number; shippingUsd: number; usdToZar: number; categoryId: string }): Promise<number> {
   const stock = w.stock ?? 100;
   const price = houseListingPrice(w.costUsd, w.shippingUsd, w.usdToZar);
-  const variants = houseListingVariants(w.variants, w.costUsd, w.usdToZar, stock);
+  const variants = houseListingVariants(w.variants, w.costUsd, w.usdToZar, stock, w.shippingUsd);
   const shortDescription = w.description.split("\n")[0].slice(0, 160);
 
   await pool!.query(`UPDATE mkt_supplier_products SET status = 'active' WHERE id = $1 AND status = 'pending_review'`, [supplierProductId]);
@@ -399,6 +400,19 @@ export async function hideDemoCatalogOnce(): Promise<number | null> {
   await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`, [HIDE_DEMO_FLAG, `hid ${rows.length} products`]);
   logger.info("catalog.demo_products_hidden", { count: rows.length });
   return rows.length;
+}
+
+/** Re-prices every Ballylife-store CJ listing once with the sliding markup (flagged). */
+export async function applyMarkupTiersOnce(): Promise<number | null> {
+  const flag = "house_markup_tiers_v1";
+  const { rows: done } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [flag]);
+  if (done.length) return null;
+  const { rows: fx } = await pool!.query(`SELECT rate_to_zar FROM mkt_fx_rates WHERE currency = 'USD'`);
+  const usdToZar = Number(fx[0]?.rate_to_zar);
+  if (!Number.isFinite(usdToZar) || usdToZar <= 0) return null;
+  const n = await repriceHouseListings(usdToZar);
+  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`, [flag, `repriced ${n} at ${usdToZar}`]);
+  return n;
 }
 
 // ── Re-clean names and re-file categories when the rules change ──────────
@@ -546,7 +560,7 @@ export function startCjCatalogWorker(intervalMs = 60_000): NodeJS.Timeout | null
   const timer = setInterval(() => { void tick(); }, intervalMs);
   timer.unref();
   setTimeout(() => { void tick(); }, 5_000).unref(); // don't wait a full minute after deploy
-  logger.info("cj.catalog_worker_started", { intervalMs, markupPct: MARKUP * 100, pricingCountry: PRICING_COUNTRY });
+  logger.info("cj.catalog_worker_started", { intervalMs, markupTiers: markupTiers(), pricingCountry: PRICING_COUNTRY });
   return timer;
 }
 

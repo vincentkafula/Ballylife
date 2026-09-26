@@ -112,7 +112,7 @@ describe("1688 research", () => {
 
     const o = await offer("617247852601");
     expect(o).toMatchObject({ status: "new", moq: 2, supplier_years: 8, product_class: "electronics" });
-    expect(o.estimate).toMatchObject({ unitZar: 93.19, resaleZar: 451, unitUsd: 3.54 }); // incl. 5% agent fee + ¥10 China shipping
+    expect(o.estimate).toMatchObject({ unitZar: 74.81, resaleZar: 237, unitUsd: 3.54 }); // incl. 5% agent fee + ¥3 China shipping, sliding markup
     expect(o).toMatchObject({ direct_product_id: null, not_listed_reason: "MOQ 2 is above 1" }); // we sell one at a time
   });
 
@@ -226,7 +226,9 @@ describe("Selling 1688 finds directly (China agent), then handing them to CJ", (
     expect(white).toMatchObject({ value: "Color:White", sku: "sku-white", stock: 20, additionalPrice: 0 }); // stock capped at 20
     expect(pink).toMatchObject({ value: "Color:Pink", sku: "sku-pink", stock: 3 });
     expect(pink.additionalPrice).toBeGreaterThan(0);
-    expect(p.description).toContain("USB-C rechargeable");
+    // 1688's "selling points" are marketplace badges: never used as the description.
+    expect(p.description).toContain("Available options: Color:White, Color:Pink");
+    expect(p.description).not.toContain("3 speeds");
   });
 
   it("is white-labelled on the storefront, with the China-agent delivery window", async () => {
@@ -265,7 +267,7 @@ describe("Selling 1688 finds directly (China agent), then handing them to CJ", (
   it("re-prices listings when the pricing settings change", async () => {
     const before = Number((await pool.query(`SELECT price FROM mkt_products WHERE id::text = $1`, [fanProductId])).rows[0].price);
     const s = await s1688.get1688Settings();
-    await s1688.save1688Settings({ ...s, estimate: { ...s.estimate, markupPct: 100 } }, "test");
+    await s1688.save1688Settings({ ...s, estimate: { ...s.estimate, markupMode: "flat", markupPct: 100 } }, "test");
     const after = Number((await pool.query(`SELECT price FROM mkt_products WHERE id::text = $1`, [fanProductId])).rows[0].price);
     expect(after).toBeGreaterThan(before);
   });

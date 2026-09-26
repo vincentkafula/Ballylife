@@ -213,7 +213,7 @@ function PhotoRing({ photos, name, discount }: { photos: string[]; name: string;
         {photos.map((src, i) => (
           <button key={src + i} onClick={() => spinTo(i)} aria-label={`Turn to photo ${i + 1}`} aria-current={i === front}
             className="shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-white transition-all"
-            style={{ border: i === front ? "2px solid #B8862E" : "2px solid #F3F4F6", opacity: i === front ? 1 : 0.7 }}>
+            style={{ border: i === front ? "2px solid #1E7B4D" : "2px solid #F3F4F6", opacity: i === front ? 1 : 0.7 }}>
             <img src={src} alt="" loading="lazy" className="w-full h-full object-contain pointer-events-none" />
           </button>
         ))}

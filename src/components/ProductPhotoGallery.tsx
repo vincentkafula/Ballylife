@@ -110,7 +110,7 @@ export function ProductPhotoGallery({ emoji, colorA, colorB, name, discount, ill
             aria-label={`View photo ${i + 1}`}
             aria-current={i === index}
             className="shrink-0 w-12 h-12 rounded-lg overflow-hidden bg-white transition-all"
-            style={{ border: i === index ? "2px solid #B8862E" : "2px solid #F3F4F6", opacity: i === index ? 1 : 0.7 }}
+            style={{ border: i === index ? "2px solid #1E7B4D" : "2px solid #F3F4F6", opacity: i === index ? 1 : 0.7 }}
           >
             <img src={src} alt="" loading="lazy" className="w-full h-full object-contain pointer-events-none" />
           </button>
@@ -124,7 +124,7 @@ export function ProductPhotoGallery({ emoji, colorA, colorB, name, discount, ill
             className="shrink-0 w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden transition-all"
             style={{
               background: `linear-gradient(${a.bg}, ${colorA} 0%, ${colorB} 100%)`,
-              border: i === index ? "2px solid #B8862E" : "2px solid transparent",
+              border: i === index ? "2px solid #1E7B4D" : "2px solid transparent",
               opacity: i === index ? 1 : 0.6,
             }}
           >

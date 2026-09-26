@@ -36,8 +36,11 @@ describe("parse1688Run", () => {
 });
 
 describe("estimate1688", () => {
-  // Without the China-side costs, so the duty/VAT arithmetic is easy to follow.
-  const s = normalise1688Settings({ ...DEFAULT_1688_SETTINGS, estimate: { ...DEFAULT_1688_SETTINGS.estimate, agentFeePct: 0, domesticShippingCny: 0 } });
+  // Fixed rates, no China-side costs and a flat markup, so the duty/VAT arithmetic is easy to follow.
+  const s = normalise1688Settings({ ...DEFAULT_1688_SETTINGS, estimate: {
+    ...DEFAULT_1688_SETTINGS.estimate, agentFeePct: 0, domesticShippingCny: 0, markupMode: "flat", markupPct: 50,
+    classes: { electronics: { dutyPct: 15, freightZar: 150 }, apparel: { dutyPct: 45, freightZar: 120 } },
+  } });
 
   it("works out landed cost and resale price with the class's duty and freight", () => {
     // ¥25.50 x R2.50 = R63.75; electronics: freight R150, duty 15%
@@ -51,9 +54,18 @@ describe("estimate1688", () => {
   });
 
   it("adds the China buying agent fee and domestic shipping to the unit cost", () => {
-    const withAgent = normalise1688Settings(DEFAULT_1688_SETTINGS); // 5% agent fee, ¥10 China shipping
-    expect(estimate1688(25.5, "electronics", 2.5, 18, withAgent).unitZar).toBe(93.19); // (25.5 + 10) x 2.5 x 1.05
+    const withAgent = normalise1688Settings(DEFAULT_1688_SETTINGS); // 5% agent fee, ¥3 consolidated China shipping
+    expect(estimate1688(25.5, "electronics", 2.5, 18, withAgent).unitZar).toBe(74.81); // (25.5 + 3) x 2.5 x 1.05
     expect(estimate1688(25.5, "electronics", 2.5, 18, withAgent).unitUsd).toBe(3.54); // CJ target stays the bare goods price
+  });
+
+  it("uses the store's sliding markup by default", () => {
+    const tiered = normalise1688Settings(DEFAULT_1688_SETTINGS);
+    const e = estimate1688(25.5, "electronics", 2.5, 18, tiered);
+    // unit 74.81 + freight 70 + duty 15% x 144.81 = 21.72 + VAT 15% x (82.29 + 21.72) = 15.60 -> landed 182.13; R151-R400 tier +30%
+    expect(e.landedZar).toBe(182.14);
+    expect(e.resaleZar).toBe(237);
+    expect(e.markupPct).toBe(30);
   });
 
   it("charges apparel the 45% clothing duty", () => {

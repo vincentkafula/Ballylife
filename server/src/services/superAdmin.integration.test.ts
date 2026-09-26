@@ -202,7 +202,7 @@ describe("Removing accounts", () => {
 
   it("every action is in the audit log", async () => {
     const { rows } = await pool.query(`SELECT action FROM mkt_audit_log WHERE entity_type = 'user'`);
-    expect(rows.map(r => r.action)).toEqual(expect.arrayContaining(["super_admin_created", "manager_created", "account_removed", "account_restored"]));
+    expect(rows.map((r: { action: string }) => r.action)).toEqual(expect.arrayContaining(["super_admin_created", "manager_created", "account_removed", "account_restored"]));
   });
 
   it("moving SUPER_ADMIN_USERNAME to a new account demotes the old one", async () => {

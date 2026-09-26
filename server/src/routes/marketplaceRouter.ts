@@ -17,6 +17,8 @@ import { recalcCartTotals } from "../utils/cart";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
 import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
+import { englishOnly } from "../utils/englishOnly";
+import { cleanDescriptionText } from "../utils/productNaming";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 import { cjOnlyCatalog, CJ_ONLY_MESSAGE } from "../utils/catalogPolicy";
 import { hashPassword, passwordProblem, demoModeEnabled } from "../utils/authSecurity";
@@ -164,13 +166,21 @@ const mapSellerPublic = (r: any) => ({
 const canSeeSellerPrivate = (req: Request, sellerRow: any) =>
   (MANAGER_ROLES as readonly string[]).includes(req.user?.role ?? "") || (sellerRow?.user_id && sellerRow.user_id === req.user?.userId);
 
+// Ballylife-store listings come from suppliers: whatever slipped past import
+// cleaning, shoppers only ever see English. (Sellers' own listings are theirs.)
+const HOUSE_STORE = "sel-ballylife";
+const shopperText = (r: any, s: unknown) => (r.seller_id === HOUSE_STORE && typeof s === "string" ? englishOnly(s) : s);
+const shopperDescription = (r: any, s: unknown) => (r.seller_id === HOUSE_STORE && typeof s === "string" ? cleanDescriptionText(s) : s);
+const shopperVariants = (r: any, v: unknown) => (r.seller_id === HOUSE_STORE && Array.isArray(v)
+  ? v.map((x: any) => (x && typeof x.value === "string" ? { ...x, value: englishOnly(x.value) || x.value.replace(/[^\x20-\x7E]/g, "").trim() || "Option" } : x)) : v);
+
 const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   id: r.id, sellerId: r.seller_id, sellerName: sellerName ?? r.seller_name,
   categoryId: r.category_id, categoryName: categoryName ?? r.category_name,
-  name: r.name, slug: r.slug, description: r.description, shortDescription: r.short_description,
+  name: shopperText(r, r.name), slug: r.slug, description: shopperDescription(r, r.description), shortDescription: shopperDescription(r, r.short_description),
   price: Number(r.price), compareAtPrice: r.compare_at_price !== null ? Number(r.compare_at_price) : null,
   currency: r.currency, images: publicImages("p", r.id, r.images), emoji: r.emoji, status: r.status, stock: r.stock, sku: r.sku,
-  brand: r.brand, tags: r.tags, attributes: r.attributes, variants: r.variants,
+  brand: r.brand, tags: r.tags, attributes: r.attributes, variants: shopperVariants(r, r.variants),
   avgRating: Number(r.avg_rating), reviewCount: r.review_count, totalSold: r.total_sold,
   isFeatured: r.is_featured, isFlashDeal: r.is_flash_deal, flashDealEndsAt: r.flash_deal_ends_at,
   fulfillmentType: r.fulfillment_type ?? "local", supplierProductId: r.supplier_product_id ?? null,

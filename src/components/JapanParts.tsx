@@ -114,7 +114,7 @@ export function JapanPartsAdminPanel() {
     } catch (err) { toast.error(errMessage(err, "Couldn't update.")); }
   };
 
-  const input = "border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm w-full outline-none focus:border-[#B8862E]";
+  const input = "border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm w-full outline-none focus:border-[#1E7B4D]";
   const card = "bg-white rounded-2xl border border-gray-100 p-5";
   const byStatus = listings.reduce<Record<string, number>>((m, l) => { m[l.status] = (m[l.status] ?? 0) + 1; return m; }, {});
   const openTasks = tasks.filter(t => !["delivered", "cancelled", "unavailable"].includes(t.status));
@@ -166,7 +166,7 @@ export function JapanPartsAdminPanel() {
               </div>
             ))}
             <button onClick={() => set("keywords", [...settings.keywords, { keyword: "", label: "", partsCategory: "small", enabled: true }])}
-              className="flex items-center gap-1 text-xs font-semibold text-[#8A6420]"><Plus className="w-3.5 h-3.5" />Add keyword</button>
+              className="flex items-center gap-1 text-xs font-semibold text-[#17633D]"><Plus className="w-3.5 h-3.5" />Add keyword</button>
           </div>
         </div>
 
@@ -269,7 +269,7 @@ export function JapanPartsAdminPanel() {
                     </td>
                     <td className="pr-3 font-semibold">{zar(l.price)}</td>
                     <td className="pr-3">{l.sourceStatus === "removed" ? "removed in Japan" : label(l.status)}</td>
-                    <td>{l.sourceUrl && <a href={l.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#8A6420]" aria-label="Open on UP-GARAGE"><ExternalLink className="w-3.5 h-3.5" /></a>}</td>
+                    <td>{l.sourceUrl && <a href={l.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#17633D]" aria-label="Open on UP-GARAGE"><ExternalLink className="w-3.5 h-3.5" /></a>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -292,7 +292,7 @@ export function TaskRow({ t, onUpdate }: { t: JapanPartsTask; onUpdate: (patch: 
         <p className="font-semibold text-gray-900 truncate" title={t.productName ?? ""}>{t.productName ?? t.productId}</p>
         {t.variantLabel && <p className="text-gray-700">Option: <b>{t.variantLabel}</b>{t.supplierSku ? <span className="text-gray-500"> · SKU {t.supplierSku}</span> : null}</p>}
         <p className="text-gray-500">{t.orderNumber} · qty {t.quantity}
-          {t.sourceUrl && <> · <a href={t.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#8A6420] inline-flex items-center gap-0.5">{t.source === "1688" ? "1688" : "UP-GARAGE"} <ExternalLink className="w-3 h-3" /></a></>}
+          {t.sourceUrl && <> · <a href={t.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#17633D] inline-flex items-center gap-0.5">{t.source === "1688" ? "1688" : "UP-GARAGE"} <ExternalLink className="w-3 h-3" /></a></>}
         </p>
       </div>
       <input className={input} placeholder={t.source === "1688" ? "Agent order ref" : "UP-GARAGE order ref"} value={ref} onChange={e => setRef(e.target.value)} onBlur={() => ref !== (t.purchaseRef ?? "") && onUpdate({ purchaseRef: ref })} />

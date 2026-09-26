@@ -56,7 +56,7 @@ export function CardPaymentPanel({ sandbox }: { sandbox: boolean }) {
           "You'll come back here, and we'll confirm your order as soon as the payment clears.",
         ].map((t, i) => (
           <li key={i} className="flex gap-2.5">
-            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: "#B8862E" }}>{i + 1}</span>
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: "#1E7B4D" }}>{i + 1}</span>
             <span className="pt-0.5">{t}</span>
           </li>
         ))}
@@ -86,7 +86,7 @@ export function EftDetailsTable({ details, reference }: { details: EftDetails; r
       {rows.map(([k, v]) => (
         <div key={k} className="flex justify-between gap-3 px-3.5 py-2 text-sm border-b border-gray-50 last:border-0">
           <span className="text-gray-500">{k}</span>
-          <span className={`font-semibold text-right ${k === "Reference" && reference ? "text-[#8A6420]" : "text-gray-900"}`}>{v}</span>
+          <span className={`font-semibold text-right ${k === "Reference" && reference ? "text-[#17633D]" : "text-gray-900"}`}>{v}</span>
         </div>
       ))}
     </div>

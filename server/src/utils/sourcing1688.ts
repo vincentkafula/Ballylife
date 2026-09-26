@@ -8,6 +8,8 @@
  */
 import { classifyProductName } from "./productCategorizer";
 import { isExcludedFromStore } from "./cjCategoryMap";
+import { englishOnly, englishLines } from "./englishOnly";
+import { priceWithMarkup } from "./markupTiers";
 
 export interface Sourcing1688Keyword {
   /** English or Chinese (e.g. "bluetooth earphone" or 蓝牙耳机). */
@@ -35,6 +37,8 @@ export interface Sourcing1688Settings {
     priceMaxCny: number | null;
   };
   estimate: {
+    /** "tiered": the store-wide sliding markup (HOUSE_MARKUP_TIERS); "flat": markupPct on everything. */
+    markupMode: "tiered" | "flat";
     markupPct: number;
     vatPct: number;
     vatUpliftPct: number;
@@ -51,6 +55,8 @@ export interface Sourcing1688Settings {
     autoList: boolean;
     /** Only offers selling this few units or fewer per order can be listed (we sell one at a time). */
     maxMoq: number;
+    /** Don't list finds whose landed cost is more than this many times the goods -- shipping and fees would dwarf the item. */
+    maxLandedMultiple: number;
     /** Stock shown to shoppers, capped -- the supplier's own stock isn't reserved for us. */
     stockCap: number;
     /** Also file a CJ sourcing request for each listed find; the listing switches to CJ once CJ sources it. */
@@ -76,26 +82,29 @@ export const DEFAULT_1688_SETTINGS: Sourcing1688Settings = {
   refreshHours: 24 * 7,
   filters: { sortType: "normal", merchantType: "any", supplierYears: "5", fastShippingOnly: false, maxMoq: 1, priceMinCny: null, priceMaxCny: null },
   estimate: {
-    markupPct: 50,
+    markupMode: "tiered",
+    markupPct: 30,
     vatPct: 15,
     vatUpliftPct: 10,
     agentFeePct: 5,
-    domesticShippingCny: 10,
+    // Agents consolidate many orders into one China parcel: a few yuan per unit, not a courier fee each.
+    domesticShippingCny: 3,
     // SA customs duty is set per tariff heading; these are typical rates for each class.
+    // Freight: consolidated China -> SA air/sea parcels (about R150-R250 per kg), for a typical item's weight.
     classes: {
-      apparel: { dutyPct: 45, freightZar: 120 },
-      shoes: { dutyPct: 45, freightZar: 180 },
-      bags: { dutyPct: 20, freightZar: 150 },
-      electronics: { dutyPct: 15, freightZar: 150 },
-      home: { dutyPct: 20, freightZar: 200 },
-      beauty: { dutyPct: 20, freightZar: 100 },
-      toys: { dutyPct: 20, freightZar: 150 },
-      jewellery: { dutyPct: 20, freightZar: 60 },
-      sports: { dutyPct: 20, freightZar: 180 },
+      apparel: { dutyPct: 45, freightZar: 60 },
+      shoes: { dutyPct: 45, freightZar: 120 },
+      bags: { dutyPct: 20, freightZar: 90 },
+      electronics: { dutyPct: 15, freightZar: 70 },
+      home: { dutyPct: 20, freightZar: 90 },
+      beauty: { dutyPct: 20, freightZar: 45 },
+      toys: { dutyPct: 20, freightZar: 70 },
+      jewellery: { dutyPct: 20, freightZar: 35 },
+      sports: { dutyPct: 20, freightZar: 100 },
     },
-    defaultClass: { dutyPct: 20, freightZar: 150 },
+    defaultClass: { dutyPct: 20, freightZar: 80 },
   },
-  listing: { autoList: true, maxMoq: 1, stockCap: 20, autoSendToCj: true, maxCjRequestsPerDay: 20, deliveryDays: { min: 15, max: 25 } },
+  listing: { autoList: true, maxMoq: 1, maxLandedMultiple: 5, stockCap: 20, autoSendToCj: true, maxCjRequestsPerDay: 20, deliveryDays: { min: 15, max: 25 } },
 };
 
 // Storefront category -> estimate class, for productClass "auto".
@@ -156,6 +165,7 @@ export function normalise1688Settings(input: unknown): Sourcing1688Settings {
       priceMaxCny: optNum(f.priceMaxCny),
     },
     estimate: {
+      markupMode: e.markupMode === "flat" ? "flat" : "tiered",
       markupPct: num(e.markupPct, d.estimate.markupPct, 0, 500),
       vatPct: num(e.vatPct, d.estimate.vatPct, 0, 100),
       vatUpliftPct: num(e.vatUpliftPct, d.estimate.vatUpliftPct, 0, 100),
@@ -170,6 +180,7 @@ export function normalise1688Settings(input: unknown): Sourcing1688Settings {
       return {
         autoList: l.autoList === undefined ? d.listing.autoList : Boolean(l.autoList),
         maxMoq: Math.round(num(l.maxMoq, d.listing.maxMoq, 1, 100)),
+        maxLandedMultiple: num(l.maxLandedMultiple, d.listing.maxLandedMultiple, 1, 100),
         stockCap: Math.round(num(l.stockCap, d.listing.stockCap, 1, 10_000)),
         autoSendToCj: l.autoSendToCj === undefined ? d.listing.autoSendToCj : Boolean(l.autoSendToCj),
         maxCjRequestsPerDay: Math.round(num(l.maxCjRequestsPerDay, d.listing.maxCjRequestsPerDay, 0, 500)),
@@ -255,12 +266,15 @@ function parseVariants(v: unknown): Variant1688[] {
     if (!skuId || !label) return null;
     const img = toStr(o.image ?? o.imageUrl);
     return {
-      skuId, label: label.replace(/;/g, " / ").slice(0, 80),
+      skuId, label: englishOnly(label.replace(/;/g, " / ")).slice(0, 80),
       priceCny: toNum(o.discountPrice ?? o.price ?? o.priceCny ?? o.consignPrice),
       stock: toNum(o.stock ?? o.amountOnSale ?? o.canBookCount),
       image: img ? (img.startsWith("//") ? `https:${img}` : img) : null,
     };
-  }).filter((x): x is Variant1688 => x !== null).slice(0, 60);
+  }).filter((x): x is Variant1688 => x !== null)
+    // Options whose names were entirely Chinese get a neutral name rather than a blank.
+    .map((v, i, all) => ({ ...v, label: v.label || (all.length > 1 ? `Option ${i + 1}` : "Standard") }))
+    .slice(0, 60);
 }
 
 function textList(v: unknown): string[] {
@@ -285,7 +299,7 @@ export function parse1688Item(item: Record<string, unknown>): Offer1688 | null {
     images: images(item.images), videoUrl: toStr(item.videoUrl), totalVariants: toNum(item.totalVariants),
     supportsDropship: typeof item.supportsDropship === "boolean" ? item.supportsDropship : null,
     deliveryLimitDays: toNum(item.deliveryLimitDays), sourceKeyword: toStr(item.sourceKeyword),
-    variants: parseVariants(item.variants), specs: textList(item.specs), sellingPoints: textList(item.sellingPoints),
+    variants: parseVariants(item.variants), specs: textList(item.specs).map(l => englishLines(l)).filter(Boolean), sellingPoints: textList(item.sellingPoints),
   };
 }
 
@@ -309,7 +323,7 @@ export function parse1688Run(items: Record<string, unknown>[]): { offers: Offer1
 
 export interface Estimate1688 {
   productClass: string; cnyToZar: number; unitZar: number; freightZar: number; dutyZar: number; importVatZar: number;
-  landedZar: number; markupPct: number; resaleZar: number; unitUsd: number | null;
+  landedZar: number; markupPct: number; resaleZar: number; unitUsd: number | null; goodsZar: number;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -322,7 +336,10 @@ export function estimate1688(priceCny: number, productClass: string, cnyToZar: n
   const landedZar = unitZar + rates.freightZar + dutyZar + importVatZar;
   return {
     productClass, cnyToZar, unitZar: r2(unitZar), freightZar: r2(rates.freightZar), dutyZar: r2(dutyZar), importVatZar: r2(importVatZar),
-    landedZar: r2(landedZar), markupPct: s.estimate.markupPct, resaleZar: Math.ceil(landedZar * (1 + s.estimate.markupPct / 100) - 1e-9),
+    landedZar: r2(landedZar),
+    markupPct: s.estimate.markupMode === "flat" ? s.estimate.markupPct : Math.round((priceWithMarkup(landedZar) / landedZar - 1) * 100),
+    resaleZar: s.estimate.markupMode === "flat" ? Math.ceil(landedZar * (1 + s.estimate.markupPct / 100) - 1e-9) : priceWithMarkup(landedZar),
+    goodsZar: r2(priceCny * cnyToZar),
     unitUsd: usdToZar ? r2((priceCny * cnyToZar) / usdToZar) : null, // CJ's target: the bare goods price
   };
 }

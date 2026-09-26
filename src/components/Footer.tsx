@@ -1,6 +1,6 @@
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 
-const BG      = "#FAF6EC";
+const BG      = "#F5F6F8";
 const HEADING = "#211C16";
 const LINK    = "#6B5A3E";
 const BAR_BLUE = "#1E7B4D";

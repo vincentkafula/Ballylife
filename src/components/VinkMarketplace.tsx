@@ -210,7 +210,7 @@ function SlideArrows({ onLeft, onRight }: { onLeft: () => void; onRight: () => v
         onClick={onLeft}
         aria-label="Scroll left"
         className={`${btn} left-1`}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#B8862E"; }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#1E7B4D"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
       >
         <ChevronRight className="w-4 h-4 rotate-180" />
@@ -219,7 +219,7 @@ function SlideArrows({ onLeft, onRight }: { onLeft: () => void; onRight: () => v
         onClick={onRight}
         aria-label="Scroll right"
         className={`${btn} right-1`}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#B8862E"; }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#1E7B4D"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
       >
         <ChevronRight className="w-4 h-4" />
@@ -320,67 +320,64 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
     ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100)
     : 0;
   const imgs = p.images as string[];
+  const photos = productPhotos(imgs);
+  const soldOut = Number(p.stock) <= 0;
+  const reviews = Number(p.reviewCount) || 0;
+  const sold = Number(p.totalSold) || 0;
 
   return (
-    <div className="bg-white rounded-xl overflow-hidden border border-gray-200 hover:shadow-xl hover:border-[#D4A54A]/50 transition-all duration-200 group flex flex-col h-full" style={{ boxShadow: "0 1px 3px rgba(20,17,13,0.06)" }}>
-      {/* Image — portrait, not square, on a neutral mat like real product photography would sit on */}
-      <div className="relative cursor-pointer bg-[#FAFAF9]" style={{ aspectRatio: "3 / 4" }} onClick={onView}>
-        <div className="absolute inset-0 flex items-center justify-center overflow-hidden transition-transform duration-300 group-hover:scale-105"
-          style={{ background: `linear-gradient(160deg,${productColors(imgs, "#F3F4F6", "#E5E7EB").join(",")})` }}>
-          {/* Soft circular spotlight behind the product -- reads as a
-              studio backdrop rather than a flat color fill, and gives
-              the icon somewhere to visually "sit" rather than floating
-              on a bare gradient. */}
-          <div className="absolute rounded-full" style={{ width: "78%", aspectRatio: "1", background: "radial-gradient(circle, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.18) 55%, transparent 75%)" }} />
-          <div className="relative text-7xl p-5" style={{ filter: "drop-shadow(0 14px 16px rgba(0,0,0,0.18))" }}>
-            {getProductIllustration(p)
-              ? <div className="w-28 h-28">{getProductIllustration(p)!()}</div>
-              : (p.emoji as string)}
+    <div className="bg-white rounded-lg overflow-hidden border border-gray-200/80 hover:border-gray-300 hover:shadow-lg transition-all duration-200 group flex flex-col h-full">
+      {/* Square photo filling a white tile, like the big dropship catalogues; the
+          second photo shows on hover so shoppers see another angle at a glance. */}
+      <div className="relative cursor-pointer bg-white aspect-square overflow-hidden" onClick={onView}>
+        {photos[0] ? (
+          <>
+            <ProductPhoto src={photos[0]} alt={p.name as string} className={`transition-opacity duration-300 ${photos[1] ? "group-hover:opacity-0" : "group-hover:scale-[1.03] transition-transform"}`} />
+            {photos[1] && <ProductPhoto src={photos[1]} alt="" className="opacity-0 group-hover:opacity-100 transition-opacity duration-300" />}
+          </>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center"
+            style={{ background: `linear-gradient(160deg,${productColors(imgs, "#F3F4F6", "#E5E7EB").join(",")})` }}>
+            <div className="text-6xl">
+              {getProductIllustration(p) ? <div className="w-24 h-24">{getProductIllustration(p)!()}</div> : (p.emoji as string)}
+            </div>
           </div>
-          {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} className="p-2" />}
-        </div>
-        {p.isFlashDeal && (
-          <div className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+        )}
+        {p.isFlashDeal ? (
+          <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5">
             <Zap className="w-2.5 h-2.5" />FLASH
           </div>
-        )}
-        {discount > 0 && !p.isFlashDeal && (
-          <div className="absolute top-2 left-2 bg-green-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">
-            -{discount}%
-          </div>
+        ) : discount > 0 && (
+          <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">-{discount}%</div>
         )}
         {p.japanPart && <JapanPartBadge className="absolute bottom-2 left-2" />}
-        <button onClick={e => { e.stopPropagation(); onWishlist(); }}
-          className="absolute top-2 right-2 w-8 h-8 bg-white rounded-full shadow flex items-center justify-center hover:scale-110 transition-transform">
-          <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-300"}`} />
+        {soldOut && <div className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[11px] font-semibold text-center py-1">Sold out</div>}
+        <button onClick={e => { e.stopPropagation(); onWishlist(); }} aria-label={inWishlist ? "Remove from wishlist" : "Save to wishlist"}
+          className="absolute top-2 right-2 w-8 h-8 bg-white/90 rounded-full shadow-sm flex items-center justify-center hover:scale-110 transition-transform">
+          <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-400"}`} />
         </button>
       </div>
 
-      <div className="p-3 cursor-pointer flex-1 flex flex-col" onClick={onView}>
-        <p className="text-[10px] text-gray-500 mb-0.5">{p.brand as string}</p>
-        <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mb-1.5">{p.name as string}</p>
-        <div className="flex items-center gap-1 mb-2">
-          <Stars rating={Number(p.avgRating)} size={11} />
-          <span className="text-[10px] text-gray-500">({Number(p.reviewCount).toLocaleString()})</span>
+      <div className="px-3 pt-2.5 pb-3 cursor-pointer flex-1 flex flex-col gap-1" onClick={onView}>
+        <p className="text-[13px] text-gray-800 leading-snug line-clamp-2 min-h-[2.2rem]">{p.name as string}</p>
+        <div className="flex items-baseline gap-1.5 flex-wrap mt-auto">
+          <span className="text-[17px] font-bold text-gray-900">{fmtZAR(Number(p.price))}</span>
+          {p.compareAtPrice && <span className="text-xs text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>}
         </div>
-        <div className="mt-auto">
-          <div className="flex items-center gap-2">
-            <span className="text-base font-black text-gray-900">{fmtZAR(Number(p.price))}</span>
-            {p.compareAtPrice && (
-              <span className="text-xs text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
-            )}
-          </div>
+        <div className="flex items-center gap-1.5 text-[11px] text-gray-500 min-h-[1rem]">
+          {reviews > 0 && <><Stars rating={Number(p.avgRating)} size={10} /><span>({reviews.toLocaleString()})</span></>}
+          {reviews === 0 && sold > 0 && <span>{sold.toLocaleString()} sold</span>}
+          {reviews === 0 && sold === 0 && p.shippingIncluded && <span className="text-emerald-700 font-medium">Delivery included</span>}
           {Number(p.stock) > 0 && Number(p.stock) < 10 && (
-            <p className="text-[10px] text-orange-500 font-semibold mt-0.5">{p.japanPart ? "One-off used part" : `Only ${p.stock as number} left`}</p>
+            <span className="text-orange-600 font-semibold">{p.japanPart ? "One-off part" : `Only ${p.stock as number} left`}</span>
           )}
         </div>
       </div>
 
       <div className="px-3 pb-3">
-        <button onClick={e => { e.stopPropagation(); onCart(); }} disabled={Number(p.stock) <= 0}
-          className="w-full py-2 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{ background: Number(p.stock) <= 0 ? "#9CA3AF" : "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-          <ShoppingCart className="w-3.5 h-3.5" />{Number(p.stock) <= 0 ? "Sold out" : "Add to Cart"}
+        <button onClick={e => { e.stopPropagation(); onCart(); }} disabled={soldOut}
+          className="w-full py-2 rounded-md text-xs font-semibold text-white flex items-center justify-center gap-1.5 transition-colors bg-[#1E7B4D] hover:bg-[#17633D] disabled:bg-gray-300 disabled:cursor-not-allowed">
+          <ShoppingCart className="w-3.5 h-3.5" />{soldOut ? "Sold out" : "Add to Cart"}
         </button>
       </div>
     </div>
@@ -446,7 +443,7 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
           <p className="text-sm font-bold text-gray-900 mb-2">{fmtZAR(Number(p.price))}</p>
           <button onClick={e => { e.stopPropagation(); onCart(); }}
             className="w-full text-xs font-semibold py-1.5 rounded-md border-2 transition-colors hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
-            style={{ borderColor: "#B8862E", color: "#8A6420" }}>
+            style={{ borderColor: "#1E7B4D", color: "#17633D" }}>
             Add to cart
           </button>
         </div>
@@ -466,7 +463,7 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
     <div className="mb-4">
       <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200">
         <span className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>{title}</span>
-        <button className="text-xs font-semibold" style={{ color: "#8A6420" }}>View more</button>
+        <button className="text-xs font-semibold" style={{ color: "#17633D" }}>View more</button>
       </div>
       <div className="relative">
         {items.length > 1 && <SlideArrows onLeft={scrollLeft} onRight={scrollRight} />}
@@ -559,7 +556,7 @@ function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { produc
 
   return (
     <div className="flex-1 relative overflow-hidden rounded-xl h-[340px] sm:h-[400px]" {...pauseProps}
-      style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 100%)", border: "1px solid #E8D9B5" }}>
+      style={{ background: "#FFFFFF", border: "1px solid #E5E7EB" }}>
       {arrows}
       <div className="h-full grid grid-cols-[1fr_1.15fr] sm:grid-cols-2 cursor-pointer" onClick={() => onView(p)}>
         {/* Copy */}
@@ -570,7 +567,7 @@ function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { produc
           )}
           <p className="text-base sm:text-2xl font-bold text-gray-900 leading-snug line-clamp-3 mb-3">{p.name as string}</p>
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-2xl sm:text-4xl font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(p.price))}</span>
+            <span className="text-2xl sm:text-4xl font-black" style={{ color: "#17633D" }}>{fmtZAR(Number(p.price))}</span>
             {p.compareAtPrice && <span className="text-xs sm:text-sm text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>}
           </div>
           <p className="text-[11px] sm:text-xs text-gray-600 mt-1.5">
@@ -641,7 +638,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         <div className="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:w-56 flex-shrink-0">
           {BENEFITS.map((b, i) => (
             <div key={i} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#8A6420" }}>{b.icon}</span>
+              <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "#E9F5EE", color: "#17633D" }}>{b.icon}</span>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-gray-900 leading-tight">{b.label}</p>
                 <p className="text-[10px] text-gray-500 leading-tight truncate">{b.sub}</p>
@@ -659,7 +656,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             {brands.length > 1 && <SlideArrows onLeft={brandsSlide.scrollLeft} onRight={brandsSlide.scrollRight} />}
             <div ref={brandsSlide.ref} className="flex items-center gap-8 overflow-x-auto scroll-smooth px-8 divide-x divide-gray-100" style={{ scrollbarWidth: "none" }}>
               {brands.map((b) => (
-                <span key={b} className="shrink-0 font-serif text-xl text-gray-700 hover:text-[#8A6420] transition-colors whitespace-nowrap cursor-default pl-8 first:pl-0" style={{ fontWeight: 700 }}>
+                <span key={b} className="shrink-0 font-serif text-xl text-gray-700 hover:text-[#17633D] transition-colors whitespace-nowrap cursor-default pl-8 first:pl-0" style={{ fontWeight: 700 }}>
                   {b}
                 </span>
               ))}
@@ -697,7 +694,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
                 </div>
                 <div className="p-4 sm:p-5">
                   <p className="text-base sm:text-lg font-semibold text-gray-900 mb-1.5 line-clamp-1">{p.name as string}</p>
-                  <p className="text-xl sm:text-2xl font-bold mb-2" style={{ color: "#8C6420" }}>{fmtZAR(Number(p.price))}</p>
+                  <p className="text-xl sm:text-2xl font-bold mb-2" style={{ color: "#17633D" }}>{fmtZAR(Number(p.price))}</p>
                   <div className="flex items-center gap-1.5">
                     <Stars rating={Number(p.avgRating)} size={14} />
                     <span className="text-xs text-gray-500">{Number(p.avgRating).toFixed(1)} ({Number(p.reviewCount ?? 0).toLocaleString()})</span>
@@ -707,7 +704,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
               {/* Text content */}
               <div className="flex flex-col justify-center">
-                <span className="text-[11px] font-bold tracking-[0.15em] uppercase mb-3" style={{ color: "#8A6420" }}>Just for You</span>
+                <span className="text-[11px] font-bold tracking-[0.15em] uppercase mb-3" style={{ color: "#17633D" }}>Just for You</span>
                 <h3 className="font-serif font-bold leading-[1.08] text-gray-900 mb-4" style={{ fontSize: "clamp(24px,3.6vw,38px)" }}>
                   Pick Up Where<br />You Left Off
                 </h3>
@@ -721,13 +718,13 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
                     { icon: <Zap className="w-5 h-5" />, label: "Quick Checkout" },
                   ].map((f, i) => (
                     <div key={f.label} className={`flex items-center gap-2 ${i > 0 ? "sm:pl-6 sm:border-l sm:border-gray-200" : ""}`}>
-                      <span style={{ color: "#8A6420" }}>{f.icon}</span>
+                      <span style={{ color: "#17633D" }}>{f.icon}</span>
                       <span className="text-xs sm:text-sm text-gray-600 font-medium">{f.label}</span>
                     </div>
                   ))}
                 </div>
                 <button onClick={onCategory} className="inline-flex items-center gap-2 w-fit text-white font-bold px-6 py-3 rounded-lg transition-transform hover:scale-[1.02]"
-                  style={{ background: "#8C6420" }}>
+                  style={{ background: "#17633D" }}>
                   View More <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -741,12 +738,12 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#8A6420" }}>
+              <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#E9F5EE", color: "#17633D" }}>
                 <ShoppingBag className="w-5 h-5" />
               </span>
               <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>What to Explore Next</span>
             </div>
-            <button onClick={onCategory} className="flex items-center gap-1 text-sm font-semibold" style={{ color: "#8A6420" }}>
+            <button onClick={onCategory} className="flex items-center gap-1 text-sm font-semibold" style={{ color: "#17633D" }}>
               View All <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -817,7 +814,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
           { icon: <User className="w-4 h-4" />, label: "Customer Support", sub: "Friendly support whenever you need us" },
         ].map((b, i) => (
           <div key={i} className="flex items-start gap-2.5">
-            <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#8A6420" }}>{b.icon}</span>
+            <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "#E9F5EE", color: "#17633D" }}>{b.icon}</span>
             <div>
               <p className="text-xs font-bold text-gray-900">{b.label}</p>
               <p className="text-[10px] text-gray-500 leading-snug">{b.sub}</p>
@@ -978,7 +975,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
           <button key={i} onClick={() => setActiveCat(String(c.id ?? ""))}
             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all"
             style={{
-              background: activeCat === String(c.id ?? "") ? "#B8862E" : "#F3F4F6",
+              background: activeCat === String(c.id ?? "") ? "#1E7B4D" : "#F3F4F6",
               color: activeCat === String(c.id ?? "") ? "white" : "#374151",
             }}>
             {c.icon as string} {c.name as string}
@@ -1025,7 +1022,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
       )}
 
       {/* Products */}
-      <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
+      <div className="flex-1 overflow-y-auto p-4" style={{ background: "#F5F6F8" }}>
         {!loading && !activeCat && !search && products.length > 0 && (
           <div className="-mx-4 -mt-4 mb-4">
             <ProductRow title="Popular right now" products={products} onProduct={onProduct} onCart={onCart} slice={[0, 10]} />
@@ -1033,7 +1030,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
         )}
         {loading ? (
           <div className="flex items-center justify-center py-24">
-            <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} />
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#17633D" }} />
           </div>
         ) : products.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
@@ -1071,7 +1068,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
                     <p className="text-base font-black text-gray-900">{fmtZAR(Number(p.price))}</p>
                     {p.compareAtPrice && <p className="text-xs text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</p>}
                     <button onClick={e => { e.stopPropagation(); onCart(p); }}
-                      className="mt-1 px-3 py-1 rounded-lg text-xs font-bold text-white" style={{ background: "#B8862E" }}>
+                      className="mt-1 px-3 py-1 rounded-lg text-xs font-bold text-white" style={{ background: "#1E7B4D" }}>
                       Add
                     </button>
                   </div>
@@ -1083,7 +1080,7 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
         {!loading && products.length > 0 && (
           <div ref={sentinelRef} className="flex items-center justify-center py-8">
             {loadingMore ? (
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#8A6420" }} />
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#17633D" }} />
             ) : !hasMore ? (
               <p className="text-xs text-gray-500">You've reached the end — {products.length.toLocaleString()} products shown</p>
             ) : null}
@@ -1152,7 +1149,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
       .finally(() => setLoading(false));
   }, [productId]);
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#17633D" }} /></div>;
   if (!data) return null;
 
   const { product: p, seller, reviews, related } = data;
@@ -1163,7 +1160,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
   const imgs = p.images as string[];
 
   return (
-    <div className="flex-1 overflow-y-auto" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 overflow-y-auto" style={{ background: "#F5F6F8" }}>
       {/* Back bar */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100">
         <button onClick={onBack} aria-label="Back" className="p-1.5 rounded-lg hover:bg-gray-100"><ArrowLeft className="w-4 h-4 text-gray-700" /></button>
@@ -1186,8 +1183,8 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
               <Product3DViewer
                 key={productId}
                 emoji={p.emoji as string}
-                colorA={productColors(imgs, "#B8862E", "#0F3D24")[0]}
-                colorB={productColors(imgs, "#B8862E", "#0F3D24")[1]}
+                colorA={productColors(imgs, "#1E7B4D", "#0F3D24")[0]}
+                colorB={productColors(imgs, "#1E7B4D", "#0F3D24")[1]}
                 brand={(p.brand as string) ?? ""}
                 name={p.name as string}
                 discount={discount}
@@ -1199,8 +1196,8 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
             <ProductPhotoGallery
               key={productId}
               emoji={p.emoji as string}
-              colorA={productColors(imgs, "#B8862E", "#0F3D24")[0]}
-              colorB={productColors(imgs, "#B8862E", "#0F3D24")[1]}
+              colorA={productColors(imgs, "#1E7B4D", "#0F3D24")[0]}
+              colorB={productColors(imgs, "#1E7B4D", "#0F3D24")[1]}
               photos={productPhotos(imgs)}
               name={p.name as string}
               discount={discount}
@@ -1251,9 +1248,9 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                   <button key={i} onClick={() => setSelVariant(v.id as string)}
                     className="px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all"
                     style={{
-                      background: selVariant === v.id ? "#B8862E" : "white",
+                      background: selVariant === v.id ? "#1E7B4D" : "white",
                       color: selVariant === v.id ? "white" : "#374151",
-                      borderColor: selVariant === v.id ? "#B8862E" : "#E5E7EB",
+                      borderColor: selVariant === v.id ? "#1E7B4D" : "#E5E7EB",
                     }}>
                     {v.value as string}
                     {Number(v.additionalPrice) > 0 && <span className="ml-1 opacity-70">+{fmtZAR(Number(v.additionalPrice))}</span>}
@@ -1291,7 +1288,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           <div className="flex gap-3">
             <button onClick={() => onCart(p, selVariant || undefined)} disabled={Number(p.stock) <= 0}
               className="flex-1 py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:cursor-not-allowed"
-              style={{ background: Number(p.stock) <= 0 ? "#9CA3AF" : "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+              style={{ background: Number(p.stock) <= 0 ? "#9CA3AF" : "#1E7B4D" }}>
               <ShoppingCart className="w-4 h-4" />{Number(p.stock) <= 0 ? "Sold out" : "Add to Cart"}
             </button>
             <button onClick={() => onWishlist(p.id as string)}
@@ -1352,11 +1349,11 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                       ))}
                     </div>
                     <input value={reviewTitle} onChange={e => setReviewTitle(e.target.value)} placeholder="Review title (optional)"
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-[#B8862E]" />
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 outline-none focus:border-[#1E7B4D]" />
                     <textarea value={reviewBody} onChange={e => setReviewBody(e.target.value)} rows={3} placeholder="Share what you liked or didn't..."
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-[#B8862E]" />
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 outline-none focus:border-[#1E7B4D]" />
                     <button onClick={submitReview} disabled={!reviewRating || submittingReview}
-                      className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#B8862E" }}>
+                      className="px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50" style={{ background: "#1E7B4D" }}>
                       {submittingReview ? "Posting..." : authUser ? "Post review" : "Sign in to review"}
                     </button>
                   </>
@@ -1437,7 +1434,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
   const items = (cart?.items as R[]) ?? [];
 
   if (items.length === 0) return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" style={{ background: "#F5F6F8" }}>
       <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl" style={{ background: "#EAF7EE" }}>🛒</div>
       <h2 className="font-serif text-xl text-gray-900" style={{ fontWeight: 600 }}>Your cart is empty</h2>
       <p className="text-sm text-gray-500">Browse products and add items to get started</p>
@@ -1445,7 +1442,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
   );
 
   return (
-    <div className="flex-1 flex overflow-hidden" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 flex overflow-hidden" style={{ background: "#F5F6F8" }}>
       {/* Items */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <h2 className="font-serif text-xl text-gray-900" style={{ fontWeight: 600 }}>Cart ({items.length})</h2>
@@ -1458,7 +1455,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{item.name as string}</p>
               <p className="text-xs text-gray-500">{item.sellerName as string}</p>
-              <p className="text-sm font-bold mt-1" style={{ color: "#8A6420" }}>{fmtZAR(Number(item.unitPrice))}</p>
+              <p className="text-sm font-bold mt-1" style={{ color: "#17633D" }}>{fmtZAR(Number(item.unitPrice))}</p>
             </div>
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
               <button onClick={() => onRemove(item.productId as string)}>
@@ -1476,7 +1473,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
         {/* Coupon */}
         <div className="bg-white rounded-2xl p-4 border border-gray-100">
           <div className="flex items-center gap-2 mb-3">
-            <Tag className="w-4 h-4" style={{ color: "#8A6420" }} />
+            <Tag className="w-4 h-4" style={{ color: "#17633D" }} />
             <p className="text-sm font-semibold text-gray-900">Have a coupon?</p>
           </div>
           <div className="flex gap-2">
@@ -1484,7 +1481,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
               placeholder="e.g. WELCOME10"
               className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-400 uppercase" />
             <button onClick={() => onApplyCoupon(coupon)}
-              className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "#B8862E" }}>Apply</button>
+              className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ background: "#1E7B4D" }}>Apply</button>
           </div>
           {cart?.couponCode && (
             <p className="text-xs text-green-600 mt-2 font-semibold">
@@ -1514,13 +1511,13 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
           ))}
           <div className="border-t border-gray-100 pt-3 flex justify-between">
             <span className="font-bold text-gray-900">Total</span>
-            <span className="text-xl font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
+            <span className="text-xl font-black" style={{ color: "#17633D" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
           </div>
           <ChargedInZarNote zarTotal={Number(cart?.total ?? 0)} />
         </div>
         <button onClick={onCheckout}
           className="w-full py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2"
-          style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+          style={{ background: "#1E7B4D" }}>
           Proceed to Checkout <ChevronRight className="w-4 h-4" />
         </button>
         <div className="flex items-center justify-center mt-4"><CardSchemeMarks /></div>
@@ -1654,19 +1651,19 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-5" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 overflow-y-auto p-5" style={{ background: "#F5F6F8" }}>
       {/* Stepper */}
       <div className="flex items-start gap-0 mb-6 max-w-lg mx-auto">
         {(["Address","Shipping","Payment"] as const).map((label, i) => (
           <div key={label} className="flex-1 flex items-center">
             <div className="flex flex-col items-center gap-1">
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
-                style={{ background: si >= i ? "#B8862E" : "#E5E7EB", color: si >= i ? "white" : "#9CA3AF" }}>
+                style={{ background: si >= i ? "#1E7B4D" : "#E5E7EB", color: si >= i ? "white" : "#9CA3AF" }}>
                 {si > i ? <CheckCircle className="w-4 h-4" /> : i + 1}
               </div>
               <span className="text-[10px] text-gray-500">{label}</span>
             </div>
-            {i < 2 && <div className="flex-1 h-px mx-2 mt-3.5" style={{ background: si > i ? "#B8862E" : "#E5E7EB" }} />}
+            {i < 2 && <div className="flex-1 h-px mx-2 mt-3.5" style={{ background: si > i ? "#1E7B4D" : "#E5E7EB" }} />}
           </div>
         ))}
       </div>
@@ -1691,7 +1688,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           ))}
 
           {addresses.length > 0 && !addingAddress && (
-            <button onClick={() => setAddingAddress(true)} className="w-full p-3 rounded-2xl border border-dashed border-gray-300 text-xs font-semibold text-gray-500 hover:border-[#B8862E] hover:text-[#8A6420]">
+            <button onClick={() => setAddingAddress(true)} className="w-full p-3 rounded-2xl border border-dashed border-gray-300 text-xs font-semibold text-gray-500 hover:border-[#1E7B4D] hover:text-[#17633D]">
               + Add a new address
             </button>
           )}
@@ -1702,20 +1699,20 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               {addrError && <div className="px-3 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium">{addrError}</div>}
               <div className="grid grid-cols-2 gap-2">
                 <input placeholder="First name" value={newAddr.firstName} onChange={e => setNewAddr(p => ({ ...p, firstName: e.target.value }))}
-                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
                 <input placeholder="Last name" value={newAddr.lastName} onChange={e => setNewAddr(p => ({ ...p, lastName: e.target.value }))}
-                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
               </div>
               <input placeholder="Street address" value={newAddr.line1} onChange={e => setNewAddr(p => ({ ...p, line1: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
               <div className="grid grid-cols-2 gap-2">
                 <input placeholder="City" value={newAddr.city} onChange={e => setNewAddr(p => ({ ...p, city: e.target.value }))}
-                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
                 <input placeholder="Postal code" value={newAddr.postalCode} onChange={e => setNewAddr(p => ({ ...p, postalCode: e.target.value }))}
-                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                  className="border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
               </div>
               <input placeholder="Phone number" value={newAddr.phone} onChange={e => setNewAddr(p => ({ ...p, phone: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#B8862E]" />
+                className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
               <div className="flex gap-2 pt-1">
                 {addresses.length > 0 && (
                   <button onClick={() => { setAddingAddress(false); setAddrError(null); }} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200">
@@ -1731,7 +1728,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
 
           <button onClick={() => setStep("shipping")} disabled={addresses.length === 0 || addingAddress}
             className="w-full py-3.5 rounded-2xl text-sm font-bold text-white disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+            style={{ background: "#1E7B4D" }}>
             Continue to Shipping
           </button>
         </div>
@@ -1753,7 +1750,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           ].map(opt => (
             <button key={opt.id} onClick={() => setShipping(opt.id)}
               className={`w-full p-4 rounded-2xl text-left border flex items-center gap-3 transition-all ${shipping === opt.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
-              <Truck className="w-5 h-5 flex-shrink-0" style={{ color: "#8A6420" }} />
+              <Truck className="w-5 h-5 flex-shrink-0" style={{ color: "#17633D" }} />
               <div className="flex-1">
                 <p className="text-sm font-semibold text-gray-900">{opt.label}</p>
                 <p className="text-xs text-gray-500">{opt.sub}</p>
@@ -1763,7 +1760,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           ))}
           <div className="flex gap-3 pt-2">
             <button onClick={() => setStep("address")} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold border border-gray-200">Back</button>
-            <button onClick={() => setStep("payment")} className="flex-[2] py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>Continue to Payment</button>
+            <button onClick={() => setStep("payment")} className="flex-[2] py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "#1E7B4D" }}>Continue to Payment</button>
           </div>
         </div>
       )}
@@ -1850,7 +1847,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Order total</span>
-              <span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
+              <span className="font-black" style={{ color: "#17633D" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
             </div>
             {creditToApply > 0 && (
               <div className="flex justify-between text-sm mt-1">
@@ -1878,7 +1875,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
             <button onClick={() => setStep("shipping")} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold border border-gray-200">Back</button>
             <button onClick={handlePlace} disabled={placing || (amountDue > 0 && !payment)}
               className="flex-[2] py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+              style={{ background: "#1E7B4D" }}>
               {placing ? <><Loader2 className="w-4 h-4 animate-spin" />Processing…</> : <>{amountDue === 0 && creditToApply > 0 ? "Pay with store credit" : payment === "card" ? "Continue to secure payment" : "Place Order"} · {fmtZAR(amountDue)}</>}
             </button>
           </div>
@@ -1901,7 +1898,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               )}
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
                 {placedOrder?.orderNumber && <div className="flex justify-between text-sm"><span className="text-gray-500">Order number</span><span className="font-semibold">{placedOrder.orderNumber}</span></div>}
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#17633D" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Payment status</span><span className="font-semibold text-amber-600">Pending confirmation</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)} after payment clears</span></div>
               </div>
@@ -1912,13 +1909,13 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed!</h2>
               <p className="text-gray-500 mb-6">Thank you! A confirmation email is on its way.</p>
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#17633D" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Tracking</span><span className="font-semibold text-right">Emailed and shown in My Orders once dispatched</span></div>
               </div>
             </>
           )}
-          <button onClick={onBack} className="w-full py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>Continue Shopping</button>
+          <button onClick={onBack} className="w-full py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: "#1E7B4D" }}>Continue Shopping</button>
         </div>
       )}
     </div>
@@ -1948,11 +1945,11 @@ function OrdersView() {
     mktOrders.list().then(r => { setOrders(r.data as R[]); setLoading(false); });
   }, []);
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#17633D" }} /></div>;
 
   if (selected) return (
-    <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
-      <button onClick={() => setSelected(null)} className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: "#8A6420" }}>
+    <div className="flex-1 overflow-y-auto p-4" style={{ background: "#F5F6F8" }}>
+      <button onClick={() => setSelected(null)} className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: "#17633D" }}>
         <ArrowLeft className="w-4 h-4" />Back to Orders
       </button>
       <div className="bg-white rounded-2xl border border-gray-100 p-5 max-w-2xl space-y-4">
@@ -2004,7 +2001,7 @@ function OrdersView() {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 overflow-y-auto p-4" style={{ background: "#F5F6F8" }}>
       <h2 className="font-serif text-xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>My Orders</h2>
       {orders.length === 0 ? (
         <div className="text-center py-16 text-gray-500"><Package className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No orders yet</p></div>
@@ -2047,9 +2044,9 @@ function WishlistView({ authUser, wishlistIds, onProduct, onCart, onWishlist }: 
   const [items, setItems]   = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => { mktWishlist.get(authUser.id).then(r => { setItems(r.data as R[]); setLoading(false); }); }, [authUser.id]);
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#17633D" }} /></div>;
   return (
-    <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 overflow-y-auto p-4" style={{ background: "#F5F6F8" }}>
       <h2 className="font-serif text-xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>My Wishlist ({items.length})</h2>
       {items.length === 0
         ? <div className="text-center py-16 text-gray-500"><Heart className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No saved items</p></div>
@@ -2411,7 +2408,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               </select>
               <button onClick={handleUseLiveLocation} disabled={locating}
                 className="w-full text-left px-2.5 py-1.5 text-xs rounded-md hover:bg-gray-50 flex items-center gap-1.5 font-semibold disabled:opacity-50"
-                style={{ color: "#8A6420", background: "#FBF3E1" }}>
+                style={{ color: "#17633D", background: "#E9F5EE" }}>
                 <MapPin className="w-3.5 h-3.5" /> {locating ? "Finding you…" : "Use my live location"}
               </button>
               {locateFailed && (
@@ -2432,13 +2429,13 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-wide">All Categories</div>
               <div className="relative group/new">
                 <button onClick={() => setView("catalog")}
-                  className="w-full flex items-center justify-between text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors hover:bg-[#FBF3E1]" style={{ color: "#8A6420" }}>
+                  className="w-full flex items-center justify-between text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors hover:bg-[#E9F5EE]" style={{ color: "#17633D" }}>
                   {DEPARTMENTS[0]} <ChevronRight className="w-3 h-3" />
                 </button>
                 <div className="absolute top-0 left-full ml-0.5 w-56 max-h-96 overflow-y-auto bg-white text-gray-800 rounded shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover/new:opacity-100 group-hover/new:visible transition-all z-40">
                   {NEW_ARRIVALS_SUB.map((item) => (
                     <button key={item} onClick={() => setView("catalog")}
-                      className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#8A6420] transition-colors">
+                      className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#E9F5EE] hover:text-[#17633D] transition-colors">
                       {item}
                     </button>
                   ))}
@@ -2447,7 +2444,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               <div className="max-h-80 overflow-y-auto">
                 {DEPARTMENTS.slice(1).map((dept) => (
                   <button key={dept} onClick={() => setView("catalog")}
-                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#8A6420] transition-colors">
+                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#E9F5EE] hover:text-[#17633D] transition-colors">
                     {dept}
                   </button>
                 ))}
@@ -2482,7 +2479,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               <button
                 onMouseDown={() => runSearch(navSearch)}
                 className="w-full flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-left border-t border-gray-100"
-                style={{ color: "#8A6420" }}
+                style={{ color: "#17633D" }}
               >
                 <Search className="w-3.5 h-3.5" /> See all results for "{navSearch}"
               </button>

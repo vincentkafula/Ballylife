@@ -12,9 +12,10 @@
  * scrubSupplierBranding in supplierWhiteLabel.ts; cleanProductName runs it too.
  */
 import { scrubSupplierBranding } from "./supplierWhiteLabel";
+import { englishOnly, englishLines } from "./englishOnly";
 
 /** Bump when the rules below change: stored names are re-cleaned once per version. */
-export const NAMING_RULES_VERSION = 1;
+export const NAMING_RULES_VERSION = 2; // 2: English only
 
 const MAX_NAME_LENGTH = 90;
 
@@ -70,7 +71,7 @@ function shorten(name: string): string {
 }
 
 export function cleanProductName(raw: string | null | undefined): string {
-  let s = scrubSupplierBranding(raw);
+  let s = englishOnly(scrubSupplierBranding(raw));
   if (!s) return "";
   for (const re of TRADE_JARGON) s = s.replace(re, " ");
   s = s
@@ -89,8 +90,11 @@ export function cleanProductName(raw: string | null | undefined): string {
   s = s.split(" ").map(titleCaseWord).join(" ");
   if (s) s = s[0].toUpperCase() + s.slice(1);
   // Never return something unusable: fall back to the branding-scrubbed original.
-  return s.length >= 3 ? s : scrubSupplierBranding(raw);
+  return s.length >= 3 ? s : englishOnly(scrubSupplierBranding(raw));
 }
+
+// Marketplace badges that leak into supplier text: "Saved by 100+ buyers", "Repurchase Rate 16%", "Ships within 20h".
+const MARKETPLACE_BADGES = /^(?:saved by [\d,]+\+? buyers?|repurchase rate \d+%|ships within \d+ ?h(?:ours?)?|\d+\+? (?:sold|buyers?|reviews?)|(?:\d+)?% (?:positive|good) (?:reviews?|feedback))$/i;
 
 /**
  * Descriptions: drop the same marketplace and trade jargon, but only at
@@ -98,7 +102,7 @@ export function cleanProductName(raw: string | null | undefined): string {
  */
 export function cleanDescriptionText(text: string | null | undefined): string {
   if (!text) return "";
-  let s = text;
+  let s = englishLines(text).split("\n").filter(l => !MARKETPLACE_BADGES.test(l.trim())).join("\n");
   for (const re of TRADE_JARGON.slice(0, 8)) s = s.replace(re, " ");
   return s.split("\n").map(l => l.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.;:!?])/g, "$1").replace(/^[\s,;:]+/, "").trim()).filter(Boolean).join("\n");
 }

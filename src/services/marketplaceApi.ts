@@ -499,8 +499,8 @@ export const mktJapanParts = {
 export interface Sourcing1688Settings {
   enabled: boolean; keywords: { keyword: string; productClass: string; enabled: boolean }[]; maxItemsPerKeyword: number; refreshHours: number;
   filters: { sortType: "normal" | "va_sales360" | "price"; merchantType: "any" | "superFactory" | "certifiedMerchant"; supplierYears: "any" | "5" | "7" | "10"; fastShippingOnly: boolean; maxMoq: number | null; priceMinCny: number | null; priceMaxCny: number | null };
-  estimate: { markupPct: number; vatPct: number; vatUpliftPct: number; agentFeePct: number; domesticShippingCny: number; classes: Record<string, { dutyPct: number; freightZar: number }>; defaultClass: { dutyPct: number; freightZar: number } };
-  listing: { autoList: boolean; maxMoq: number; stockCap: number; autoSendToCj: boolean; maxCjRequestsPerDay: number; deliveryDays: { min: number; max: number } };
+  estimate: { markupMode: "tiered" | "flat"; markupPct: number; vatPct: number; vatUpliftPct: number; agentFeePct: number; domesticShippingCny: number; classes: Record<string, { dutyPct: number; freightZar: number }>; defaultClass: { dutyPct: number; freightZar: number } };
+  listing: { autoList: boolean; maxMoq: number; maxLandedMultiple: number; stockCap: number; autoSendToCj: boolean; maxCjRequestsPerDay: number; deliveryDays: { min: number; max: number } };
 }
 export interface Offer1688 {
   id: string; offerId: string; title: string; url: string | null; priceCny: number; priceRangeCny: string | null; moq: number | null; unit: string | null;

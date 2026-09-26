@@ -30,6 +30,7 @@ import { categorizeProduct } from "../utils/productCategorizer";
 import { cleanProductName, cleanDescriptionText } from "../utils/productNaming";
 import { setChinaAgentDeliveryDays } from "../utils/delivery";
 import { variantIdForVid } from "../utils/cjVariants";
+import { englishOnly, englishLines } from "../utils/englishOnly";
 import {
   normalise1688Settings, DEFAULT_1688_SETTINGS, actorInput, parse1688Run, estimate1688, classFor,
   type Sourcing1688Settings, type Offer1688, type Variant1688,
@@ -79,12 +80,78 @@ export async function reestimateAll(settings?: Sourcing1688Settings): Promise<nu
     await pool!.query(`UPDATE sourcing_1688_offers SET product_class = $1, estimate = $2 WHERE id = $3`,
       [cls, JSON.stringify(estimate1688(Number(r.price_cny), cls, cny, usd, s)), r.id]);
     if (r.direct_product_id) {
+      const est = estimate1688(Number(r.price_cny), cls, cny, usd, s);
+      if (est.goodsZar > 0 && est.landedZar / est.goodsZar > s.listing.maxLandedMultiple) {
+        await pool!.query(`UPDATE mkt_products SET status = 'out_of_stock', updated_at = now() WHERE id::text = $1 AND status = 'active'`, [r.direct_product_id]);
+        await pool!.query(`UPDATE sourcing_1688_offers SET not_listed_reason = $1 WHERE id = $2`,
+          [`Shipping and fees would cost ${(est.landedZar / est.goodsZar).toFixed(1)}× the item — too expensive to sell on its own`, r.id]);
+        continue;
+      }
       const pricing = listingPricing(Number(r.price_cny), Array.isArray(r.variants) ? r.variants : [], cls, cny, usd, s);
       await pool!.query(`UPDATE mkt_products SET price = $1, variants = $2, price_breakdown = $3, updated_at = now() WHERE id::text = $4`,
         [pricing.price, JSON.stringify(pricing.variants.map(v => ({ ...v, stock: v.stock }))), JSON.stringify(pricing.breakdown), r.direct_product_id]);
     }
   }
   return rows.length;
+}
+
+// ── One-off upgrades ─────────────────────────────────────────────────────
+
+const OLD_DEFAULT_FREIGHT: Record<string, number> = { apparel: 120, shoes: 180, bags: 150, electronics: 150, home: 200, beauty: 100, toys: 150, jewellery: 60, sports: 180 };
+
+/**
+ * v2 (English + cheaper): saved settings still on the original estimate
+ * defaults move to the new ones (consolidated shipping, sliding markup) --
+ * anything the admin changed by hand is kept -- then every listing is
+ * re-priced and its text rebuilt in English. Runs once.
+ */
+export async function upgrade1688ListingsOnce(): Promise<boolean> {
+  const flag = "sourcing1688_v2_english_pricing";
+  const { rows: done } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [flag]);
+  if (done.length) return false;
+  const { rows: saved } = await pool!.query(`SELECT settings FROM sourcing_1688_settings WHERE id = 'default'`);
+  if (saved.length) {
+    const raw = saved[0].settings ?? {};
+    const est = raw.estimate ?? {};
+    const classes = est.classes ?? {};
+    const untouched = (est.domesticShippingCny === undefined || Number(est.domesticShippingCny) === 10)
+      && Object.entries(OLD_DEFAULT_FREIGHT).every(([k, v]) => classes[k] === undefined || Number(classes[k].freightZar) === v)
+      && (est.markupPct === undefined || Number(est.markupPct) === 50);
+    if (untouched) {
+      const next = { ...raw, estimate: { ...DEFAULT_1688_SETTINGS.estimate, vatPct: est.vatPct ?? DEFAULT_1688_SETTINGS.estimate.vatPct } };
+      await pool!.query(`UPDATE sourcing_1688_settings SET settings = $1, updated_at = now(), updated_by = 'upgrade-v2' WHERE id = 'default'`, [JSON.stringify(next)]);
+    }
+  }
+  const s = await get1688Settings();
+  const repriced = await reestimateAll(s);
+
+  const { rows } = await pool!.query(`SELECT * FROM sourcing_1688_offers WHERE direct_product_id IS NOT NULL`);
+  for (const r of rows) {
+    const o = offerFromRow(r);
+    const name = cleanProductName(o.title) || o.title;
+    const description = listingDescription(o, s);
+    await pool!.query(
+      `UPDATE mkt_products SET name = $1, description = $2, short_description = $3, updated_at = now() WHERE id::text = $4`,
+      [name, description, description.split("\n")[0].slice(0, 160), r.direct_product_id]
+    );
+  }
+  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`, [flag, `repriced ${repriced}, rewrote ${rows.length}`]);
+  logger.info("sourcing1688.upgraded_v2", { repriced, rewritten: rows.length });
+  return true;
+}
+
+function offerFromRow(r: Row): Offer1688 {
+  const variants = (Array.isArray(r.variants) ? r.variants : []) as Variant1688[];
+  return {
+    offerId: r.offer_id, title: r.title, url: r.url, priceCny: Number(r.price_cny), priceRangeCny: r.price_range_cny, moq: r.moq, unit: r.unit,
+    stock: r.stock, outOfStock: r.out_of_stock, soldCount: r.sold_count, repurchaseRate: r.repurchase_rate, starLevel: r.star_level,
+    supplierName: r.supplier_name, supplierType: r.supplier_type, supplierYears: r.supplier_years, location: r.location, categoryPath: r.category_path,
+    images: Array.isArray(r.images) ? r.images : [], videoUrl: r.video_url, totalVariants: r.total_variants, supportsDropship: r.supports_dropship,
+    deliveryLimitDays: r.delivery_limit_days, sourceKeyword: r.source_keyword,
+    variants: variants.map((v, i) => ({ ...v, label: englishOnly(v.label) || (variants.length > 1 ? `Option ${i + 1}` : "Standard") })),
+    specs: (Array.isArray(r.specs) ? r.specs : []).map((l: string) => englishLines(l)).filter(Boolean),
+    sellingPoints: [],
+  };
 }
 
 // ── Direct listings (bought through a China agent) ───────────────────────
@@ -103,17 +170,30 @@ function listingPricing(priceCny: number, variants: Variant1688[], cls: string, 
   return { price: base, variants: listingVariants, breakdown };
 }
 
-function whyNotListable(o: Offer1688, s: Sourcing1688Settings): string | null {
+function whyNotListable(o: Offer1688, s: Sourcing1688Settings, landedMultiple?: number): string | null {
   if (o.outOfStock) return "Out of stock on 1688";
+  if (landedMultiple !== undefined && landedMultiple > s.listing.maxLandedMultiple) return `Shipping and fees would cost ${landedMultiple.toFixed(1)}× the item — too expensive to sell on its own`;
   if (o.moq !== null && o.moq > s.listing.maxMoq) return `MOQ ${o.moq} is above ${s.listing.maxMoq}`;
   if (!o.images.length) return "No photos";
   if ((o.totalVariants ?? 0) > 1 && o.variants.length < 2) return "Has options, but the options weren't returned";
   return null;
 }
 
-function listingDescription(o: Offer1688): string {
-  const lines = [...o.sellingPoints, ...o.specs].map(l => cleanDescriptionText(l)).filter(Boolean);
-  return lines.length ? lines.join("\n") : cleanProductName(o.title);
+/**
+ * 1688 "selling points" are marketplace badges (first-order discounts,
+ * repurchase rates, dispatch promises), not product copy -- never shown.
+ * The description is the English product name plus English spec lines.
+ */
+function listingDescription(o: Offer1688, s: Sourcing1688Settings): string {
+  const name = cleanProductName(o.title) || o.title;
+  const specs = o.specs.map(l => cleanDescriptionText(l)).filter(Boolean).slice(0, 12);
+  const options = o.variants.length > 1 ? `Available options: ${o.variants.map(v => v.label).join(", ")}.` : "";
+  return [
+    `${name}.`,
+    options,
+    specs.length ? `Specifications:\n${specs.join("\n")}` : "",
+    `Delivered to your door in ${s.listing.deliveryDays.min}–${s.listing.deliveryDays.max} business days, with shipping, duties and import taxes included in the price.`,
+  ].filter(Boolean).join("\n");
 }
 
 /** Lists (or refreshes) one find in the Ballylife store, or records why it can't be. */
@@ -121,7 +201,8 @@ async function listOffer(offerRowId: string, o: Offer1688, cls: string, s: Sourc
   const { rows: offerRows } = await pool!.query(`SELECT status, direct_product_id FROM sourcing_1688_offers WHERE id = $1`, [offerRowId]);
   const state = offerRows[0];
   if (!state || state.status === "dismissed" || state.status === "listed") return "skipped"; // dismissed, or CJ's listing has taken over
-  const reason = whyNotListable(o, s);
+  const est = estimate1688(o.priceCny, cls, cny, usd, s);
+  const reason = whyNotListable(o, s, est.goodsZar > 0 ? est.landedZar / est.goodsZar : undefined);
   const existingId: string | null = state.direct_product_id ?? null;
   if (reason) {
     await pool!.query(`UPDATE sourcing_1688_offers SET not_listed_reason = $1 WHERE id = $2`, [reason, offerRowId]);
@@ -129,7 +210,7 @@ async function listOffer(offerRowId: string, o: Offer1688, cls: string, s: Sourc
     return "skipped";
   }
   const name = cleanProductName(o.title) || o.title;
-  const description = listingDescription(o);
+  const description = listingDescription(o, s);
   const categoryId = categorizeProduct(name, [o.categoryPath], known, FALLBACK_CATEGORY) ?? FALLBACK_CATEGORY;
   const pricing = listingPricing(o.priceCny, o.variants, cls, cny, usd, s);
   const stock = pricing.variants.length ? pricing.variants.reduce((n, v) => n + v.stock, 0) : Math.min(s.listing.stockCap, o.stock ?? s.listing.stockCap);

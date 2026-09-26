@@ -16,13 +16,13 @@ import sourcing1688Router from "./routes/sourcing1688Router";
 import superAdminRouter from "./routes/superAdminRouter";
 import { ensureSuperAdminFromEnv } from "./services/superAdmin";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
-import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce } from "./services/cjCatalog";
+import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce, applyMarkupTiersOnce } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
 import { startFxRefreshWorker } from "./services/fxRates";
 import { secureDemoAccounts } from "./services/demoAccounts";
 import { startProgrammesWorker } from "./services/programmes";
 import { startJapanPartsWorker, ensureJapanPartsCategory } from "./services/japanParts";
-import { start1688Worker } from "./services/sourcing1688";
+import { start1688Worker, upgrade1688ListingsOnce } from "./services/sourcing1688";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 import { logger } from "./utils/logger";
@@ -135,7 +135,12 @@ async function start() {
   await secureDemoAccounts().catch(err => logger.error("security.demo_check_failed", { error: err instanceof Error ? err.message : String(err) }));
   if (cjOnlyCatalog()) await enforceCjOnlyCatalog();
   // Background: a few thousand small updates shouldn't hold up startup.
-  void tidyCatalogOnce().catch(err => logger.error("catalog.tidy_failed", { error: err instanceof Error ? err.message : String(err) }));
+  // Background, in order: re-clean text (English only), re-price with the sliding markup, then 1688 listings.
+  void (async () => {
+    await tidyCatalogOnce().catch(err => logger.error("catalog.tidy_failed", { error: err instanceof Error ? err.message : String(err) }));
+    await applyMarkupTiersOnce().catch(err => logger.error("catalog.reprice_tiers_failed", { error: err instanceof Error ? err.message : String(err) }));
+    await upgrade1688ListingsOnce().catch(err => logger.error("sourcing1688.upgrade_failed", { error: err instanceof Error ? err.message : String(err) }));
+  })();
   startCjCatalogWorker();
   startFxRefreshWorker();
   startProgrammesWorker();

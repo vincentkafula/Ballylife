@@ -62,7 +62,7 @@ export function MorePlansPage({ loggedIn, onSignIn, onManage, onTerms }: {
   const { trialDays } = plans.more;
 
   return (
-    <div className="flex-1 overflow-y-auto" style={{ background: "#FAF6EC" }}>
+    <div className="flex-1 overflow-y-auto" style={{ background: "#F5F6F8" }}>
       <div className="max-w-4xl mx-auto px-4 py-10">
         <div className="text-center mb-8">
           <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full">
@@ -79,10 +79,10 @@ export function MorePlansPage({ loggedIn, onSignIn, onManage, onTerms }: {
             const isCurrent = current?.plan === plan.id && current.benefitsActive;
             const featured = plan.id === "premium";
             return (
-              <div key={plan.id} className={`bg-white rounded-2xl p-6 flex flex-col border-2 ${featured ? "border-[#8A6420] shadow-lg" : "border-gray-200"}`}>
+              <div key={plan.id} className={`bg-white rounded-2xl p-6 flex flex-col border-2 ${featured ? "border-[#17633D] shadow-lg" : "border-gray-200"}`}>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-xl font-bold text-gray-900">{plan.name}</h2>
-                  {featured && <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-[#8A6420] px-2 py-0.5 rounded-full">Best value</span>}
+                  {featured && <span className="text-[10px] font-bold uppercase tracking-wider text-white bg-[#17633D] px-2 py-0.5 rounded-full">Best value</span>}
                 </div>
                 <Price zar={plan.monthlyPriceZar} suffix="/month" />
                 {trialAvailable && <p className="text-xs text-emerald-700 font-semibold mt-1">First {trialDays} days free</p>}
@@ -97,7 +97,7 @@ export function MorePlansPage({ loggedIn, onSignIn, onManage, onTerms }: {
                   <button onClick={onManage} className="mt-6 w-full py-3 rounded-xl text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800">Switch to {plan.name}</button>
                 ) : (
                   <button onClick={() => subscribe(plan)} disabled={busy !== null}
-                    className={`mt-6 w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-60 ${featured ? "bg-[#8A6420] hover:bg-[#735218]" : "bg-emerald-700 hover:bg-emerald-800"}`}>
+                    className={`mt-6 w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-60 ${featured ? "bg-[#17633D] hover:bg-[#735218]" : "bg-emerald-700 hover:bg-emerald-800"}`}>
                     {busy === plan.id ? "Opening secure checkout…" : trialAvailable ? `Start free ${trialDays}-day trial` : `Join ${plan.name}`}
                   </button>
                 )}

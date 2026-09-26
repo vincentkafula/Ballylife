@@ -167,6 +167,7 @@ export function Sourcing1688AdminPanel() {
               <label className="flex items-center gap-2 sm:col-span-2"><input type="checkbox" checked={settings.listing.autoList} onChange={e => setList("autoList", e.target.checked)} className="w-4 h-4" />List eligible finds in the store automatically</label>
               <label className="flex items-center gap-2 sm:col-span-2"><input type="checkbox" checked={settings.listing.autoSendToCj} onChange={e => setList("autoSendToCj", e.target.checked)} className="w-4 h-4" />Send listed finds to CJ automatically</label>
               <label className="space-y-1"><span>Max MOQ to list</span><input type="number" min={1} className={input} value={settings.listing.maxMoq} onChange={e => setList("maxMoq", Number(e.target.value))} /></label>
+              <label className="space-y-1"><span>Skip if shipping+fees exceed × item</span><input type="number" min={1} step={0.5} className={input} value={settings.listing.maxLandedMultiple} onChange={e => setList("maxLandedMultiple", Number(e.target.value))} /></label>
               <label className="space-y-1"><span>Stock shown (cap)</span><input type="number" min={1} className={input} value={settings.listing.stockCap} onChange={e => setList("stockCap", Number(e.target.value))} /></label>
               <label className="space-y-1"><span>CJ requests per day</span><input type="number" min={0} className={input} value={settings.listing.maxCjRequestsPerDay} onChange={e => setList("maxCjRequestsPerDay", Number(e.target.value))} /></label>
               <label className="space-y-1"><span>Delivery (business days)</span>
@@ -194,12 +195,16 @@ export function Sourcing1688AdminPanel() {
                 className="border border-dashed border-gray-300 rounded-lg p-2 text-gray-500 hover:border-[#B8862E]">+ Add class</button>
             </div>
             <div className="grid sm:grid-cols-4 gap-3 mt-3 text-xs text-gray-600">
-              <label className="space-y-1"><span>Markup %</span><input type="number" min={0} className={input} value={settings.estimate.markupPct} onChange={e => setEst("markupPct", Number(e.target.value))} /></label>
+              <label className="space-y-1"><span>Markup</span>
+                <select className={input} value={settings.estimate.markupMode} onChange={e => setEst("markupMode", e.target.value as "tiered" | "flat")}>
+                  <option value="tiered">Store-wide sliding scale</option><option value="flat">Flat %</option>
+                </select></label>
+              {settings.estimate.markupMode === "flat" && <label className="space-y-1"><span>Flat markup %</span><input type="number" min={0} className={input} value={settings.estimate.markupPct} onChange={e => setEst("markupPct", Number(e.target.value))} /></label>}
               <label className="space-y-1"><span>Import VAT %</span><input type="number" min={0} className={input} value={settings.estimate.vatPct} onChange={e => setEst("vatPct", Number(e.target.value))} /></label>
               <label className="space-y-1"><span>Default duty %</span><input type="number" min={0} className={input} value={settings.estimate.defaultClass.dutyPct} onChange={e => setEst("defaultClass", { ...settings.estimate.defaultClass, dutyPct: Number(e.target.value) })} /></label>
               <label className="space-y-1"><span>Default freight R</span><input type="number" min={0} className={input} value={settings.estimate.defaultClass.freightZar} onChange={e => setEst("defaultClass", { ...settings.estimate.defaultClass, freightZar: Number(e.target.value) })} /></label>
             </div>
-            <p className="text-xs text-gray-500 mt-2">Store price for agent listings: (1688 price + China shipping) × live ¥ rate + agent fee, + freight + duty on (unit + freight) + import VAT on (unit × 1.1 + duty), then markup, rounded up — per option. Saving re-prices every listing. Once CJ sources a product it's priced from CJ's own cost.</p>
+            <p className="text-xs text-gray-500 mt-2">Store price for agent listings: (1688 price + China shipping) × live ¥ rate + agent fee, + freight + duty on (unit + freight) + import VAT on (unit × 1.1 + duty), then the markup (store-wide sliding scale: +40% up to R150 landed, +30% to R400, +25% to R1,000, +20% above), rounded up — per option. Saving re-prices every listing. Once CJ sources a product it's priced from CJ's own cost.</p>
           </div>
           <button onClick={save} disabled={busy === "save"} className="px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ background: "#14110D" }}>{busy === "save" ? "Saving…" : "Save settings"}</button>
         </div>
