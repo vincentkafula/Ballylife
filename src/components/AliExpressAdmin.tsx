@@ -24,10 +24,12 @@ export function AliExpressAdminPanel() {
   const [hits, setHits] = useState<R[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [auto, setAuto] = useState<R | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [s, p, o] = await Promise.all([mktAliExpress.status(), mktAliExpress.products(), mktAliExpress.orders()]);
+      const [s, p, o, a] = await Promise.all([mktAliExpress.status(), mktAliExpress.products(), mktAliExpress.orders(), mktAliExpress.autosource()]);
+      if (a.success) setAuto(a.data);
       if (s.success) setStatus(s.data);
       if (p.success) setProducts(p.data);
       if (o.success) setOrders(o.data);
@@ -105,6 +107,22 @@ export function AliExpressAdminPanel() {
         </div>
         {testResult && <p className={`w-full text-xs ${testResult.startsWith("Failed") ? "text-red-700" : "text-emerald-700"}`}>{testResult}</p>}
       </div>
+
+      {status.connected && auto && (
+        <div className={card + " flex flex-wrap items-center justify-between gap-3"}>
+          <div className="text-sm">
+            <p className="font-bold text-gray-900">Automatic import</p>
+            <p className="text-xs text-gray-500">
+              {auto.status === "running" ? `Filling the store: product type ${Number(auto.keywordIndex) + 1} of ${auto.keywords}${auto.keyword ? ` ("${auto.keyword}")` : ""}, a few products a minute.`
+                : auto.status === "done" ? "Finished." : auto.status === "not_started" ? `Starts within a minute of connecting (${auto.keywords} product types).` : String(auto.status)}
+              {auto.totals ? ` Listed ${auto.totals.listed ?? 0}, skipped ${auto.totals.skipped ?? 0}${auto.totals.failed ? `, failed ${auto.totals.failed}` : ""}${auto.totals.mode === "feeds" ? " · using AliExpress's recommended-product feeds (keyword search isn't available to the app yet)" : ""}.` : ""}
+            </p>
+            {auto.lastError && <p className="text-xs text-red-700 mt-1">Last problem: {auto.lastError}</p>}
+          </div>
+          <button onClick={() => run("auto", async () => { const r = await mktAliExpress.startAutosource(); if (r.success) { toast.success("Automatic import started."); void load(); } else toast.error(r.error ?? "Couldn't start."); })}
+            disabled={auto.status === "running" || busy === "auto"} className="text-sm font-semibold px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-50">Run again</button>
+        </div>
+      )}
 
       {status.connected && (
         <div className="grid lg:grid-cols-2 gap-5">

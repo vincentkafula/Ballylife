@@ -5,6 +5,7 @@ import { logger } from "../utils/logger";
 import { authorizeUrl, completeAuthorization, connectionStatus, disconnect, AliExpressError, callbackUrl } from "../services/aliexpressClient";
 import { importAeProduct, searchAe, fetchAeProduct, cheapestShipping, aliexpressProductId, AE_SUPPLIER_ID } from "../services/aliexpressCatalog";
 import { retryFulfillment } from "../services/aliexpressFulfillment";
+import { getAeSourcingJob, startAeSourcing, aeKeywords } from "../services/aliexpressAutoSource";
 
 /**
  * AliExpress: connect the buyer account (OAuth), search and import products,
@@ -69,6 +70,20 @@ router.post("/admin/aliexpress/test", ...admin, async (req: Request, res: Respon
     res.json({ success: true, data: { productId: id, title: p.title, variants: p.variants.length, images: p.images.length, available: p.available,
       cheapestUsd: Math.min(...p.variants.map(v => v.priceUsd)), shipping } });
   } catch (err) { fail(res, err, "The test call failed."); }
+});
+
+// Automatic filling of the store (runs once after connecting; can be restarted).
+router.get("/admin/aliexpress/autosource", ...admin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const job = await getAeSourcingJob();
+    res.json({ success: true, data: job ? { status: job.status, keyword: (job.plan ?? [])[job.plan_index] ?? null, keywordIndex: job.plan_index, keywords: (job.plan ?? []).length,
+      totals: job.totals, lastError: job.last_error, startedAt: job.started_at, finishedAt: job.finished_at } : { status: "not_started", keywords: aeKeywords().length } });
+  } catch (err) { fail(res, err, "Couldn't load progress."); }
+});
+
+router.post("/admin/aliexpress/autosource", ...admin, async (_req: Request, res: Response): Promise<void> => {
+  try { const job = await startAeSourcing(); res.status(202).json({ success: true, data: { status: job.status } }); }
+  catch (err) { fail(res, err, "Couldn't start it."); }
 });
 
 router.get("/admin/aliexpress/search", ...admin, async (req: Request, res: Response): Promise<void> => {

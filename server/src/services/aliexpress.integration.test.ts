@@ -22,6 +22,10 @@ const calls: { url: string; params: Record<string, string> }[] = [];
 
 // What the fake AliExpress returns.
 let orderCreate: unknown = { aliexpress_ds_order_create_response: { result: { is_success: true, order_list: { number: [8123456789] } } } };
+let searchResponse: unknown = { aliexpress_ds_text_search_response: { data: { products: { selection_search_product: [
+  { itemId: "1005000000000001", title: "Kids Building Blocks Set", targetSalePrice: "9.99", orders: "1200", itemMainPic: "https://ae01.alicdn.com/kf/x.jpg" },
+  { itemId: "1005000000000002", title: "Plush Bear Toy", targetSalePrice: "6.50", orders: "10", itemMainPic: "https://ae01.alicdn.com/kf/y.jpg" },
+] } } } };
 let orderGet: unknown = { aliexpress_trade_ds_order_get_response: { result: { order_status: "WAIT_SELLER_SEND_GOODS" } } };
 
 const PRODUCT = {
@@ -81,6 +85,9 @@ beforeEach(() => {
       if (params.method === "aliexpress.logistics.buyer.freight.calculate") return json(FREIGHT);
       if (params.method === "aliexpress.ds.order.create") return json(orderCreate);
       if (params.method === "aliexpress.trade.ds.order.get") return json(orderGet);
+      if (params.method === "aliexpress.ds.text.search") return json(searchResponse);
+      if (params.method === "aliexpress.ds.feedname.get") return json({ aliexpress_ds_feedname_get_response: { resp_result: { result: { promos: { promo: [{ promo_name: "DS_TopSellers" }] } } } } });
+      if (params.method === "aliexpress.ds.recommend.feed.get") return json({ aliexpress_ds_recommend_feed_get_response: { result: { products: { traffic_product_d_t_o: [{ product_id: 3005000000000003, product_title: "LED Desk Lamp", target_sale_price: "8.00", lastest_volume: 900, product_main_image_url: "https://ae01.alicdn.com/kf/l.jpg" }] } } } });
     }
     throw new Error(`unexpected fetch ${url} ${params.method ?? ""}`);
   });
@@ -253,5 +260,39 @@ describe("Importing products", () => {
       const retry = await request(app).post(`/api/marketplace/admin/aliexpress/fulfillments/${f[0].id}/retry`).set("Authorization", `Bearer ${adminToken}`);
       expect(retry.body.data.status).toBe("queued");
     });
+  });
+});
+
+describe("Automatic import", () => {
+  it("searches each product type and imports well-selling results it doesn't have yet", async () => {
+    process.env.ALIEXPRESS_AUTO_KEYWORDS = "building blocks toys";
+    const auto = await import("./aliexpressAutoSource");
+    await auto.startAeSourcing();
+    await auto.runAeSourcingTick();
+    const search = lastCall("aliexpress.ds.text.search")!;
+    expect(search.params).toMatchObject({ keyWord: "building blocks toys", countryCode: "ZA", currency: "USD" });
+    const { rows } = await pool.query(`SELECT external_id FROM mkt_supplier_products WHERE supplier_id = 'sup-aliexpress' ORDER BY external_id`);
+    const ids = rows.map((r: { external_id: string }) => r.external_id);
+    expect(ids).toContain("1005000000000001");
+    expect(ids).not.toContain("1005000000000002"); // only 10 orders: below the minimum
+    const job = await auto.getAeSourcingJob();
+    expect(job!.totals).toMatchObject({ listed: 1, mode: "search" });
+  });
+
+  it("finishes when every product type is done", async () => {
+    const auto = await import("./aliexpressAutoSource");
+    await auto.runAeSourcingTick();
+    expect((await auto.getAeSourcingJob())!.status).toBe("done");
+  });
+
+  it("falls back to AliExpress's product feeds when keyword search isn't available to the app", async () => {
+    searchResponse = { error_response: { code: "InsufficientPermission", msg: "App does not have permission to call this API" } };
+    const auto = await import("./aliexpressAutoSource");
+    await auto.startAeSourcing();
+    await auto.runAeSourcingTick();
+    const job = await auto.getAeSourcingJob();
+    expect(job!.totals.mode).toBe("feeds");
+    const { rows } = await pool.query(`SELECT 1 FROM mkt_supplier_products WHERE external_id = '3005000000000003'`);
+    expect(rows).toHaveLength(1);
   });
 });

@@ -534,6 +534,8 @@ export const mktAliExpress = {
   products: () => api<AeOk<Record<string, any>[]>>("/api/marketplace/admin/aliexpress/products"),
   orders: () => api<AeOk<Record<string, any>[]>>("/api/marketplace/admin/aliexpress/fulfillments"),
   retry: (id: string) => api<AeOk<Record<string, any>>>(`/api/marketplace/admin/aliexpress/fulfillments/${id}/retry`, { method: "POST" }),
+  autosource: () => api<AeOk<Record<string, any>>>("/api/marketplace/admin/aliexpress/autosource"),
+  startAutosource: () => api<AeOk<Record<string, any>>>("/api/marketplace/admin/aliexpress/autosource", { method: "POST" }),
 };
 
 // ── Super admin ───────────────────────────────────────────────────────────

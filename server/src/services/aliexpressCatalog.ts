@@ -178,7 +178,10 @@ export async function importAeProduct(idOrUrl: string): Promise<ImportResult> {
     supplierProductId = rows[0].id;
   }
 
-  const reason = !p.available ? "Out of stock on AliExpress" : !usdToZar ? "No USD exchange rate on file" : !shipping ? "AliExpress has no shipping to South Africa for it" : !p.images.length ? "No photos" : null;
+  const MAX_LANDED_MULTIPLE = Number(process.env.ALIEXPRESS_MAX_LANDED_MULTIPLE ?? 5);
+  const tooCostlyToShip = shipping && costUsd ? (costUsd + shipping.usd) / costUsd > MAX_LANDED_MULTIPLE : false;
+  const reason = !p.available ? "Out of stock on AliExpress" : !usdToZar ? "No USD exchange rate on file" : !shipping ? "AliExpress has no shipping to South Africa for it"
+    : !p.images.length ? "No photos" : tooCostlyToShip ? `Shipping would cost more than ${MAX_LANDED_MULTIPLE - 1}× the item` : null;
   if (reason) {
     await pool!.query(`UPDATE mkt_products SET status = 'out_of_stock', stock = 0, updated_at = now() WHERE supplier_product_id = $1 AND seller_id = $2 AND status = 'active'`, [supplierProductId, HOUSE_SELLER_ID]);
     return { productId, listed: false, storeProductId: null, priceZar: null, reason, title: p.title };

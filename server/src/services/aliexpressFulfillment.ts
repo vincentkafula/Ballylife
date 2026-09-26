@@ -237,6 +237,8 @@ export function startAliExpressWorker(): NodeJS.Timeout | null {
   const run = async () => {
     try {
       await runAliExpressCycle();
+      const { runAeSourcingTick } = await import("./aliexpressAutoSource");
+      await runAeSourcingTick();
       if (Date.now() - lastRefresh > 3600_000) {
         lastRefresh = Date.now();
         const s = await connectionStatus();
