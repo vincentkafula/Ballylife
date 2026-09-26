@@ -25,6 +25,9 @@ import {
   type JapanPartsSettings, type JapanPartsKeyword,
 } from "../utils/japanPartsPricing";
 import { setJapanImportDeliveryDays } from "../utils/delivery";
+import { translateToEnglish, isTranslationConfigured } from "./translate";
+import { translateJapanesePartName, isMeaningfulName } from "../utils/japaneseParts";
+import { englishOnly } from "../utils/englishOnly";
 
 type Row = Record<string, any>;
 
@@ -73,26 +76,65 @@ async function jpyToZar(): Promise<number | null> {
 
 // ── Listing content ──────────────────────────────────────────────────────
 
-function listingName(part: UpgaragePart, kw: JapanPartsKeyword): string {
-  // Shoppers read English; the UP-GARAGE title is Japanese. Lead with the
-  // keyword's English label so the listing is findable and understandable.
-  const label = kw.label.trim();
-  return (label && !part.name.toLowerCase().startsWith(label.toLowerCase()) ? `${label} — ${part.name}` : part.name).slice(0, MAX_NAME);
+/**
+ * The English title: the UP-GARAGE title translated (DeepL when configured,
+ * otherwise the car-parts dictionary), led by the keyword's English label.
+ * When too little survives translation, a plain "Used <part> from Japan".
+ */
+async function englishTitles(parts: { name: string }[]): Promise<string[]> {
+  const deepl = await translateToEnglish(parts.map(p => p.name), "JA");
+  return parts.map((p, i) => cleanTitle(deepl[i] ?? translateJapanesePartName(p.name)));
 }
 
-function listingDescription(part: UpgaragePart, kw: JapanPartsKeyword): string {
+const cleanTitle = (s: string) => englishOnly(s).replace(/[☆★※]/g, "").replace(/\s{2,}/g, " ").trim();
+
+function listingName(englishTitle: string, kw: JapanPartsKeyword, part?: { fitment?: string | null }): string {
+  const label = kw.label.trim() || "Car part";
+  if (!isMeaningfulName(englishTitle)) {
+    return `Used ${label.toLowerCase()} from Japan${part?.fitment ? ` — fits ${englishOnly(part.fitment)}` : ""}`.slice(0, MAX_NAME);
+  }
+  return (englishTitle.toLowerCase().includes(label.toLowerCase()) ? englishTitle : `${label} — ${englishTitle}`).slice(0, MAX_NAME);
+}
+
+function listingDescription(part: UpgaragePart, kw: JapanPartsKeyword, englishTitle = ""): string {
   const lines = [
     `Used ${kw.label.toLowerCase() || "car part"} sourced from UP-GARAGE in Japan.`,
     part.condition && `Condition grade: ${part.condition}`,
-    part.fitment && `Fits: ${part.fitment}`,
+    part.fitment && englishOnly(part.fitment) && `Fits: ${englishOnly(part.fitment)}`,
     part.year && `Year: ${part.year}`,
     part.mileage && `Mileage: ${part.mileage}`,
-    `Original listing: ${part.name}`,
-    part.category && `UP-GARAGE category: ${part.category}`,
+    isMeaningfulName(englishTitle) && `Listed in Japan as: ${englishTitle}`,
     "This is a pre-owned part, sold as described by the Japanese seller. Please check fitment for your vehicle before ordering.",
     "Price includes shipping from Japan, South African customs duty and import VAT.",
   ];
   return lines.filter(Boolean).join("\n");
+}
+
+/**
+ * Renames every existing Japan listing in English -- once with the
+ * dictionary, and once more when DeepL is switched on (DEEPL_API_KEY).
+ */
+export async function retranslateJapanPartsOnce(): Promise<number | null> {
+  const flag = `jp_parts_english_v1_${isTranslationConfigured() ? "deepl" : "dictionary"}`;
+  const { rows: done } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [flag]);
+  if (done.length) return null;
+  const { rows } = await pool!.query(
+    `SELECT id, original_name, source_keyword, condition_grade, attributes FROM mkt_products WHERE source = $1 AND original_name IS NOT NULL`, [JAPAN_PARTS_SOURCE]
+  );
+  const s = await getJapanPartsSettings();
+  const titles = await englishTitles(rows.map((r: Row) => ({ name: String(r.original_name) })));
+  for (const [i, r] of rows.entries()) {
+    const kw = s.keywords.find(k => k.keyword === r.source_keyword) ?? { keyword: r.source_keyword ?? "", label: "Car part", partsCategory: "small", enabled: true };
+    const a = (r.attributes ?? {}) as Record<string, string | null>;
+    const part = { name: String(r.original_name), condition: r.condition_grade, fitment: a.fitment ?? null, year: a.year ?? null, mileage: a.mileage ?? null } as UpgaragePart;
+    const name = listingName(titles[i], kw, part);
+    const description = listingDescription(part, kw, titles[i]);
+    await pool!.query(`UPDATE mkt_products SET name = $1, description = $2, short_description = $3, updated_at = now() WHERE id = $4`,
+      [name, description, description.split("\n")[0], r.id]);
+  }
+  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`, [flag, `renamed ${rows.length}`]);
+  logger.info("jp_parts.retranslated", { count: rows.length, deepl: isTranslationConfigured() });
+  return rows.length;
 }
 
 // ── Refresh ──────────────────────────────────────────────────────────────
@@ -105,10 +147,10 @@ async function soldProductIds(): Promise<Set<string>> {
   return new Set(rows.map((r: Row) => String(r.product_id)));
 }
 
-async function upsertPart(part: UpgaragePart, kw: JapanPartsKeyword, s: JapanPartsSettings, rate: number, sold: Set<string>): Promise<"created" | "updated" | "skipped"> {
+async function upsertPart(part: UpgaragePart, kw: JapanPartsKeyword, s: JapanPartsSettings, rate: number, sold: Set<string>, englishTitle: string): Promise<"created" | "updated" | "skipped"> {
   const breakdown = priceJapanPart(part.priceJpyTaxIncl!, kw.partsCategory, rate, s);
-  const name = listingName(part, kw);
-  const description = listingDescription(part, kw);
+  const name = listingName(englishTitle, kw, part);
+  const description = listingDescription(part, kw, englishTitle);
   const images = part.images.slice(0, MAX_IMAGES);
   const attributes = { conditionGrade: part.condition, fitment: part.fitment, year: part.year, mileage: part.mileage, shop: part.shop, location: part.location, originalName: part.name };
   const available = !part.soldOut;
@@ -200,9 +242,10 @@ export async function refreshKeyword(kw: JapanPartsKeyword, s: JapanPartsSetting
       }
       const sold = await soldProductIds();
       const seen = new Set<string>();
-      for (const part of parts) {
+      const titles = await englishTitles(parts);
+      for (const [i, part] of parts.entries()) {
         seen.add(part.listingId);
-        const outcome = await upsertPart(part, kw, s, rate, sold);
+        const outcome = await upsertPart(part, kw, s, rate, sold, titles[i]);
         result[outcome]++;
       }
       // An empty result can't prove anything was removed -- it's as likely a block.

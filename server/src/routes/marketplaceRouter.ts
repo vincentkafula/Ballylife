@@ -18,6 +18,7 @@ import { checkPaymentVelocity } from "../services/fraudChecks";
 import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
 import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
 import { englishOnly } from "../utils/englishOnly";
+import { prefectureInEnglish } from "../utils/japaneseParts";
 import { cleanDescriptionText } from "../utils/productNaming";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 import { cjOnlyCatalog, CJ_ONLY_MESSAGE } from "../utils/catalogPolicy";
@@ -191,7 +192,7 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   japanPart: r.source === "upgarage" ? {
     conditionGrade: r.condition_grade ?? null,
     fitment: r.attributes?.fitment ?? null, year: r.attributes?.year ?? null, mileage: r.attributes?.mileage ?? null,
-    location: r.source_location ?? null, originalName: r.original_name ?? null,
+    location: prefectureInEnglish(r.source_location),
     stillListedInJapan: r.source_status !== "removed",
   } : null,
   createdAt: r.created_at, updatedAt: r.updated_at,

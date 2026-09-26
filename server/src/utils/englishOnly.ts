@@ -7,7 +7,7 @@
  * rather than shown half-translated.
  */
 
-const CJK = /[⺀-⿿　-〿぀-ヿ㄀-ㇿ㐀-䶿一-鿿豈-﫿︰-﹏]/;
+const CJK = /[⺀-⿿　-〿぀-ヿ㄀-ㇿ㐀-䶿一-鿿豈-﫿︰-﹏｡-ﾟ※★☆]/;
 const CJK_ALL = new RegExp(CJK.source, "g");
 
 export const hasChinese = (s: string | null | undefined): boolean => Boolean(s) && CJK.test(String(s));

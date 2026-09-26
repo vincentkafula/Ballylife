@@ -101,7 +101,7 @@ describe("Refresh", () => {
     expect(wheel).toMatchObject({ category_id: "cat-jp-parts", status: "active", stock: 1, condition: "used", condition_grade: "B", source_status: "listed", delivery_profile: "japan_import", original_currency: "JPY" });
     expect(Number(wheel.price)).toBe(15043); // see japanPartsPricing.test.ts for the working
     expect(Number(wheel.original_price_tax_incl)).toBe(55000);
-    expect(wheel.name).toBe("Wheels — RAYS VOLK TE37 17インチ");
+    expect(wheel.name).toBe("Wheels — RAYS VOLK TE37 17 inch"); // Japanese title translated (car-parts dictionary; DeepL when configured)
     expect(await lastRun()).toMatchObject({ keyword: "ホイール", status: "ok", created: 2 });
   });
 
@@ -109,7 +109,7 @@ describe("Refresh", () => {
     const wheel = await productBySource("UG-1");
     const res = await request(app).get(`/api/marketplace/products/${wheel.id}`);
     const p = res.body.data.product ?? res.body.data;
-    expect(p.japanPart).toMatchObject({ conditionGrade: "B", fitment: "Toyota 86", location: "神奈川県", stillListedInJapan: true });
+    expect(p.japanPart).toMatchObject({ conditionGrade: "B", fitment: "Toyota 86", location: "Kanagawa", stillListedInJapan: true });
     expect(p).toMatchObject({ shippingIncluded: true, deliveryDays: { min: 15, max: 30 } });
     expect(JSON.stringify(res.body)).not.toContain("upgarage.com/goods");
     expect(JSON.stringify(res.body)).not.toContain("landedZar");

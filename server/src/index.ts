@@ -21,7 +21,7 @@ import { cjOnlyCatalog } from "./utils/catalogPolicy";
 import { startFxRefreshWorker } from "./services/fxRates";
 import { secureDemoAccounts } from "./services/demoAccounts";
 import { startProgrammesWorker } from "./services/programmes";
-import { startJapanPartsWorker, ensureJapanPartsCategory } from "./services/japanParts";
+import { startJapanPartsWorker, ensureJapanPartsCategory, retranslateJapanPartsOnce } from "./services/japanParts";
 import { start1688Worker, upgrade1688ListingsOnce } from "./services/sourcing1688";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
@@ -139,6 +139,7 @@ async function start() {
   void (async () => {
     await tidyCatalogOnce().catch(err => logger.error("catalog.tidy_failed", { error: err instanceof Error ? err.message : String(err) }));
     await applyMarkupTiersOnce().catch(err => logger.error("catalog.reprice_tiers_failed", { error: err instanceof Error ? err.message : String(err) }));
+    await retranslateJapanPartsOnce().catch(err => logger.error("jp_parts.retranslate_failed", { error: err instanceof Error ? err.message : String(err) }));
     await upgrade1688ListingsOnce().catch(err => logger.error("sourcing1688.upgrade_failed", { error: err instanceof Error ? err.message : String(err) }));
   })();
   startCjCatalogWorker();

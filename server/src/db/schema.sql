@@ -1088,3 +1088,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS removed_by TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS removal_reason TEXT;
 ALTER TABLE mkt_sellers ADD COLUMN IF NOT EXISTS suspended_by_removal BOOLEAN NOT NULL DEFAULT false;
+
+-- Machine translations (DeepL), cached so each text is translated once.
+CREATE TABLE IF NOT EXISTS text_translations (
+  source_hash  TEXT PRIMARY KEY,   -- sha256 of source language + text
+  source_lang  TEXT NOT NULL,
+  source_text  TEXT NOT NULL,
+  english      TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
