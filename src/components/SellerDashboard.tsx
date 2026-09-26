@@ -93,12 +93,12 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
         <div className="space-y-0.5 flex-1">
           {NAV.map(n => <SideNavButton key={n.id} active={tab === n.id} onClick={() => setTab(n.id)} icon={n.icon} label={n.label} />)}
         </div>
-        <button onClick={onSignOut} className="text-xs text-gray-400 hover:text-gray-700 px-3 py-2 text-left">Sign out</button>
+        <button onClick={onSignOut} className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2 text-left">Sign out</button>
       </aside>
 
       <div className="flex-1 overflow-y-auto p-5">
         {loading ? (
-          <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>
         ) : seller.status !== "active" ? (
           <div className="bg-white rounded-xl border border-amber-200 p-6 text-center max-w-lg mx-auto mt-10">
             <Clock className="w-8 h-8 text-amber-500 mx-auto mb-3" />
@@ -121,7 +121,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
 
                 <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5">
                   <p className="text-sm font-bold text-gray-900 mb-3">Daily Revenue (last 7 days)</p>
-                  <p className="text-[11px] text-gray-400 mb-2">Illustrative — day-by-day revenue history isn't tracked yet, this samples typical daily variance.</p>
+                  <p className="text-[11px] text-gray-500 mb-2">Illustrative — day-by-day revenue history isn't tracked yet, this samples typical daily variance.</p>
                   <ResponsiveContainer width="100%" height={180}>
                     <BarChart data={revenue}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v: number) => fmtZAR(v)} /><Bar dataKey="revenue" fill="#B8862E" radius={[4,4,0,0]} /></BarChart>
                   </ResponsiveContainer>
@@ -129,10 +129,10 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
 
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Top Products</span></div>
-                  {topProducts.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No sales yet.</p> : topProducts.map((p, i) => (
+                  {topProducts.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No sales yet.</p> : topProducts.map((p, i) => (
                     <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
                       <div className="flex items-center gap-3"><span className="text-xl">{String(p.emoji)}</span><span className="text-sm font-medium text-gray-800">{String(p.name)}</span></div>
-                      <div className="text-right"><p className="text-sm font-bold text-gray-900">{fmtZAR(Number(p.revenue))}</p><p className="text-[11px] text-gray-400">{String(p.sold)} sold</p></div>
+                      <div className="text-right"><p className="text-sm font-bold text-gray-900">{fmtZAR(Number(p.revenue))}</p><p className="text-[11px] text-gray-500">{String(p.sold)} sold</p></div>
                     </div>
                   ))}
                 </div>
@@ -143,10 +143,10 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
               <div>
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
                   <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Orders containing your products</span></div>
-                  {orders.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No orders yet.</p> : (
+                  {orders.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No orders yet.</p> : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                        <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                           <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
                           <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
                         </tr></thead>
@@ -173,12 +173,12 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
                   <div key={g.label} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                     <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                       <span className="text-sm font-bold" style={{ color: g.color }}>{g.label}</span>
-                      <span className="text-xs font-bold text-gray-400">{g.list.length}</span>
+                      <span className="text-xs font-bold text-gray-500">{g.list.length}</span>
                     </div>
                     {g.list.slice(0, 8).map((p, i) => (
                       <div key={i} className="flex items-center justify-between px-4 py-2 border-b border-gray-50 last:border-0 text-sm">
                         <span className="text-gray-700 truncate">{String(p.name)}</span>
-                        <span className="text-gray-400 text-xs shrink-0 ml-2">{String(p.stock)} left</span>
+                        <span className="text-gray-500 text-xs shrink-0 ml-2">{String(p.stock)} left</span>
                       </div>
                     ))}
                     {g.list.length === 0 && <p className="text-xs text-gray-300 p-4 text-center">None</p>}
@@ -235,8 +235,8 @@ const PIPELINE_STAGE_META: Record<string, { label: string; color: string }> = {
   qc_passed_origin: { label: "QC passed", color: "#2563EB" },
   qc_failed_origin: { label: "QC failed — under review", color: "#DC2626" },
   refunded: { label: "Refunded", color: "#DC2626" },
-  in_transit_to_destination: { label: "In transit", color: "#B8862E" },
-  received_at_destination_hub: { label: "Arrived at destination hub", color: "#B8862E" },
+  in_transit_to_destination: { label: "In transit", color: "#8A6420" },
+  received_at_destination_hub: { label: "Arrived at destination hub", color: "#8A6420" },
   customs_cleared: { label: "Customs cleared", color: "#059669" },
   shipped_to_customer: { label: "Shipped to customer", color: "#059669" },
   delivered: { label: "Delivered", color: "#10B981" },
@@ -247,14 +247,14 @@ function ImportPipeline({ supplierOrders }: { supplierOrders: R[] }) {
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100">
         <span className="text-sm font-bold text-gray-900">Import pipeline</span>
-        <span className="text-[11px] text-gray-400 ml-2">Where your supplier-sourced items currently are — view only</span>
+        <span className="text-[11px] text-gray-500 ml-2">Where your supplier-sourced items currently are — view only</span>
       </div>
       {supplierOrders.length === 0 ? (
-        <p className="text-sm text-gray-400 p-6 text-center">No imported items in orders yet.</p>
+        <p className="text-sm text-gray-500 p-6 text-center">No imported items in orders yet.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
               <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Stage</th>
             </tr></thead>
@@ -265,7 +265,7 @@ function ImportPipeline({ supplierOrders }: { supplierOrders: R[] }) {
                   <tr key={i} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
                     <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
                     <td className="px-4 py-2.5">
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: meta.color, background: `${meta.color}15` }}>{meta.label}</span>
                     </td>
@@ -304,10 +304,10 @@ function ProductManagement({ sellerId, products, onChanged }: { sellerId: string
         <span className="text-[11px] text-gray-500">To add products, use <b>Import from Suppliers</b> and set your price.</span>
       </div>
 
-      {products.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No products yet.</p> : (
+      {products.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No products yet.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Price</th>
               <th className="px-4 py-2 font-medium">Stock</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Sold</th><th className="px-4 py-2"></th>
             </tr></thead>
@@ -400,9 +400,9 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
       {message && <div className="mb-3 text-xs font-medium px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">{message}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>
       ) : items.length === 0 ? (
-        <p className="text-sm text-gray-400 p-6 text-center bg-white rounded-xl border border-gray-100">No catalog items match this filter.</p>
+        <p className="text-sm text-gray-500 p-6 text-center bg-white rounded-xl border border-gray-100">No catalog items match this filter.</p>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {items.map(item => {
@@ -424,7 +424,7 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{String(item.originCountry)}</span>
                 </div>
                 <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
-                <p className="text-xs text-gray-400 mb-2 line-clamp-2">{String(item.description ?? "")}</p>
+                <p className="text-xs text-gray-500 mb-2 line-clamp-2">{String(item.description ?? "")}</p>
                 {item.vehicleDetails ? (
                   <div className="mb-2">
                     <p className="text-[11px] text-gray-500">
@@ -435,7 +435,7 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                     </span>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-gray-400 mb-2">Ballylife Fulfilled · MOQ {String(item.moq)}</p>
+                  <p className="text-[11px] text-gray-500 mb-2">Ballylife Fulfilled · MOQ {String(item.moq)}</p>
                 )}
                 <p className="text-xs font-semibold text-gray-600 mb-2">{basePrice > 0 ? `Base price R${basePrice.toFixed(2)} — your earnings are your price minus this` : "Base price not set yet"}</p>
                 <label className="block mb-2">
@@ -445,7 +445,7 @@ function SupplierImport({ sellerId, onImported }: { sellerId: string; onImported
                     className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm mt-1" />
                 </label>
                 {canImport && suggested > 0 && finalPrice !== suggested && (
-                  <p className="text-[11px] text-gray-400 mb-2">Suggested was R{suggested.toFixed(2)}</p>
+                  <p className="text-[11px] text-gray-500 mb-2">Suggested was R{suggested.toFixed(2)}</p>
                 )}
                 <button onClick={() => importItem(item)} disabled={importingId === item.id || !canImport}
                   className="w-full text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#B8862E" }}>
@@ -467,15 +467,15 @@ function SellerReviews({ products }: { products: R[] }) {
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
         <span className="text-sm font-bold text-gray-900">Reviews</span>
-        <span className="text-xs text-gray-400">{totalReviews} total · {avgRating}★ average</span>
+        <span className="text-xs text-gray-500">{totalReviews} total · {avgRating}★ average</span>
       </div>
       {products.filter(p => Number(p.reviewCount) > 0).map((p, i) => (
         <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
           <div className="flex items-center gap-2"><span>{String(p.emoji)}</span><span className="text-sm text-gray-800">{String(p.name)}</span></div>
-          <div className="flex items-center gap-1 text-sm"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /><span className="font-semibold">{String(p.avgRating)}</span><span className="text-gray-400">({String(p.reviewCount)})</span></div>
+          <div className="flex items-center gap-1 text-sm"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /><span className="font-semibold">{String(p.avgRating)}</span><span className="text-gray-500">({String(p.reviewCount)})</span></div>
         </div>
       ))}
-      {products.filter(p => Number(p.reviewCount) > 0).length === 0 && <p className="text-sm text-gray-400 p-6 text-center">No reviews yet.</p>}
+      {products.filter(p => Number(p.reviewCount) > 0).length === 0 && <p className="text-sm text-gray-500 p-6 text-center">No reviews yet.</p>}
     </div>
   );
 }
@@ -498,7 +498,7 @@ function StoreSettings({ seller, onSaved }: { seller: { id: string; storeName: s
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-5 max-w-md">
       <p className="text-sm font-bold text-gray-900 mb-1">Store Settings</p>
-      <p className="text-xs text-gray-400 mb-4">{seller.storeName}</p>
+      <p className="text-xs text-gray-500 mb-4">{seller.storeName}</p>
       {saved && <div className="mb-3 px-3 py-2 rounded-lg bg-green-50 text-green-700 text-xs font-medium flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5" /> Saved</div>}
       <label className="block mb-3">
         <span className="block text-xs font-semibold text-gray-600 mb-1">Store description</span>
@@ -513,7 +513,7 @@ function StoreSettings({ seller, onSaved }: { seller: { id: string; storeName: s
       <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
         {saving ? "Saving..." : "Save changes"}
       </button>
-      <p className="text-[11px] text-gray-400 mt-4">Logo/banner upload, coupon creation and advertising campaigns aren't available yet.</p>
+      <p className="text-[11px] text-gray-500 mt-4">Logo/banner upload, coupon creation and advertising campaigns aren't available yet.</p>
     </div>
   );
 }

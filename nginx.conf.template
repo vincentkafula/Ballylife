@@ -4,6 +4,12 @@ server {
     server_name _;
     root /usr/share/nginx/html;
     index index.html index.htm;
+    server_tokens off;
+
+    # Security headers (HSTS, CSP, frame/sniff protection) -- see
+    # security-headers.conf. Repeated inside every location below that sets
+    # its own add_header, since those don't inherit server-level headers.
+    include /etc/nginx/security-headers.conf;
 
     # Gzip compression
     gzip on;
@@ -16,20 +22,24 @@ server {
     # returning visitors on an old build after a deploy. Exact-match
     # locations win over the regex below.
     location = /sw.js {
+        include /etc/nginx/security-headers.conf;
         add_header Cache-Control "no-cache";
         try_files $uri =404;
     }
     location = /registerSW.js {
+        include /etc/nginx/security-headers.conf;
         add_header Cache-Control "no-cache";
         try_files $uri =404;
     }
     location = /manifest.webmanifest {
+        include /etc/nginx/security-headers.conf;
         add_header Cache-Control "no-cache";
         try_files $uri =404;
     }
 
     # Cache static assets aggressively (Vite gives them content-hashed names)
     location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$ {
+        include /etc/nginx/security-headers.conf;
         expires 1y;
         add_header Cache-Control "public, immutable";
         try_files $uri =404;
@@ -44,6 +54,7 @@ server {
 
     # SPA fallback — all routes served by index.html
     location / {
+        include /etc/nginx/security-headers.conf;
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-cache";
     }

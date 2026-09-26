@@ -19,6 +19,7 @@ FROM nginx:alpine AS runner
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY security-headers.conf /etc/nginx/security-headers.conf
 
 ENV PORT=8080
 EXPOSE 8080

@@ -169,17 +169,17 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
       <aside className="w-60 shrink-0 bg-white border-r border-gray-100 p-3 overflow-y-auto flex flex-col">
         <div className="px-1 pb-3 mb-2 border-b border-gray-100">
           <p className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>{user.name}</p>
-          <p className="text-[11px] text-gray-400">{tierPosition ?? "Marketplace Manager"}</p>
+          <p className="text-[11px] text-gray-500">{tierPosition ?? "Marketplace Manager"}</p>
         </div>
         <div className="space-y-0.5 flex-1">
           {NAV.map(n => <SideNavButton key={n.id} active={tab === n.id} onClick={() => setTab(n.id)} icon={n.icon} label={n.label} badge={n.badge} />)}
         </div>
-        <button onClick={onSignOut} className="text-xs text-gray-400 hover:text-gray-700 px-3 py-2 text-left">Sign out</button>
+        <button onClick={onSignOut} className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2 text-left">Sign out</button>
       </aside>
 
       <div className="flex-1 overflow-y-auto p-5">
         {loading ? (
-          <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>
         ) : (
           <>
             {tab === "overview" && (
@@ -197,7 +197,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
 
                 <div className="bg-white rounded-xl border border-gray-100 p-4">
                   <p className="text-sm font-bold text-gray-900 mb-3">Top Categories</p>
-                  {topCategories.length === 0 ? <p className="text-sm text-gray-400 text-center py-8">No data yet.</p> : (
+                  {topCategories.length === 0 ? <p className="text-sm text-gray-500 text-center py-8">No data yet.</p> : (
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={topCategories}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="count" fill="#34A853" radius={[4,4,0,0]} /></BarChart>
                     </ResponsiveContainer>
@@ -211,11 +211,11 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
             {tab === "sellerApproval" && (
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Pending Seller Applications</span></div>
-                {pendingSellers.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No pending applications.</p> : pendingSellers.map((s, i) => (
+                {pendingSellers.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No pending applications.</p> : pendingSellers.map((s, i) => (
                   <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
                     <div>
                       <p className="text-sm font-semibold text-gray-900">{String(s.storeName)}</p>
-                      <p className="text-[11px] text-gray-400">{String(s.email)} · {String(s.description ?? "No description provided")}</p>
+                      <p className="text-[11px] text-gray-500">{String(s.email)} · {String(s.description ?? "No description provided")}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button onClick={async () => { await mktAdmin.rejectSeller(String(s.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-red-600 border border-red-200"><XCircle className="w-3.5 h-3.5" /> Reject</button>
@@ -230,11 +230,11 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               <div>
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
                   <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Pending Product Listings</span></div>
-                  {pendingProducts.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No pending listings.</p> : pendingProducts.map((p, i) => (
+                  {pendingProducts.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No pending listings.</p> : pendingProducts.map((p, i) => (
                     <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
                       <div className="flex items-center gap-3">
                         <span className="text-xl">{String(p.emoji)}</span>
-                        <div><p className="text-sm font-semibold text-gray-900">{String(p.name)}</p><p className="text-[11px] text-gray-400">{String(p.sellerName)} · {fmtZAR(Number(p.price))}</p></div>
+                        <div><p className="text-sm font-semibold text-gray-900">{String(p.name)}</p><p className="text-[11px] text-gray-500">{String(p.sellerName)} · {fmtZAR(Number(p.price))}</p></div>
                       </div>
                       <button onClick={async () => { await mktAdmin.approveProduct(String(p.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white shrink-0" style={{ background: "#10B981" }}><CheckCircle className="w-3.5 h-3.5" /> Approve</button>
                     </div>
@@ -270,14 +270,14 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
                 <TaxRevenueSummary />
                 <SettlementsPayouts />
                 <RevenueAuthorityManagement />
-                <p className="text-[11px] text-gray-400 mt-3">Chargebacks aren't handled automatically yet. Marking a payout "paid" below records that it was settled through whatever real channel you used — no money moves through this system itself.</p>
+                <p className="text-[11px] text-gray-500 mt-3">Chargebacks aren't handled automatically yet. Marking a payout "paid" below records that it was settled through whatever real channel you used — no money moves through this system itself.</p>
               </div>
             )}
 
             {tab === "reports" && (
               <div className="bg-white rounded-xl border border-gray-100 p-5 max-w-md">
                 <p className="text-sm font-bold text-gray-900 mb-1">Download Reports</p>
-                <p className="text-xs text-gray-400 mb-4">Real exports of current marketplace data, generated on demand.</p>
+                <p className="text-xs text-gray-500 mb-4">Real exports of current marketplace data, generated on demand.</p>
                 <div className="space-y-2">
                   <button onClick={() => downloadReport("orders")} disabled={downloading === "orders"}
                     className="w-full flex items-center gap-2 px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
@@ -363,10 +363,10 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customers ({customers.length})</span></div>
           <div className="max-h-72 overflow-y-auto">
-            {customers.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No customers yet.</p> : customers.map((c, i) => (
+            {customers.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No customers yet.</p> : customers.map((c, i) => (
               <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
-                <div><p className="text-sm font-medium text-gray-800">{String(c.name)}</p><p className="text-[11px] text-gray-400">{String(c.email)}</p></div>
-                <p className="text-[11px] text-gray-400">{c.lastLogin ? new Date(String(c.lastLogin)).toLocaleDateString() : "Never signed in"}</p>
+                <div><p className="text-sm font-medium text-gray-800">{String(c.name)}</p><p className="text-[11px] text-gray-500">{String(c.email)}</p></div>
+                <p className="text-[11px] text-gray-500">{c.lastLogin ? new Date(String(c.lastLogin)).toLocaleDateString() : "Never signed in"}</p>
               </div>
             ))}
           </div>
@@ -376,13 +376,13 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
           <div className="max-h-72 overflow-y-auto">
             {sellers.map((s, i) => (
               <div key={i} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-50 last:border-0">
-                <div><p className="text-sm font-medium text-gray-800">{String(s.storeName)}</p><p className="text-[11px] text-gray-400">{String(s.email)}</p></div>
+                <div><p className="text-sm font-medium text-gray-800">{String(s.storeName)}</p><p className="text-[11px] text-gray-500">{String(s.email)}</p></div>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: s.status === "active" ? "#ECFDF5" : "#FFF7ED", color: s.status === "active" ? "#059669" : "#C2410C" }}>{String(s.status)}</span>
               </div>
             ))}
           </div>
         </div>
-        <p className="lg:col-span-2 text-[11px] text-gray-400">Suspend/ban actions aren't available yet. Role changes below are — changing a role signs that account out everywhere immediately.</p>
+        <p className="lg:col-span-2 text-[11px] text-gray-500">Suspend/ban actions aren't available yet. Role changes below are — changing a role signs that account out everywhere immediately.</p>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -404,7 +404,7 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead><tr className="text-left text-gray-400 border-b border-gray-100">
+              <thead><tr className="text-left text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-semibold">Account</th>
                 <th className="px-4 py-2 font-semibold">Current role</th>
                 <th className="px-4 py-2 font-semibold">Change to</th>
@@ -413,7 +413,7 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
               <tbody>
                 {users.map(u => (
                   <tr key={String(u.id)} className="border-b border-gray-50">
-                    <td className="px-4 py-2.5"><p className="font-medium text-gray-800">{String(u.username)}</p><p className="text-gray-400">{String(u.email)}</p></td>
+                    <td className="px-4 py-2.5"><p className="font-medium text-gray-800">{String(u.username)}</p><p className="text-gray-500">{String(u.email)}</p></td>
                     <td className="px-4 py-2.5 text-gray-700">{String(u.role).replace(/_/g, " ")}</td>
                     <td className="px-4 py-2.5">
                       <select value={pendingRole[String(u.id)] ?? String(u.role)} onChange={e => setPendingRole(p => ({ ...p, [String(u.id)]: e.target.value }))}
@@ -435,7 +435,7 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
                 ))}
               </tbody>
             </table>
-            {users.length === 0 && <p className="text-sm text-gray-400 text-center py-10">No matching accounts.</p>}
+            {users.length === 0 && <p className="text-sm text-gray-500 text-center py-10">No matching accounts.</p>}
           </div>
         )}
       </div>
@@ -459,7 +459,7 @@ function SecurityAndAuditPanel() {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-100 p-5">
-        <div className="flex items-center gap-2 mb-3"><Shield className="w-5 h-5 text-gray-400" /><p className="text-sm font-bold text-gray-900">Security & Fraud Monitoring</p></div>
+        <div className="flex items-center gap-2 mb-3"><Shield className="w-5 h-5 text-gray-500" /><p className="text-sm font-bold text-gray-900">Security & Fraud Monitoring</p></div>
         <p className="text-sm text-gray-500 mb-4">Live fraud detection and IP-based anomaly monitoring aren't built yet — that needs real traffic/behavioural data and dedicated infrastructure this platform doesn't have at its current scale. What's genuinely enforced right now:</p>
         <ul className="space-y-2 text-sm text-gray-700">
           <li className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-500 shrink-0" /> Passwords are hashed with bcrypt, never stored in plain text</li>
@@ -485,12 +485,12 @@ function SecurityAndAuditPanel() {
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-gray-300" /></div>
         ) : entries.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-10">No audit entries yet.</p>
+          <p className="text-sm text-gray-500 text-center py-10">No audit entries yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-gray-400 border-b border-gray-100">
+                <tr className="text-left text-gray-500 border-b border-gray-100">
                   <th className="py-2 pr-3 font-semibold">When</th>
                   <th className="py-2 pr-3 font-semibold">Actor</th>
                   <th className="py-2 pr-3 font-semibold">Entity</th>
@@ -502,7 +502,7 @@ function SecurityAndAuditPanel() {
                   <tr key={String(e.id)} className="border-b border-gray-50">
                     <td className="py-2 pr-3 text-gray-500 whitespace-nowrap">{new Date(String(e.createdAt)).toLocaleString()}</td>
                     <td className="py-2 pr-3 text-gray-700">{String(e.actorUsername ?? e.actorId)}</td>
-                    <td className="py-2 pr-3 text-gray-700">{String(e.entityType)} <span className="text-gray-400">#{String(e.entityId).slice(0, 8)}</span></td>
+                    <td className="py-2 pr-3 text-gray-700">{String(e.entityType)} <span className="text-gray-500">#{String(e.entityId).slice(0, 8)}</span></td>
                     <td className="py-2 pr-3 text-gray-700">{String(e.action).replace(/_/g, " ")}</td>
                   </tr>
                 ))}
@@ -588,7 +588,7 @@ function SupplyChainPanel() {
     { id: "catalog", label: "Supplier Catalog", icon: <Store className="w-3.5 h-3.5" /> },
   ];
 
-  if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+  if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>;
 
   return (
     <div>
@@ -607,7 +607,7 @@ function SupplyChainPanel() {
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Supplier Orders — two-leg fulfilment ({supplierOrders.length})</span></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
                 <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Route</th>
                 <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
@@ -620,7 +620,7 @@ function SupplyChainPanel() {
                       <td className="px-4 py-2.5 font-semibold text-gray-900">{String(so.orderNumber)}</td>
                       <td className="px-4 py-2.5 text-gray-600">{String(so.productName)}</td>
                       <td className="px-4 py-2.5 text-gray-500">{String(so.sellerName)}</td>
-                      <td className="px-4 py-2.5 text-gray-400 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs">{String(so.originWarehouseName)} → {String(so.destinationWarehouseName)}</td>
                       <td className="px-4 py-2.5 capitalize text-gray-600 text-xs">{String(so.status).replace(/_/g, " ")}</td>
                       <td className="px-4 py-2.5">
                         {so.status === "qc_failed_origin" ? (
@@ -644,7 +644,7 @@ function SupplyChainPanel() {
                     </tr>
                   );
                 })}
-                {!supplierOrders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No supplier orders yet.</td></tr>}
+                {!supplierOrders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-500">No supplier orders yet.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -656,7 +656,7 @@ function SupplyChainPanel() {
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Shipments — consolidated 2nd-leg freight ({shipments.length})</span></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-medium">Route</th><th className="px-4 py-2 font-medium">Carrier</th>
                 <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
               </tr></thead>
@@ -681,7 +681,7 @@ function SupplyChainPanel() {
                     </tr>
                   );
                 })}
-                {!shipments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-400">No shipments yet — batch QC-passed orders once enough have accumulated at an origin hub.</td></tr>}
+                {!shipments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500">No shipments yet — batch QC-passed orders once enough have accumulated at an origin hub.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -750,7 +750,7 @@ function WarehouseManagement({ warehouses, onChanged }: { warehouses: R[]; onCha
               <span className="text-sm font-bold text-gray-900">{String(w.name)}</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: w.type === "origin" ? "#EFF6FF" : "#ECFDF5", color: w.type === "origin" ? "#1D4ED8" : "#059669" }}>{String(w.type)}</span>
             </div>
-            <p className="text-xs text-gray-400">{String(w.country)} · {String(w.address ?? "")}</p>
+            <p className="text-xs text-gray-500">{String(w.country)} · {String(w.address ?? "")}</p>
           </div>
         ))}
       </div>
@@ -825,7 +825,7 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
               <th className="px-4 py-2 font-medium">Platform</th><th className="px-4 py-2 font-medium">Lead time</th>
               <th className="px-4 py-2 font-medium">Payment terms</th><th className="px-4 py-2 font-medium">Verified</th>
@@ -839,7 +839,7 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
                     <td className="px-4 py-2.5 text-gray-500">{String(s.country)}</td>
                     <td className="px-4 py-2.5 text-gray-500">{String(s.platform ?? "—")}</td>
                     <td className="px-4 py-2.5 text-gray-500">{String(s.leadTimeDays)} days</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{String(s.paymentTerms ?? "—")}</td>
+                    <td className="px-4 py-2.5 text-gray-500 text-xs">{String(s.paymentTerms ?? "—")}</td>
                     <td className="px-4 py-2.5">
                       <button onClick={() => toggleVerified(s)} className="flex items-center gap-1">
                         {s.verified ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-amber-400" />}
@@ -864,7 +864,7 @@ function SupplierManagement({ suppliers, onChanged }: { suppliers: R[]; onChange
                           <button onClick={() => createLogin(String(s.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
                             {creatingLogin ? "Creating..." : "Create"}
                           </button>
-                          <span className="text-[11px] text-gray-400">Share these with the supplier yourself — not stored or emailed anywhere by this system.</span>
+                          <span className="text-[11px] text-gray-500">Share these with the supplier yourself — not stored or emailed anywhere by this system.</span>
                         </div>
                       </td>
                     </tr>
@@ -1047,7 +1047,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           </button>
         </div>
       </div>
-      <p className="text-xs text-gray-400 mb-3">Cost price is what the supplier charges Ballylife — set that here to reflect the actual supplier agreement. Retail price here is only a suggested starting point sellers see; each seller sets their own final retail price (their profit margin) when they import an item. Any price change after a listing is live still needs manager approval.</p>
+      <p className="text-xs text-gray-500 mb-3">Cost price is what the supplier charges Ballylife — set that here to reflect the actual supplier agreement. Retail price here is only a suggested starting point sellers see; each seller sets their own final retail price (their profit margin) when they import an item. Any price change after a listing is live still needs manager approval.</p>
 
       {cjConfigured === true && (
         <div className="mb-3 flex items-center gap-2 flex-wrap bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
@@ -1088,7 +1088,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           {cjSourcing.results.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead><tr className="text-left text-[10px] text-gray-400 border-b border-gray-100">
+                <thead><tr className="text-left text-[10px] text-gray-500 border-b border-gray-100">
                   <th className="px-3 py-1.5 font-medium">Product</th><th className="px-3 py-1.5 font-medium">Line</th>
                   <th className="px-3 py-1.5 font-medium">Supplier matches</th><th className="px-3 py-1.5 font-medium">Listed</th>
                   <th className="px-3 py-1.5 font-medium">Our price range</th><th className="px-3 py-1.5 font-medium">With video</th>
@@ -1117,7 +1117,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
             {cjSweep.status === "running" ? (
               <span>
                 pass {cjSweep.pass} of {cjSweep.passes} · category {Math.min(cjSweep.categoryIndex + 1, cjSweep.categories).toLocaleString()} of {cjSweep.categories.toLocaleString()}
-                {cjSweep.currentCategory ? <span className="text-gray-400"> ({cjSweep.currentCategory})</span> : null}
+                {cjSweep.currentCategory ? <span className="text-gray-500"> ({cjSweep.currentCategory})</span> : null}
               </span>
             ) : (
               <span>finished {cjSweep.finishedAt ? new Date(cjSweep.finishedAt).toLocaleString() : ""} · refreshes automatically every 7 days</span>
@@ -1135,7 +1135,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
         </div>
       )}
       {cjConfigured === false && (
-        <p className="text-[11px] text-gray-400 mb-3">CJdropshipping isn't connected yet — set CJ_API_KEY to enable real product syncing here.</p>
+        <p className="text-[11px] text-gray-500 mb-3">CJdropshipping isn't connected yet — set CJ_API_KEY to enable real product syncing here.</p>
       )}
 
       {importResult && (
@@ -1220,7 +1220,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{String(item.originCountry)}</span>
             </div>
             <p className="text-sm font-bold text-gray-900 leading-tight mb-1">{String(item.name)}</p>
-            <p className="text-[11px] text-gray-400 mb-1">{String(item.supplierName)} · MOQ {String(item.moq)}</p>
+            <p className="text-[11px] text-gray-500 mb-1">{String(item.supplierName)} · MOQ {String(item.moq)}</p>
             <p className="text-xs font-semibold text-gray-600 mb-2">Cost: {String(item.currency)} {Number(item.costPrice).toFixed(2)} · Imported {String(item.importCount ?? 0)}x</p>
 
             {vd && (
@@ -1268,7 +1268,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
                     <>
                       <span className="text-sm font-bold text-gray-900">R{Number(item.retailPrice).toFixed(2)}</span>
                       {item.compareAtPrice && Number(item.compareAtPrice) > Number(item.retailPrice) && (
-                        <span className="text-[11px] text-gray-400 line-through">R{Number(item.compareAtPrice).toFixed(2)}</span>
+                        <span className="text-[11px] text-gray-500 line-through">R{Number(item.compareAtPrice).toFixed(2)}</span>
                       )}
                     </>
                   ) : <span className="text-xs font-semibold text-amber-600">No price set</span>}
@@ -1279,7 +1279,7 @@ function SupplierCatalogManagement({ catalog, suppliers, categories, onChanged }
           </div>
           );
         })}
-        {!catalog.length && <p className="text-sm text-gray-400 p-6 text-center col-span-full">No catalog items yet.</p>}
+        {!catalog.length && <p className="text-sm text-gray-500 p-6 text-center col-span-full">No catalog items yet.</p>}
       </div>
     </div>
   );
@@ -1342,12 +1342,12 @@ function AllProductsPricing() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 font-medium">Store</th>
                 <th className="px-4 py-2 font-medium">Source</th><th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium">Price / Discount</th><th className="px-4 py-2 font-medium">Action</th>
@@ -1368,7 +1368,7 @@ function AllProductsPricing() {
                       ) : (
                         <span className="text-gray-700 font-medium">
                           {fmtZAR(Number(p.price))}
-                          {p.compareAtPrice ? <span className="text-gray-400 line-through ml-1.5 text-xs">{fmtZAR(Number(p.compareAtPrice))}</span> : null}
+                          {p.compareAtPrice ? <span className="text-gray-500 line-through ml-1.5 text-xs">{fmtZAR(Number(p.compareAtPrice))}</span> : null}
                         </span>
                       )}
                     </td>
@@ -1384,7 +1384,7 @@ function AllProductsPricing() {
                     </td>
                   </tr>
                 ))}
-                {!products.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No products match this filter.</td></tr>}
+                {!products.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-500">No products match this filter.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1450,7 +1450,7 @@ function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { ta
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">{String(t.country)} — VAT {String(t.vatRatePct)}% · default duty {String(t.defaultDutyRatePct)}%</p>
-                  <p className="text-[11px] text-gray-400 mt-0.5 max-w-2xl">{String(t.notes ?? "")}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 max-w-2xl">{String(t.notes ?? "")}</p>
                 </div>
                 <button onClick={() => startEditTax(t)} className="text-[11px] font-semibold text-amber-700 hover:underline shrink-0 ml-3">Edit</button>
               </div>
@@ -1465,7 +1465,7 @@ function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { ta
           <Plus className="w-3.5 h-3.5" /> Add override
         </button>
       </div>
-      <p className="text-xs text-gray-400 mb-3">Overrides the country's default duty rate for a specific product category — e.g. clothing carries a higher duty than electronics in South Africa. Rates are illustrative starting points; verify the exact HS-code rate per product before filing.</p>
+      <p className="text-xs text-gray-500 mb-3">Overrides the country's default duty rate for a specific product category — e.g. clothing carries a higher duty than electronics in South Africa. Rates are illustrative starting points; verify the exact HS-code rate per product before filing.</p>
 
       {addingDuty && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-4 gap-2 mb-4">
@@ -1485,7 +1485,7 @@ function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { ta
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Country</th><th className="px-4 py-2 font-medium">Category</th>
               <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Notes</th>
             </tr></thead>
@@ -1495,10 +1495,10 @@ function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { ta
                   <td className="px-4 py-2.5 font-semibold text-gray-900">{String(d.country)}</td>
                   <td className="px-4 py-2.5 text-gray-600">{String(d.categoryName)}</td>
                   <td className="px-4 py-2.5 text-gray-700 font-medium">{String(d.dutyRatePct)}%</td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs">{String(d.notes ?? "")}</td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs">{String(d.notes ?? "")}</td>
                 </tr>
               ))}
-              {!dutyRates.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No category overrides — every import uses the country's default duty rate above.</td></tr>}
+              {!dutyRates.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No category overrides — every import uses the country's default duty rate above.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1515,7 +1515,7 @@ function TaxRatesManagement({ taxRates, dutyRates, categories, onChanged }: { ta
 const CUSTOMS_STATUS_META: Record<string, { label: string; color: string; next: string[] }> = {
   duty_calculated: { label: "Duty calculated", color: "#6B7280", next: ["prepaid_to_agent"] },
   prepaid_to_agent: { label: "Prepaid to agent", color: "#2563EB", next: ["declared_to_customs", "held"] },
-  declared_to_customs: { label: "Declared to customs", color: "#B8862E", next: ["cleared", "held"] },
+  declared_to_customs: { label: "Declared to customs", color: "#8A6420", next: ["cleared", "held"] },
   held: { label: "Held by customs", color: "#DC2626", next: ["declared_to_customs", "cleared"] },
   cleared: { label: "Cleared", color: "#10B981", next: [] },
 };
@@ -1560,7 +1560,7 @@ function CustomsRecords({ customsRecords, shipments, onChanged }: { customsRecor
 
   return (
     <div>
-      <p className="text-xs text-gray-400 mb-4 max-w-2xl">
+      <p className="text-xs text-gray-500 mb-4 max-w-2xl">
         Tracks duty/VAT owed on each shipment crossing the border and whatever prepayment arrangement is actually in place — it does not submit
         declarations or move money to SARS/ZRA itself. Update status as your courier/broker (or, once accredited, Ballylife directly) actually clears each one.
       </p>
@@ -1606,7 +1606,7 @@ function CustomsRecords({ customsRecords, shipments, onChanged }: { customsRecor
                   <input placeholder="Notes" value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} className="border border-gray-200 rounded px-2.5 py-1.5 text-xs sm:col-span-3" />
                 </div>
               ) : (
-                <p className="text-[11px] text-gray-400 mb-2">
+                <p className="text-[11px] text-gray-500 mb-2">
                   {r.clearingAgent ? `Agent: ${String(r.clearingAgent)}` : "No clearing agent recorded yet"}
                   {r.referenceNumber ? ` · Ref: ${String(r.referenceNumber)}` : ""}
                   {" "}<button onClick={() => startEdit(r)} className="font-semibold text-amber-700 hover:underline">Edit</button>
@@ -1624,7 +1624,7 @@ function CustomsRecords({ customsRecords, shipments, onChanged }: { customsRecor
             </div>
           );
         })}
-        {!customsRecords.length && <p className="text-sm text-gray-400 p-6 text-center">No customs records yet.</p>}
+        {!customsRecords.length && <p className="text-sm text-gray-500 p-6 text-center">No customs records yet.</p>}
       </div>
     </div>
   );
@@ -1643,7 +1643,7 @@ function TaxRevenueSummary() {
     mktAdmin.taxSummary().then(res => { if (res.success) setData(res.data as R); setLoading(false); });
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>;
   if (!data) return null;
 
   const totals = data.totals as R;
@@ -1666,7 +1666,7 @@ function TaxRevenueSummary() {
         <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">VAT & duty by month and country</span></div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Period</th><th className="px-4 py-2 font-medium">Country</th>
               <th className="px-4 py-2 font-medium">Orders</th><th className="px-4 py-2 font-medium">Subtotal</th>
               <th className="px-4 py-2 font-medium">VAT collected</th><th className="px-4 py-2 font-medium">Duty liability</th>
@@ -1682,7 +1682,7 @@ function TaxRevenueSummary() {
                   <td className="px-4 py-2.5 font-medium text-amber-700">{fmtZAR(Number(r.dutyLiability))}</td>
                 </tr>
               ))}
-              {!byPeriod.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No orders yet.</td></tr>}
+              {!byPeriod.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-500">No orders yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1693,7 +1693,7 @@ function TaxRevenueSummary() {
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customs records by status</span></div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Country</th>
                 <th className="px-4 py-2 font-medium">Shipments</th><th className="px-4 py-2 font-medium">Declared value</th>
                 <th className="px-4 py-2 font-medium">Duty</th><th className="px-4 py-2 font-medium">Import VAT</th><th className="px-4 py-2 font-medium">Total payable</th>
@@ -1716,7 +1716,7 @@ function TaxRevenueSummary() {
         </div>
       )}
 
-      <p className="text-[11px] text-gray-400">
+      <p className="text-[11px] text-gray-500">
         These figures are calculated and tracked here, not submitted or paid to SARS/ZRA automatically — actual filing and remittance still happens through
         your own eFiling/ASYCUDA login, an accountant, or (once accredited) your own customs broker access. Download the CSV under Reports for handing to
         whoever files the return.
@@ -1732,7 +1732,7 @@ function TaxRevenueSummary() {
 // status stays 'not_agreed' until that's genuinely true.
 const AUTHORITY_STATUS_META: Record<string, { label: string; color: string }> = {
   not_agreed: { label: "No agreement", color: "#6B7280" },
-  agreement_pending: { label: "Agreement pending", color: "#B8862E" },
+  agreement_pending: { label: "Agreement pending", color: "#8A6420" },
   active: { label: "Active", color: "#10B981" },
 };
 
@@ -1786,7 +1786,7 @@ function RevenueAuthorityManagement() {
     load();
   };
 
-  if (loading) return <div className="flex items-center justify-center h-24"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;
+  if (loading) return <div className="flex items-center justify-center h-24"><Loader2 className="w-5 h-5 animate-spin text-gray-500" /></div>;
 
   return (
     <div className="mt-2">
@@ -1796,7 +1796,7 @@ function RevenueAuthorityManagement() {
           <Plus className="w-3.5 h-3.5" /> Add authority
         </button>
       </div>
-      <p className="text-xs text-gray-400 mb-3">A country-scoped, read-only login that shows only that country's VAT/duty figures. Adding one here is Ballylife's own record — it doesn't create or imply a real reporting agreement with SARS, ZRA, or anyone else.</p>
+      <p className="text-xs text-gray-500 mb-3">A country-scoped, read-only login that shows only that country's VAT/duty figures. Adding one here is Ballylife's own record — it doesn't create or imply a real reporting agreement with SARS, ZRA, or anyone else.</p>
 
       {adding && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-3 gap-2 mb-4">
@@ -1819,7 +1819,7 @@ function RevenueAuthorityManagement() {
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Name</th><th className="px-4 py-2 font-medium">Country</th>
               <th className="px-4 py-2 font-medium">Agreement status</th><th className="px-4 py-2 font-medium">Dashboard login</th>
             </tr></thead>
@@ -1858,7 +1858,7 @@ function RevenueAuthorityManagement() {
                             <button onClick={() => createLogin(String(a.id))} disabled={creatingLogin} className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
                               {creatingLogin ? "Creating..." : "Create"}
                             </button>
-                            <span className="text-[11px] text-gray-400">Share these with the authority yourself — not stored or emailed anywhere by this system.</span>
+                            <span className="text-[11px] text-gray-500">Share these with the authority yourself — not stored or emailed anywhere by this system.</span>
                           </div>
                         </td>
                       </tr>
@@ -1866,7 +1866,7 @@ function RevenueAuthorityManagement() {
                   </Fragment>
                 );
               })}
-              {!authorities.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">No revenue authorities added yet.</td></tr>}
+              {!authorities.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No revenue authorities added yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1919,7 +1919,7 @@ function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: 
           <Plus className="w-3.5 h-3.5" /> Add rate
         </button>
       </div>
-      <p className="text-xs text-gray-400 mb-3">Flat kwacha amounts by body type, engine size, and age band — this is how Zambia actually taxes used vehicles 2+ years old, not a percentage. ZRA updates this schedule every July; verify current figures at zra.org.zm.</p>
+      <p className="text-xs text-gray-500 mb-3">Flat kwacha amounts by body type, engine size, and age band — this is how Zambia actually taxes used vehicles 2+ years old, not a percentage. ZRA updates this schedule every July; verify current figures at zra.org.zm.</p>
 
       {adding && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 grid sm:grid-cols-4 gap-2 mb-4">
@@ -1942,7 +1942,7 @@ function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Body type</th><th className="px-4 py-2 font-medium">Engine cc</th>
               <th className="px-4 py-2 font-medium">Age</th><th className="px-4 py-2 font-medium">Duty + surtax</th>
               <th className="px-4 py-2 font-medium">Notes</th><th className="px-4 py-2 font-medium">Action</th>
@@ -1964,11 +1964,11 @@ function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: 
                       <button onClick={() => startEdit(r)} className="text-gray-700 font-medium hover:underline">K{Number(r.dutyKwacha).toLocaleString()} + K{Number(r.carbonSurtaxKwacha).toLocaleString()}</button>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-gray-400 text-xs max-w-xs">{String(r.notes ?? "")}</td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs max-w-xs">{String(r.notes ?? "")}</td>
                   <td className="px-4 py-2.5">{editingId !== r.id && <button onClick={() => startEdit(r)} className="text-[11px] font-semibold text-amber-700 hover:underline">Edit</button>}</td>
                 </tr>
               ))}
-              {!rates.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-400">No rates yet.</td></tr>}
+              {!rates.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-500">No rates yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2033,7 +2033,7 @@ function SettlementsPayouts() {
     load();
   };
 
-  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
+  if (loading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>;
 
   return (
     <div className="mt-5">
@@ -2044,7 +2044,7 @@ function SettlementsPayouts() {
 
       {showFx && (
         <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
-          <p className="text-xs text-gray-400 mb-2">Used to convert a supplier's cost (quoted in their currency) into ZAR for the settlement below. Illustrative — verify against a live rate before an actual payout run.</p>
+          <p className="text-xs text-gray-500 mb-2">Used to convert a supplier's cost (quoted in their currency) into ZAR for the settlement below. Illustrative — verify against a live rate before an actual payout run.</p>
           <div className="grid sm:grid-cols-4 gap-2">
             {fxRates.map((r, i) => (
               <div key={i} className="flex items-center gap-1.5">
@@ -2076,7 +2076,7 @@ function SettlementsPayouts() {
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+            <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
               <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Product</th>
               <th className="px-4 py-2 font-medium">Seller</th><th className="px-4 py-2 font-medium">Supplier</th>
               <th className="px-4 py-2 font-medium">Platform fee</th><th className="px-4 py-2 font-medium">Seller payout</th>
@@ -2089,7 +2089,7 @@ function SettlementsPayouts() {
                   <td className="px-4 py-2.5 text-gray-600">{String(s.productName)}</td>
                   <td className="px-4 py-2.5 text-gray-500">{String(s.sellerName)}</td>
                   <td className="px-4 py-2.5 text-gray-500">{s.supplierName ? String(s.supplierName) : "—"}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(s.platformFeeAmount))} <span className="text-[10px] text-gray-400">({String(s.platformFeePct)}%)</span></td>
+                  <td className="px-4 py-2.5 text-gray-600">{fmtZAR(Number(s.platformFeeAmount))} <span className="text-[10px] text-gray-500">({String(s.platformFeePct)}%)</span></td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1.5">
                       <span className="text-gray-700 font-medium">{fmtZAR(Number(s.sellerPayoutAmount))}</span>
@@ -2104,7 +2104,7 @@ function SettlementsPayouts() {
                           <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
                         </span>
                       ) : (
-                        <button onClick={() => setRefEdit({ id: String(s.id), field: "seller", value: String(s.sellerPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
+                        <button onClick={() => setRefEdit({ id: String(s.id), field: "seller", value: String(s.sellerPayoutReference ?? "") })} className="text-[10px] text-gray-500 hover:underline">ref</button>
                       )}
                     </div>
                   </td>
@@ -2123,14 +2123,14 @@ function SettlementsPayouts() {
                             <button onClick={saveReference} className="text-[10px] text-amber-700 font-semibold">Save</button>
                           </span>
                         ) : (
-                          <button onClick={() => setRefEdit({ id: String(s.id), field: "supplier", value: String(s.supplierPayoutReference ?? "") })} className="text-[10px] text-gray-400 hover:underline">ref</button>
+                          <button onClick={() => setRefEdit({ id: String(s.id), field: "supplier", value: String(s.supplierPayoutReference ?? "") })} className="text-[10px] text-gray-500 hover:underline">ref</button>
                         )}
                       </div>
                     )}
                   </td>
                 </tr>
               ))}
-              {!settlements.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-400">No settlements match this filter.</td></tr>}
+              {!settlements.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500">No settlements match this filter.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2171,7 +2171,7 @@ function OrderMonitoring({ orders, onChanged }: { orders: R[]; onChanged: () => 
       <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">All Orders ({orders.length})</span></div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+          <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
             <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
             <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Refunded</th>
             <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Date</th><th className="px-4 py-2 font-medium">Action</th>
@@ -2188,7 +2188,7 @@ function OrderMonitoring({ orders, onChanged }: { orders: R[]; onChanged: () => 
                     <td className="px-4 py-2.5 font-bold text-gray-700">{fmtZAR(Number(o.totalAmount))}</td>
                     <td className="px-4 py-2.5 text-gray-500">{Number(o.refundedAmount ?? 0) > 0 ? fmtZAR(Number(o.refundedAmount)) : "—"}</td>
                     <td className="px-4 py-2.5 capitalize text-gray-600">{String(o.status).replace(/_/g, " ")}</td>
-                    <td className="px-4 py-2.5 text-gray-400">{new Date(String(o.placedAt)).toLocaleDateString()}</td>
+                    <td className="px-4 py-2.5 text-gray-500">{new Date(String(o.placedAt)).toLocaleDateString()}</td>
                     <td className="px-4 py-2.5">
                       {refundable && (
                         <button onClick={() => (refundFor === o.id ? setRefundFor(null) : startRefund(o))} className="text-[11px] font-semibold text-amber-700 hover:underline">
@@ -2301,13 +2301,13 @@ function FulfilmentPanel({ onOpenOrders }: { onOpenOrders: () => void }) {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>
         ) : rows.length === 0 ? (
-          <p className="text-sm text-gray-400 p-6 text-center">No supplier orders{filter ? " with this status" : " yet"}. Paid orders containing supplier-sourced items appear here within a minute.</p>
+          <p className="text-sm text-gray-500 p-6 text-center">No supplier orders{filter ? " with this status" : " yet"}. Paid orders containing supplier-sourced items appear here within a minute.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+              <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Status</th>
                 <th className="px-4 py-2 font-medium">Customer paid</th><th className="px-4 py-2 font-medium">Supplier cost</th>
                 <th className="px-4 py-2 font-medium">Gross margin</th><th className="px-4 py-2 font-medium">Supplier order / tracking</th>
@@ -2323,19 +2323,19 @@ function FulfilmentPanel({ onOpenOrders }: { onOpenOrders: () => void }) {
                     <tr key={String(r.id)} className="border-b border-gray-50 last:border-0 align-top">
                       <td className="px-4 py-2.5">
                         <p className="font-semibold text-gray-900">{String(r.orderNumber)}</p>
-                        <p className="text-[11px] text-gray-400">{String(r.customerName ?? "")}</p>
+                        <p className="text-[11px] text-gray-500">{String(r.customerName ?? "")}</p>
                       </td>
                       <td className="px-4 py-2.5">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: st.bg, color: st.fg }}>{st.label}</span>
                         {r.status === "queued" && Number(r.attempts) > 0 && (
-                          <p className="text-[10px] text-gray-400 mt-1">Attempt {Number(r.attempts)} failed · next try {new Date(String(r.nextAttemptAt)).toLocaleTimeString()}</p>
+                          <p className="text-[10px] text-gray-500 mt-1">Attempt {Number(r.attempts)} failed · next try {new Date(String(r.nextAttemptAt)).toLocaleTimeString()}</p>
                         )}
                         {r.lastError ? <p className="text-[11px] text-red-600 mt-1 max-w-xs">{String(r.lastError)}</p> : null}
                       </td>
                       <td className="px-4 py-2.5 font-semibold text-gray-700">{fmtZAR(Number(r.orderTotal))}</td>
                       <td className="px-4 py-2.5 text-gray-600">
-                        {r.cjCostUsd !== null ? <>${Number(r.cjCostUsd).toFixed(2)}{r.cjCostZar !== null && <span className="text-[11px] text-gray-400"> ≈ {fmtZAR(Number(r.cjCostZar))}</span>}</> : "—"}
-                        {r.cjOrderId ? <p className="text-[10px] text-gray-400">{r.autoPaid ? "Paid from balance" : "Created unpaid"}</p> : null}
+                        {r.cjCostUsd !== null ? <>${Number(r.cjCostUsd).toFixed(2)}{r.cjCostZar !== null && <span className="text-[11px] text-gray-500"> ≈ {fmtZAR(Number(r.cjCostZar))}</span>}</> : "—"}
+                        {r.cjOrderId ? <p className="text-[10px] text-gray-500">{r.autoPaid ? "Paid from balance" : "Created unpaid"}</p> : null}
                       </td>
                       <td className="px-4 py-2.5 font-semibold" style={{ color: margin === null ? "#9CA3AF" : margin >= 0 ? "#047857" : "#B91C1C" }}>
                         {margin === null ? "—" : fmtZAR(margin)}

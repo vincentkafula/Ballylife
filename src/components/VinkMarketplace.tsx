@@ -54,11 +54,11 @@ function getProductIllustration(p: Record<string, unknown>): (() => ReactNode) |
 // white, because supplier shots are usually a product on a white backdrop and
 // cropping them (object-cover) cuts off the product in portrait cards. If the
 // image fails to load, it removes itself and the emoji/gradient shows through.
-function ProductPhoto({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
+function ProductPhoto({ src, alt, className = "", eager = false }: { src: string; alt: string; className?: string; eager?: boolean }) {
   const [failed, setFailed] = useState(false);
   if (failed) return null;
   return (
-    <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setFailed(true)}
+    <img src={src} alt={alt} loading={eager ? "eager" : "lazy"} decoding="async" onError={() => setFailed(true)}
       className={`absolute inset-0 w-full h-full object-contain bg-white ${className}`} />
   );
 }
@@ -73,6 +73,17 @@ function deliveryWindowFor(p: R): string {
   return p.shippingIncluded ? (d?.min && d?.max ? `${d.min}–${d.max} business days` : INTL_DELIVERY_WINDOW) : LOCAL_DELIVERY_WINDOW;
 }
 
+/** When prices are displayed in another currency, state the exact rand amount that will be charged. */
+function ChargedInZarNote({ zarTotal }: { zarTotal: number }) {
+  if (!isShowingConvertedPrices()) return null;
+  const rands = `R${Number(zarTotal ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return (
+    <p className="text-[11px] text-gray-600 leading-snug bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2">
+      Converted prices are estimates. You'll be charged <b>{rands}</b> in South African rand; your bank sets the final amount.
+    </p>
+  );
+}
+
 /** What to promise for a whole cart/order, given its items' shippingIncluded flags. */
 function cartDeliveryWindow(items: R[]): string {
   const intl = items.some(i => i.shippingIncluded);
@@ -81,6 +92,7 @@ function cartDeliveryWindow(items: R[]): string {
   return intl ? INTL_DELIVERY_WINDOW : LOCAL_DELIVERY_WINDOW;
 }
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
+import { DefaultPasswordBanner } from "./DefaultPasswordBanner";
 import { OrderTracking } from "./OrderTracking";
 // These five are static content pages (legal/policy text with large
 // embedded HTML) reachable only from footer links most shoppers never
@@ -108,7 +120,7 @@ import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
 import { ProductPhotoGallery } from "./ProductPhotoGallery";
 import { Footer } from "./Footer";
-import { formatZAR, useCurrency, useLiveLocation } from "../services/currencyStore";
+import { formatZAR, useCurrency, useLiveLocation, setCountryManually, isShowingConvertedPrices } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
@@ -341,17 +353,17 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
       </div>
 
       <div className="p-3 cursor-pointer flex-1 flex flex-col" onClick={onView}>
-        <p className="text-[10px] text-gray-400 mb-0.5">{p.brand as string}</p>
+        <p className="text-[10px] text-gray-500 mb-0.5">{p.brand as string}</p>
         <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mb-1.5">{p.name as string}</p>
         <div className="flex items-center gap-1 mb-2">
           <Stars rating={Number(p.avgRating)} size={11} />
-          <span className="text-[10px] text-gray-400">({Number(p.reviewCount).toLocaleString()})</span>
+          <span className="text-[10px] text-gray-500">({Number(p.reviewCount).toLocaleString()})</span>
         </div>
         <div className="mt-auto">
           <div className="flex items-center gap-2">
             <span className="text-base font-black text-gray-900">{fmtZAR(Number(p.price))}</span>
             {p.compareAtPrice && (
-              <span className="text-xs text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
+              <span className="text-xs text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
             )}
           </div>
           {Number(p.stock) > 0 && Number(p.stock) < 10 && (
@@ -421,16 +433,16 @@ function HomeProductCard({ p, onView, onCart }: { p: R; onView: () => void; onCa
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
             </svg>
           ))}
-          <span className="text-[9px] text-gray-400 ml-0.5">({p.reviewCount as number ?? 0})</span>
+          <span className="text-[9px] text-gray-500 ml-0.5">({p.reviewCount as number ?? 0})</span>
         </div>
         <div className="mt-auto">
           {p.compareAtPrice && (
-            <p className="text-[10px] text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</p>
+            <p className="text-[10px] text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</p>
           )}
           <p className="text-sm font-bold text-gray-900 mb-2">{fmtZAR(Number(p.price))}</p>
           <button onClick={e => { e.stopPropagation(); onCart(); }}
             className="w-full text-xs font-semibold py-1.5 rounded-md border-2 transition-colors hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
-            style={{ borderColor: "#B8862E", color: "#B8862E" }}>
+            style={{ borderColor: "#B8862E", color: "#8A6420" }}>
             Add to cart
           </button>
         </div>
@@ -450,7 +462,7 @@ function ProductRow({ title, products, onProduct, onCart, slice = [0, 4] }: {
     <div className="mb-4">
       <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-200">
         <span className="font-serif text-base text-gray-900" style={{ fontWeight: 600 }}>{title}</span>
-        <button className="text-xs font-semibold" style={{ color: "#B8862E" }}>View more</button>
+        <button className="text-xs font-semibold" style={{ color: "#8A6420" }}>View more</button>
       </div>
       <div className="relative">
         {items.length > 1 && <SlideArrows onLeft={scrollLeft} onRight={scrollRight} />}
@@ -476,136 +488,101 @@ interface AdSlide {
   onCta: () => void;
 }
 
+/** Hero-eligible: a live product that's in stock and has a real photo. */
+function isHeroReady(p: R): boolean {
+  return p.status !== "inactive" && Number(p.stock ?? 0) > 0 && productPhotos(p.images).length > 0;
+}
+
 function HeroProductSlider({ products, onView, onCart, adSlides = [] }: { products: R[]; onView: (p: R) => void; onCart: (p: R) => void; adSlides?: AdSlide[] }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
-  // Room is left for the ad slides up front, so the total stays at 6
-  // slides either way (N ads + (6-N) products, or 6 products if no ads).
-  const items = products.slice(0, Math.max(0, 6 - adSlides.length));
+  // Products first (only real, in-stock, photographed ones, straight from
+  // the live catalogue), then any banner slides, 6 slides in total.
+  const items = products.filter(isHeroReady).slice(0, Math.max(0, 6 - adSlides.length));
   const totalSlides = items.length + adSlides.length;
-  const adSlide = index < adSlides.length ? adSlides[index] : undefined;
+  const adSlide = index >= items.length ? adSlides[index - items.length] : undefined;
 
   useEffect(() => {
     if (paused || totalSlides < 2) return;
-    const id = setInterval(() => setIndex(i => (i + 1) % totalSlides), 5000);
+    const id = setInterval(() => setIndex(i => (i + 1) % totalSlides), 6000);
     return () => clearInterval(id);
   }, [totalSlides, paused]);
+  useEffect(() => { if (index >= totalSlides) setIndex(0); }, [index, totalSlides]);
 
   if (totalSlides === 0) return null;
   const go = (i: number) => setIndex((i + totalSlides) % totalSlides);
+  const pauseProps = {
+    onMouseEnter: () => setPaused(true), onMouseLeave: () => setPaused(false),
+    onTouchStart: () => setPaused(true), onTouchEnd: () => setPaused(false),
+  };
+  const arrows = totalSlides > 1 && (
+    <>
+      <button onClick={() => go(index - 1)} aria-label="Previous slide"
+        className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white/90 hover:bg-white flex items-center justify-center shadow-md transition-colors">
+        <ChevronRight className="w-4 h-4 rotate-180 text-gray-800" />
+      </button>
+      <button onClick={() => go(index + 1)} aria-label="Next slide"
+        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white/90 hover:bg-white flex items-center justify-center shadow-md transition-colors">
+        <ChevronRight className="w-4 h-4 text-gray-800" />
+      </button>
+    </>
+  );
+  const dots = totalSlides > 1 && (
+    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+      {Array.from({ length: totalSlides }).map((_, i) => (
+        <button key={i} onClick={() => go(i)} aria-label={`Slide ${i + 1}`} aria-current={index === i}
+          className="h-2 rounded-full transition-all" style={{ width: index === i ? 20 : 8, background: index === i ? "#1E7B4D" : "rgba(20,17,13,0.25)" }} />
+      ))}
+    </div>
+  );
 
   if (adSlide) {
     return (
-      <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px] bg-white"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-        onTouchStart={() => setPaused(true)}
-        onTouchEnd={() => setPaused(false)}>
-        <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-white px-2 py-0.5 rounded bg-black/40">Sponsored</div>
-
-        {totalSlides > 1 && (
-          <>
-            <button onClick={() => go(index - 1)} className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors" aria-label="Previous slide">
-              <ChevronRight className="w-3.5 h-3.5 rotate-180 text-blue-700" />
-            </button>
-            <button onClick={() => go(index + 1)} className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors" aria-label="Next slide">
-              <ChevronRight className="w-3.5 h-3.5 text-blue-700" />
-            </button>
-          </>
-        )}
-
+      <div className="flex-1 relative overflow-hidden rounded-xl h-[340px] sm:h-[400px] bg-white" {...pauseProps}>
+        {arrows}
         <button onClick={adSlide.onCta} className="block w-full h-full cursor-pointer" aria-label={adSlide.alt}>
           <img src={adSlide.image} alt={adSlide.alt} className="w-full h-full object-cover" />
         </button>
-
-        {totalSlides > 1 && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-            {Array.from({ length: totalSlides }).map((_, i) => (
-              <button key={i} onClick={() => go(i)} className="h-1.5 rounded-full transition-all"
-                style={{ width: index === i ? 16 : 6, background: index === i ? "#1428A0" : "rgba(255,255,255,0.6)" }} aria-label={`Slide ${i + 1}`} />
-            ))}
-          </div>
-        )}
+        {dots}
       </div>
     );
   }
 
-  const p = items[index - adSlides.length];
-  const discount = p.compareAtPrice
-    ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
-  const imgs = p.images as string[];
+  const p = items[index];
+  const discount = p.compareAtPrice ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
+  const photo = productPhotos(p.images)[0];
+  const stock = Number(p.stock ?? 0);
 
   return (
-    <div className="flex-1 relative overflow-hidden rounded-sm h-[300px] sm:h-[360px]"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onTouchStart={() => setPaused(true)}
-      onTouchEnd={() => setPaused(false)}
+    <div className="flex-1 relative overflow-hidden rounded-xl h-[340px] sm:h-[400px]" {...pauseProps}
       style={{ background: "linear-gradient(135deg,#FBF3E1 0%,#F3EBD8 100%)", border: "1px solid #E8D9B5" }}>
-      <div className="absolute top-2 left-3 z-10 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Featured today</div>
-
-      {totalSlides > 1 && (
-        <>
-          <button
-            onClick={() => go(index - 1)}
-            className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors"
-            aria-label="Previous product"
-          >
-            <ChevronRight className="w-3.5 h-3.5 rotate-180 text-emerald-700" />
-          </button>
-          <button
-            onClick={() => go(index + 1)}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-white/80 hover:bg-white flex items-center justify-center shadow-sm transition-colors"
-            aria-label="Next product"
-          >
-            <ChevronRight className="w-3.5 h-3.5 text-emerald-700" />
-          </button>
-        </>
-      )}
-
-      <div className="relative h-full flex items-center justify-between gap-4 px-8 sm:px-12 py-6 cursor-pointer" onClick={() => onView(p)}>
-        <div className="min-w-0 flex-1">
+      {arrows}
+      <div className="h-full grid grid-cols-[1fr_1.15fr] sm:grid-cols-2 cursor-pointer" onClick={() => onView(p)}>
+        {/* Copy */}
+        <div className="min-w-0 flex flex-col justify-center pl-11 sm:pl-16 pr-2 sm:pr-3 py-6">
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-2">Featured today</span>
           {discount > 0 && (
-            <span className="inline-block bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm mb-1.5">-{discount}% OFF</span>
+            <span className="self-start bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded mb-2">-{discount}% OFF</span>
           )}
-          <p className="text-base sm:text-xl font-bold text-gray-900 leading-snug line-clamp-2 mb-2">{p.name as string}</p>
-          <div className="flex items-baseline gap-1.5">
-            {p.compareAtPrice && (
-              <span className="text-[11px] text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
-            )}
-            <span className="text-2xl sm:text-3xl font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(p.price))}</span>
+          <p className="text-base sm:text-2xl font-bold text-gray-900 leading-snug line-clamp-3 mb-3">{p.name as string}</p>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-2xl sm:text-4xl font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(p.price))}</span>
+            {p.compareAtPrice && <span className="text-xs sm:text-sm text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>}
           </div>
-          <button
-            onClick={e => { e.stopPropagation(); onCart(p); }}
-            className="mt-4 bg-emerald-600 text-white text-sm font-bold px-6 py-2.5 rounded-lg hover:bg-emerald-700 transition-colors"
-          >
+          <p className="text-[11px] sm:text-xs text-gray-600 mt-1.5">
+            {p.shippingIncluded ? "Delivery included" : "Fast local delivery"}{stock <= 10 ? ` · Only ${stock} left` : ""}
+          </p>
+          <button onClick={e => { e.stopPropagation(); onCart(p); }}
+            className="self-start mt-4 bg-emerald-700 text-white text-sm font-bold px-6 py-2.5 rounded-lg hover:bg-emerald-800 transition-colors">
             Add to cart
           </button>
         </div>
-        <div
-          className="relative shrink-0 w-28 h-28 sm:w-40 sm:h-40 rounded-full flex items-center justify-center text-5xl sm:text-7xl shadow-sm overflow-hidden"
-          style={{ background: `linear-gradient(135deg,${productColors(imgs, "#fff", "#e8e8e8").join(",")})` }}
-        >
-          {getProductIllustration(p)
-            ? <div className="w-20 h-20 sm:w-28 sm:h-28">{getProductIllustration(p)!()}</div>
-            : (p.emoji as string)}
-          {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} className="p-3" />}
+        {/* Photo: about half the banner, full height, uncropped on white */}
+        <div className="relative m-3 sm:m-4 ml-0 sm:ml-0 rounded-lg bg-white overflow-hidden shadow-sm">
+          <ProductPhoto key={photo} src={photo} alt={p.name as string} className="p-3 sm:p-5" eager />
         </div>
       </div>
-
-      {totalSlides > 1 && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-          {Array.from({ length: totalSlides }).map((_, i) => (
-            <button
-              key={i}
-              onClick={() => go(i)}
-              className="h-1.5 rounded-full transition-all"
-              style={{ width: index === i ? 16 : 6, background: index === i ? "#B8862E" : "rgba(18,138,67,0.3)" }}
-              aria-label={`Product ${i + 1}`}
-            />
-          ))}
-        </div>
-      )}
+      {dots}
     </div>
   );
 }
@@ -640,9 +617,9 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
       {/* ── Hero: sliding featured product + benefit cards ── */}
       <div className="flex flex-col sm:flex-row gap-3 m-3 sm:m-4">
-        <div className="flex-1 h-[300px] sm:h-[360px]">
+        <div className="flex-1 min-w-0 h-[340px] sm:h-[400px]">
           <HeroProductSlider
-            products={featured.length ? featured : products}
+            products={featured.filter(isHeroReady).length >= 3 ? featured : products}
             onView={onProduct}
             onCart={onCart}
             // Brand adverts (Samsung, Nike, Apple) were removed: they showed
@@ -660,10 +637,10 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         <div className="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:w-56 flex-shrink-0">
           {BENEFITS.map((b, i) => (
             <div key={i} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#B8862E" }}>{b.icon}</span>
+              <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#8A6420" }}>{b.icon}</span>
               <div className="min-w-0">
                 <p className="text-xs font-bold text-gray-900 leading-tight">{b.label}</p>
-                <p className="text-[10px] text-gray-400 leading-tight truncate">{b.sub}</p>
+                <p className="text-[10px] text-gray-500 leading-tight truncate">{b.sub}</p>
               </div>
             </div>
           ))}
@@ -678,7 +655,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
             {brands.length > 1 && <SlideArrows onLeft={brandsSlide.scrollLeft} onRight={brandsSlide.scrollRight} />}
             <div ref={brandsSlide.ref} className="flex items-center gap-8 overflow-x-auto scroll-smooth px-8 divide-x divide-gray-100" style={{ scrollbarWidth: "none" }}>
               {brands.map((b) => (
-                <span key={b} className="shrink-0 font-serif text-xl text-gray-700 hover:text-[#B8862E] transition-colors whitespace-nowrap cursor-default pl-8 first:pl-0" style={{ fontWeight: 700 }}>
+                <span key={b} className="shrink-0 font-serif text-xl text-gray-700 hover:text-[#8A6420] transition-colors whitespace-nowrap cursor-default pl-8 first:pl-0" style={{ fontWeight: 700 }}>
                   {b}
                 </span>
               ))}
@@ -698,7 +675,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         return (
           <div className="relative overflow-hidden mx-3 sm:mx-4 mb-3 rounded-2xl bg-white border border-gray-100">
             <button onClick={() => { clearRecentlyViewed(); setRecentIds([]); }}
-              className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10 text-[11px] font-semibold text-gray-400 hover:text-gray-600 transition-colors">
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 z-10 text-[11px] font-semibold text-gray-500 hover:text-gray-600 transition-colors">
               Clear All
             </button>
 
@@ -726,7 +703,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
 
               {/* Text content */}
               <div className="flex flex-col justify-center">
-                <span className="text-[11px] font-bold tracking-[0.15em] uppercase mb-3" style={{ color: "#B8862E" }}>Just for You</span>
+                <span className="text-[11px] font-bold tracking-[0.15em] uppercase mb-3" style={{ color: "#8A6420" }}>Just for You</span>
                 <h3 className="font-serif font-bold leading-[1.08] text-gray-900 mb-4" style={{ fontSize: "clamp(24px,3.6vw,38px)" }}>
                   Pick Up Where<br />You Left Off
                 </h3>
@@ -740,7 +717,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
                     { icon: <Zap className="w-5 h-5" />, label: "Quick Checkout" },
                   ].map((f, i) => (
                     <div key={f.label} className={`flex items-center gap-2 ${i > 0 ? "sm:pl-6 sm:border-l sm:border-gray-200" : ""}`}>
-                      <span style={{ color: "#B8862E" }}>{f.icon}</span>
+                      <span style={{ color: "#8A6420" }}>{f.icon}</span>
                       <span className="text-xs sm:text-sm text-gray-600 font-medium">{f.label}</span>
                     </div>
                   ))}
@@ -760,12 +737,12 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
         <div className="bg-white mx-3 sm:mx-4 mb-3 rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#B8862E" }}>
+              <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#8A6420" }}>
                 <ShoppingBag className="w-5 h-5" />
               </span>
               <span className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>What to Explore Next</span>
             </div>
-            <button onClick={onCategory} className="flex items-center gap-1 text-sm font-semibold" style={{ color: "#B8862E" }}>
+            <button onClick={onCategory} className="flex items-center gap-1 text-sm font-semibold" style={{ color: "#8A6420" }}>
               View All <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -836,10 +813,10 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
           { icon: <User className="w-4 h-4" />, label: "Customer Support", sub: "Friendly support whenever you need us" },
         ].map((b, i) => (
           <div key={i} className="flex items-start gap-2.5">
-            <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#B8862E" }}>{b.icon}</span>
+            <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FBF3E1", color: "#8A6420" }}>{b.icon}</span>
             <div>
               <p className="text-xs font-bold text-gray-900">{b.label}</p>
-              <p className="text-[10px] text-gray-400 leading-snug">{b.sub}</p>
+              <p className="text-[10px] text-gray-500 leading-snug">{b.sub}</p>
             </div>
           </div>
         ))}
@@ -981,11 +958,11 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
         {/* View toggle */}
         <div className="flex border border-gray-200 rounded-xl overflow-hidden">
           <button onClick={() => setViewMode("grid")}
-            className={`p-2 transition-colors ${viewMode === "grid" ? "bg-emerald-50 text-emerald-700" : "text-gray-400"}`}>
+            className={`p-2 transition-colors ${viewMode === "grid" ? "bg-emerald-50 text-emerald-700" : "text-gray-500"}`}>
             <Grid className="w-3.5 h-3.5" />
           </button>
           <button onClick={() => setViewMode("list")}
-            className={`p-2 transition-colors ${viewMode === "list" ? "bg-emerald-50 text-emerald-700" : "text-gray-400"}`}>
+            className={`p-2 transition-colors ${viewMode === "list" ? "bg-emerald-50 text-emerald-700" : "text-gray-500"}`}>
             <List className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -1052,10 +1029,10 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
         )}
         {loading ? (
           <div className="flex items-center justify-center py-24">
-            <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#B8862E" }} />
+            <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} />
           </div>
         ) : products.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-gray-500">
             <Search className="w-12 h-12 mx-auto mb-3 opacity-20" />
             <p className="font-semibold">No products found</p>
           </div>
@@ -1082,13 +1059,13 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
                     {productPhotos(imgs)[0] && <ProductPhoto src={productPhotos(imgs)[0]} alt={p.name as string} />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-400">{p.brand as string}</p>
+                    <p className="text-xs text-gray-500">{p.brand as string}</p>
                     <p className="text-sm font-semibold text-gray-900 truncate">{p.name as string}</p>
                     <div className="flex items-center gap-1 mt-0.5"><Stars rating={Number(p.avgRating)} size={11} /></div>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-base font-black text-gray-900">{fmtZAR(Number(p.price))}</p>
-                    {p.compareAtPrice && <p className="text-xs text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</p>}
+                    {p.compareAtPrice && <p className="text-xs text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</p>}
                     <button onClick={e => { e.stopPropagation(); onCart(p); }}
                       className="mt-1 px-3 py-1 rounded-lg text-xs font-bold text-white" style={{ background: "#B8862E" }}>
                       Add
@@ -1102,9 +1079,9 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
         {!loading && products.length > 0 && (
           <div ref={sentinelRef} className="flex items-center justify-center py-8">
             {loadingMore ? (
-              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#B8862E" }} />
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: "#8A6420" }} />
             ) : !hasMore ? (
-              <p className="text-xs text-gray-400">You've reached the end — {products.length.toLocaleString()} products shown</p>
+              <p className="text-xs text-gray-500">You've reached the end — {products.length.toLocaleString()} products shown</p>
             ) : null}
           </div>
         )}
@@ -1171,7 +1148,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
       .finally(() => setLoading(false));
   }, [productId]);
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#B8862E" }} /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} /></div>;
   if (!data) return null;
 
   const { product: p, seller, reviews, related } = data;
@@ -1188,7 +1165,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
         <button onClick={onBack} aria-label="Back" className="p-1.5 rounded-lg hover:bg-gray-100"><ArrowLeft className="w-4 h-4 text-gray-700" /></button>
         <p className="text-sm font-semibold text-gray-900 flex-1 truncate">{p.name as string}</p>
         <button onClick={() => onWishlist(p.id as string)}>
-          <Heart className={`w-5 h-5 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-400"}`} />
+          <Heart className={`w-5 h-5 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-500"}`} />
         </button>
       </div>
 
@@ -1239,7 +1216,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">{p.categoryName as string}</span>
-              <span className="text-xs text-gray-400">{p.brand as string}</span>
+              <span className="text-xs text-gray-500">{p.brand as string}</span>
             </div>
             <h1 className="font-serif text-2xl text-gray-900 leading-snug" style={{ fontWeight: 600 }}>{p.name as string}</h1>
           </div>
@@ -1247,14 +1224,14 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           <div className="flex items-center gap-3">
             <Stars rating={Number(p.avgRating)} size={15} />
             <span className="text-sm font-bold text-gray-700">{Number(p.avgRating).toFixed(1)}</span>
-            <span className="text-sm text-gray-400">({Number(p.reviewCount).toLocaleString()} reviews)</span>
+            <span className="text-sm text-gray-500">({Number(p.reviewCount).toLocaleString()} reviews)</span>
           </div>
 
           <div className="flex items-baseline gap-3">
             <span className="text-3xl font-black text-gray-900">{fmtZAR(Number(p.price))}</span>
             {p.compareAtPrice && (
               <>
-                <span className="text-lg text-gray-400 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
+                <span className="text-lg text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
                 <span className="text-sm font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Save {discount}%</span>
               </>
             )}
@@ -1290,7 +1267,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                 <span className="px-4 text-sm font-bold">{qty}</span>
                 <button onClick={() => setQty(q => Math.min(Number(p.stock), q + 1))} className="px-3 py-2 hover:bg-gray-50"><Plus className="w-3.5 h-3.5 text-gray-600" /></button>
               </div>
-              <span className="text-xs text-gray-400">{Number(p.stock)} in stock</span>
+              <span className="text-xs text-gray-500">{Number(p.stock)} in stock</span>
             </div>
           </div>
 
@@ -1312,7 +1289,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
             </button>
             <button onClick={() => onWishlist(p.id as string)}
               className={`px-4 rounded-2xl border transition-all ${inWishlist ? "bg-red-50 border-red-200" : "border-gray-200"}`}>
-              <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-400"}`} />
+              <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-500"}`} />
             </button>
           </div>
         </div>
@@ -1323,7 +1300,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
         <div className="flex border-b border-gray-100">
           {(["desc","reviews","seller"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-3.5 text-sm font-semibold transition-all border-b-2 -mb-px capitalize ${tab === t ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-400"}`}>
+              className={`px-5 py-3.5 text-sm font-semibold transition-all border-b-2 -mb-px capitalize ${tab === t ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500"}`}>
               {t === "desc" ? "Description" : t === "reviews" ? `Reviews (${reviews.length})` : "Seller"}
             </button>
           ))}
@@ -1338,7 +1315,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                   <div className="grid grid-cols-2 gap-2">
                     {Object.entries(p.attributes as R ?? {}).map(([k, v]) => (
                       <div key={k} className="flex justify-between text-sm py-2 border-b border-gray-50">
-                        <span className="text-gray-400">{k}</span>
+                        <span className="text-gray-500">{k}</span>
                         <span className="font-medium text-gray-800">{String(v)}</span>
                       </div>
                     ))}
@@ -1385,16 +1362,16 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                       <p className="text-sm font-semibold text-gray-900">{r.title as string}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <Stars rating={Number(r.rating)} size={12} />
-                        <span className="text-[11px] text-gray-400">by {r.reviewerName as string}</span>
+                        <span className="text-[11px] text-gray-500">by {r.reviewerName as string}</span>
                         {r.verifiedPurchase && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded-full">✓ Verified</span>}
                       </div>
                     </div>
-                    <span className="text-[11px] text-gray-400">{ago(r.createdAt as string)}</span>
+                    <span className="text-[11px] text-gray-500">{ago(r.createdAt as string)}</span>
                   </div>
                   <p className="text-sm text-gray-600">{r.body as string}</p>
                 </div>
               ))}
-              {reviews.length === 0 && <p className="text-sm text-gray-400 text-center py-8">No reviews yet</p>}
+              {reviews.length === 0 && <p className="text-sm text-gray-500 text-center py-8">No reviews yet</p>}
             </div>
           )}
           {tab === "seller" && seller && (
@@ -1415,7 +1392,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                 ].map((s, i) => (
                   <div key={i} className="text-center p-3 bg-gray-50 rounded-xl">
                     <p className="text-base font-black text-gray-900">{s.value}</p>
-                    <p className="text-[11px] text-gray-400">{s.label}</p>
+                    <p className="text-[11px] text-gray-500">{s.label}</p>
                   </div>
                 ))}
               </div>
@@ -1456,7 +1433,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
     <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" style={{ background: "#FAF6EC" }}>
       <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl" style={{ background: "#EAF7EE" }}>🛒</div>
       <h2 className="font-serif text-xl text-gray-900" style={{ fontWeight: 600 }}>Your cart is empty</h2>
-      <p className="text-sm text-gray-400">Browse products and add items to get started</p>
+      <p className="text-sm text-gray-500">Browse products and add items to get started</p>
     </div>
   );
 
@@ -1473,8 +1450,8 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{item.name as string}</p>
-              <p className="text-xs text-gray-400">{item.sellerName as string}</p>
-              <p className="text-sm font-bold mt-1" style={{ color: "#B8862E" }}>{fmtZAR(Number(item.unitPrice))}</p>
+              <p className="text-xs text-gray-500">{item.sellerName as string}</p>
+              <p className="text-sm font-bold mt-1" style={{ color: "#8A6420" }}>{fmtZAR(Number(item.unitPrice))}</p>
             </div>
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
               <button onClick={() => onRemove(item.productId as string)}>
@@ -1492,7 +1469,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
         {/* Coupon */}
         <div className="bg-white rounded-2xl p-4 border border-gray-100">
           <div className="flex items-center gap-2 mb-3">
-            <Tag className="w-4 h-4" style={{ color: "#B8862E" }} />
+            <Tag className="w-4 h-4" style={{ color: "#8A6420" }} />
             <p className="text-sm font-semibold text-gray-900">Have a coupon?</p>
           </div>
           <div className="flex gap-2">
@@ -1507,7 +1484,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
               ✓ {cart.couponCode as string} applied — saving {fmtZAR(Number(cart.couponDiscount))}
             </p>
           )}
-          <p className="text-[11px] text-gray-400 mt-1.5">Try: WELCOME10 · SAVE200 · FREESHIP</p>
+          <p className="text-[11px] text-gray-500 mt-1.5">Try: WELCOME10 · SAVE200 · FREESHIP</p>
         </div>
       </div>
 
@@ -1529,8 +1506,9 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
           ))}
           <div className="border-t border-gray-100 pt-3 flex justify-between">
             <span className="font-bold text-gray-900">Total</span>
-            <span className="text-xl font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
+            <span className="text-xl font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
           </div>
+          <ChargedInZarNote zarTotal={Number(cart?.total ?? 0)} />
         </div>
         <button onClick={onCheckout}
           className="w-full py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2"
@@ -1540,7 +1518,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
         <div className="flex items-center justify-center gap-3 mt-4 text-xl">
           {["💳","🏦","📱","💰"].map((e, i) => <span key={i}>{e}</span>)}
         </div>
-        <p className="text-center text-[10px] text-gray-400 mt-1">Secure checkout · PCI DSS</p>
+        <p className="text-center text-[10px] text-gray-500 mt-1">Secure checkout · PCI DSS</p>
       </div>
     </div>
   );
@@ -1664,7 +1642,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
                 style={{ background: si >= i ? "#B8862E" : "#E5E7EB", color: si >= i ? "white" : "#9CA3AF" }}>
                 {si > i ? <CheckCircle className="w-4 h-4" /> : i + 1}
               </div>
-              <span className="text-[10px] text-gray-400">{label}</span>
+              <span className="text-[10px] text-gray-500">{label}</span>
             </div>
             {i < 2 && <div className="flex-1 h-px mx-2 mt-3.5" style={{ background: si > i ? "#B8862E" : "#E5E7EB" }} />}
           </div>
@@ -1691,7 +1669,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           ))}
 
           {addresses.length > 0 && !addingAddress && (
-            <button onClick={() => setAddingAddress(true)} className="w-full p-3 rounded-2xl border border-dashed border-gray-300 text-xs font-semibold text-gray-500 hover:border-[#B8862E] hover:text-[#B8862E]">
+            <button onClick={() => setAddingAddress(true)} className="w-full p-3 rounded-2xl border border-dashed border-gray-300 text-xs font-semibold text-gray-500 hover:border-[#B8862E] hover:text-[#8A6420]">
               + Add a new address
             </button>
           )}
@@ -1753,10 +1731,10 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           ].map(opt => (
             <button key={opt.id} onClick={() => setShipping(opt.id)}
               className={`w-full p-4 rounded-2xl text-left border flex items-center gap-3 transition-all ${shipping === opt.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
-              <Truck className="w-5 h-5 flex-shrink-0" style={{ color: "#B8862E" }} />
+              <Truck className="w-5 h-5 flex-shrink-0" style={{ color: "#8A6420" }} />
               <div className="flex-1">
                 <p className="text-sm font-semibold text-gray-900">{opt.label}</p>
-                <p className="text-xs text-gray-400">{opt.sub}</p>
+                <p className="text-xs text-gray-500">{opt.sub}</p>
               </div>
               <span className={`text-sm font-bold ${opt.price === "FREE" || opt.price === "INCLUDED" ? "text-green-600" : "text-gray-800"}`}>{opt.price}</span>
             </button>
@@ -1836,7 +1814,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
                         </div>
                       ))}
                     </div>
-                    <p className="text-[10px] text-gray-400 mt-2">
+                    <p className="text-[10px] text-gray-500 mt-2">
                       No interest or fees when paid on time. {providerLabel} runs its own quick eligibility check and credit assessment once you place your order — approval isn't guaranteed.
                     </p>
                   </div>
@@ -1847,15 +1825,16 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           <div className="bg-white rounded-2xl p-4 border border-gray-100">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Order total</span>
-              <span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
+              <span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span>
             </div>
-            <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1"><Shield className="w-3 h-3" />256-bit SSL · PCI DSS compliant</p>
+            <p className="text-[10px] text-gray-500 mt-1 flex items-center gap-1"><Shield className="w-3 h-3" />256-bit SSL · PCI DSS compliant</p>
           </div>
           {placeError && (
             <div className="rounded-xl px-4 py-3 text-sm font-medium text-red-700 bg-red-50 border border-red-100">
               {placeError}
             </div>
           )}
+          <ChargedInZarNote zarTotal={Number(cart?.total ?? 0)} />
           <div className="flex gap-3">
             <button onClick={() => setStep("shipping")} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold border border-gray-200">Back</button>
             <button onClick={handlePlace} disabled={placing}
@@ -1875,7 +1854,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed — Payment Pending</h2>
               <p className="text-gray-500 mb-6">Your order is saved, but payment hasn't been confirmed yet. We'll email you as soon as it clears — nothing ships until then.</p>
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Payment status</span><span className="font-semibold text-amber-600">Pending confirmation</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)} after payment clears</span></div>
               </div>
@@ -1886,7 +1865,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               <h2 className="font-serif text-3xl text-gray-900 mb-2" style={{ fontWeight: 600 }}>Order Placed!</h2>
               <p className="text-gray-500 mb-6">Thank you! A confirmation email is on its way.</p>
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#8A6420" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Tracking</span><span className="font-semibold text-right">Emailed and shown in My Orders once dispatched</span></div>
               </div>
@@ -1909,11 +1888,11 @@ function OrdersView() {
     mktOrders.list().then(r => { setOrders(r.data as R[]); setLoading(false); });
   }, []);
 
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#B8862E" }} /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} /></div>;
 
   if (selected) return (
     <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
-      <button onClick={() => setSelected(null)} className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: "#B8862E" }}>
+      <button onClick={() => setSelected(null)} className="flex items-center gap-2 text-sm font-semibold mb-4" style={{ color: "#8A6420" }}>
         <ArrowLeft className="w-4 h-4" />Back to Orders
       </button>
       <div className="bg-white rounded-2xl border border-gray-100 p-5 max-w-2xl space-y-4">
@@ -1930,7 +1909,7 @@ function OrdersView() {
               {item.emoji as string}
               {productPhotos([item.image])[0] && <ProductPhoto src={productPhotos([item.image])[0]} alt={item.productName as string} />}
             </span>
-            <div className="flex-1"><p className="text-sm font-semibold text-gray-900">{item.productName as string}</p><p className="text-xs text-gray-400">Qty: {item.quantity as number}</p></div>
+            <div className="flex-1"><p className="text-sm font-semibold text-gray-900">{item.productName as string}</p><p className="text-xs text-gray-500">Qty: {item.quantity as number}</p></div>
             <p className="text-sm font-bold text-gray-900">{fmtZAR(Number(item.totalPrice))}</p>
           </div>
         ))}
@@ -1958,7 +1937,7 @@ function OrdersView() {
     <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
       <h2 className="font-serif text-xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>My Orders</h2>
       {orders.length === 0 ? (
-        <div className="text-center py-16 text-gray-400"><Package className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No orders yet</p></div>
+        <div className="text-center py-16 text-gray-500"><Package className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No orders yet</p></div>
       ) : (
         <div className="space-y-3">
           {orders.map((o, i) => (
@@ -1973,9 +1952,9 @@ function OrdersView() {
               </div>
               <div className="flex items-center gap-1.5 mb-2">
                 {(o.items as R[]).slice(0, 3).map((it, j) => <span key={j} className="text-xl">{it.emoji as string}</span>)}
-                {(o.items as R[]).length > 3 && <span className="text-xs text-gray-400">+{(o.items as R[]).length - 3}</span>}
+                {(o.items as R[]).length > 3 && <span className="text-xs text-gray-500">+{(o.items as R[]).length - 3}</span>}
               </div>
-              <div className="flex items-center justify-between text-xs text-gray-400">
+              <div className="flex items-center justify-between text-xs text-gray-500">
                 <span>{new Date(o.placedAt as string).toLocaleDateString()}</span>
                 <span className="font-bold text-gray-800">{fmtZAR(Number(o.totalAmount))}</span>
               </div>
@@ -1995,12 +1974,12 @@ function WishlistView({ authUser, wishlistIds, onProduct, onCart, onWishlist }: 
   const [items, setItems]   = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => { mktWishlist.get(authUser.id).then(r => { setItems(r.data as R[]); setLoading(false); }); }, [authUser.id]);
-  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#B8862E" }} /></div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin" style={{ color: "#8A6420" }} /></div>;
   return (
     <div className="flex-1 overflow-y-auto p-4" style={{ background: "#FAF6EC" }}>
       <h2 className="font-serif text-xl text-gray-900 mb-4" style={{ fontWeight: 600 }}>My Wishlist ({items.length})</h2>
       {items.length === 0
-        ? <div className="text-center py-16 text-gray-400"><Heart className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No saved items</p></div>
+        ? <div className="text-center py-16 text-gray-500"><Heart className="w-12 h-12 mx-auto mb-3 opacity-20" /><p className="font-semibold">No saved items</p></div>
         : <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {items.map((p, i) => (
               <ProductCard key={i} p={p} onView={() => onProduct(p)} onCart={() => onCart(p)}
@@ -2020,6 +1999,15 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const currency = useCurrency(); // subscribes this whole tree to live currency/rate updates
   const [locating, setLocating] = useState(false);
   const [locateFailed, setLocateFailed] = useState(false);
+  const [countryMenuOpen, setCountryMenuOpen] = useState(false);
+  const countryMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!countryMenuOpen) return;
+    const close = (e: MouseEvent | TouchEvent) => { if (!countryMenuRef.current?.contains(e.target as Node)) setCountryMenuOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setCountryMenuOpen(false); };
+    document.addEventListener("mousedown", close); document.addEventListener("touchstart", close); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("touchstart", close); document.removeEventListener("keydown", esc); };
+  }, [countryMenuOpen]);
   const handleUseLiveLocation = async () => {
     setLocating(true);
     setLocateFailed(false);
@@ -2287,54 +2275,75 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#EAEDED]" style={{ fontFamily: "'Amazon Ember', Arial, sans-serif" }}>
       {/* ── Tier 1: dark top strip ── */}
-      <header className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#1E7B4D" }}>
+      <header className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#1E7B4D" }}>
         <button
           onClick={() => { setView("home"); }}
           className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity"
         >
-          <img src={ballylifeLogo} alt="Ballylife" className="h-12 w-auto" />
+          <img src={ballylifeLogo} alt="Ballylife" className="h-10 sm:h-12 w-auto" />
         </button>
 
-        <div className="relative group hidden lg:block shrink-0">
-          <div className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white cursor-default">
-            <span className="flex items-center gap-1 text-[10px] text-white/70 leading-none">
-              <MapPin className="w-3 h-3" /> We deliver to
+        <div className="relative shrink-0" ref={countryMenuRef}>
+          {/* Detected country + currency, on every screen size. Tapping it
+              (hover doesn't exist on phones) opens a small menu to confirm
+              it, refine it with live location, or pick a country by hand. */}
+          <button type="button" onClick={() => setCountryMenuOpen(o => !o)} aria-expanded={countryMenuOpen} aria-haspopup="dialog"
+            className="flex flex-col items-start px-1.5 sm:px-2 py-1 rounded border border-transparent hover:border-white/40 text-white text-left">
+            <span className="hidden sm:flex items-center gap-1 text-[10px] text-white/75 leading-none">
+              <MapPin className="w-3 h-3" /> Deliver to
             </span>
-            <span className="text-xs font-bold leading-tight mt-0.5">{currency.country.country ?? currency.country.countryCode} · {currency.country.code}</span>
-          </div>
-          {/* A small refine-only popover, not a browsable list -- the
-              country is meant to be detected automatically (IP on load,
-              or live GPS location on request), never picked manually
-              from 198 entries. */}
-          <div className="absolute left-0 top-full mt-0 w-72 bg-white rounded-b shadow-2xl border border-gray-200 py-2.5 px-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
-            <p className="text-[11px] text-gray-500 leading-relaxed mb-2">
-              Detected automatically from your location. Prices are shown in {currency.country.name} ({currency.country.code}), converted from ZAR at today's rate.{currency.ratesStale ? " (using last known rate)" : ""}
-            </p>
-            <button onClick={handleUseLiveLocation} disabled={locating}
-              className="w-full text-left px-2.5 py-1.5 text-xs rounded-lg hover:bg-gray-50 flex items-center gap-1.5 font-semibold disabled:opacity-50"
-              style={{ color: "#B8862E", background: "#FBF3E1" }}>
-              <MapPin className="w-3.5 h-3.5" /> {locating ? "Finding you…" : "Not quite right? Use my live location"}
-            </button>
-            {locateFailed && (
-              <p className="pt-1.5 text-[10px] text-red-500">Couldn't get your location — check your browser's location permission and try again.</p>
-            )}
-          </div>
+            <span className="flex items-center gap-1 text-xs font-bold leading-tight sm:mt-0.5">
+              <MapPin className="w-3 h-3 sm:hidden" />
+              <span className="hidden md:inline">{currency.country.country ?? currency.country.countryCode}</span>
+              <span className="md:hidden">{currency.country.countryCode}</span>
+              <span className="text-white/80">· {currency.country.code}</span>
+              <ChevronDown className="w-3 h-3" />
+            </span>
+          </button>
+          {countryMenuOpen && (
+            <div role="dialog" aria-label="Country and currency"
+              className="absolute left-0 top-full mt-1 w-72 max-w-[calc(100vw-1.5rem)] bg-white rounded-lg shadow-2xl border border-gray-200 p-3 z-40 text-gray-800">
+              <p className="text-[11px] text-gray-600 leading-relaxed mb-2">
+                {currency.loading ? "Detecting your location…" : <>Showing prices in <b>{currency.country.name} ({currency.country.code})</b>{currency.country.code !== "ZAR" ? ", converted from South African rand at today's rate." : "."}</>}
+              </p>
+              <label className="block text-[11px] font-semibold text-gray-700 mb-1" htmlFor="country-select">Country / currency</label>
+              <select id="country-select" value={currency.country.countryCode}
+                onChange={e => { setCountryManually(e.target.value); setCountryMenuOpen(false); }}
+                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs mb-2 bg-white">
+                {[...currency.countries].sort((a, b) => (a.country ?? a.countryCode).localeCompare(b.country ?? b.countryCode)).map(c => (
+                  <option key={c.countryCode} value={c.countryCode}>{c.country ?? c.countryCode} · {c.code}</option>
+                ))}
+              </select>
+              <button onClick={handleUseLiveLocation} disabled={locating}
+                className="w-full text-left px-2.5 py-1.5 text-xs rounded-md hover:bg-gray-50 flex items-center gap-1.5 font-semibold disabled:opacity-50"
+                style={{ color: "#8A6420", background: "#FBF3E1" }}>
+                <MapPin className="w-3.5 h-3.5" /> {locating ? "Finding you…" : "Use my live location"}
+              </button>
+              {locateFailed && (
+                <p className="pt-1.5 text-[10px] text-red-600">Couldn't get your location — check your browser's location permission and try again.</p>
+              )}
+              <p className="pt-2 text-[10px] text-gray-500 leading-snug">
+                Orders are charged in South African rand (ZAR). {currency.ratesStale ? "Using the last known exchange rate. " : ""}
+                <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline">Rates by Exchange Rate API</a>
+              </p>
+            </div>
+          )}
         </div>
 
-        <div className="relative flex-1 flex items-stretch max-w-3xl h-9 min-w-0">
+        <div className="relative flex-1 flex items-stretch max-w-3xl h-10 sm:h-9 min-w-0 order-last basis-full sm:order-none sm:basis-auto">
           <div className="hidden sm:flex items-center bg-[#E8E8E8] hover:bg-[#DDD] px-2 text-[11px] text-gray-700 border-r border-gray-300 shrink-0 cursor-pointer relative group rounded-l">
             All <ChevronDown className="w-3 h-3 ml-1" />
             <div className="absolute top-full left-0 mt-0 w-56 bg-white text-gray-800 rounded-b shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
-              <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">All Categories</div>
+              <div className="px-3 py-1.5 text-[10px] font-bold text-gray-500 uppercase tracking-wide">All Categories</div>
               <div className="relative group/new">
                 <button onClick={() => setView("catalog")}
-                  className="w-full flex items-center justify-between text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors hover:bg-[#FBF3E1]" style={{ color: "#B8862E" }}>
+                  className="w-full flex items-center justify-between text-left px-3 py-1.5 text-xs font-bold border-b border-gray-100 mb-1 transition-colors hover:bg-[#FBF3E1]" style={{ color: "#8A6420" }}>
                   {DEPARTMENTS[0]} <ChevronRight className="w-3 h-3" />
                 </button>
                 <div className="absolute top-0 left-full ml-0.5 w-56 max-h-96 overflow-y-auto bg-white text-gray-800 rounded shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover/new:opacity-100 group-hover/new:visible transition-all z-40">
                   {NEW_ARRIVALS_SUB.map((item) => (
                     <button key={item} onClick={() => setView("catalog")}
-                      className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#B8862E] transition-colors">
+                      className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#8A6420] transition-colors">
                       {item}
                     </button>
                   ))}
@@ -2343,7 +2352,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               <div className="max-h-80 overflow-y-auto">
                 {DEPARTMENTS.slice(1).map((dept) => (
                   <button key={dept} onClick={() => setView("catalog")}
-                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#B8862E] transition-colors">
+                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-[#FBF3E1] hover:text-[#8A6420] transition-colors">
                     {dept}
                   </button>
                 ))}
@@ -2372,13 +2381,13 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
                   className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50 text-left"
                 >
                   <span className="text-gray-700 truncate">{String(s.name)}</span>
-                  <span className="text-gray-400 text-xs shrink-0 ml-2">{String(s.category)}</span>
+                  <span className="text-gray-500 text-xs shrink-0 ml-2">{String(s.category)}</span>
                 </button>
               ))}
               <button
                 onMouseDown={() => runSearch(navSearch)}
                 className="w-full flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-left border-t border-gray-100"
-                style={{ color: "#B8862E" }}
+                style={{ color: "#8A6420" }}
               >
                 <Search className="w-3.5 h-3.5" /> See all results for "{navSearch}"
               </button>
@@ -2398,7 +2407,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             </button>
             {authUser && (
               <div className="absolute right-0 top-full mt-0 w-56 bg-white rounded-b shadow-2xl border border-gray-200 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
-                <p className="px-3 pb-2 mb-1 border-b border-gray-100 text-[11px] text-gray-400">Signed in as {authUser.username} ({role})</p>
+                <p className="px-3 pb-2 mb-1 border-b border-gray-100 text-[11px] text-gray-500">Signed in as {authUser.username} ({role})</p>
                 {role === "customer" && (
                   <button onClick={() => setView("account")} className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700">
                     <User className="w-4 h-4" /> My Account
@@ -2550,7 +2559,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             <OrderTracking onBack={() => setView("home")} />
           )}
           {(view === "contactPage" || view === "termsPage" || view === "humanRightsPage" || view === "disclosurePage" || view === "speakUpPage" || view === "advertisingPage" || view === "creditRewardsPage" || view === "businessTermsPage" || view === "privacyPolicyPage" || view === "returnsPolicyPage" || view === "ballylifeMorePage" || view === "aboutUsPage") && (
-            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading...</div>}>
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-sm text-gray-500">Loading...</div>}>
               {view === "contactPage" && <ContactPage onBack={() => setView("home")} />}
               {view === "termsPage" && <TermsPage onBack={() => setView("home")} />}
               {view === "humanRightsPage" && <HumanRightsPage onBack={() => setView("home")} />}
@@ -2566,7 +2575,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             </Suspense>
           )}
           {view === "admin" && authUser && role === "manager" && (
-            <ManagerDashboard user={authUser} onSignOut={handleSignOut} />
+            <><DefaultPasswordBanner user={authUser} /><ManagerDashboard user={authUser} onSignOut={handleSignOut} /></>
           )}
       </div>
 

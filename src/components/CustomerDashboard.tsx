@@ -115,17 +115,17 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
       <aside className="w-56 shrink-0 bg-white border-r border-gray-100 p-3 overflow-y-auto flex flex-col">
         <div className="px-1 pb-3 mb-2 border-b border-gray-100">
           <p className="text-sm font-bold text-gray-900">{user.name}</p>
-          <p className="text-[11px] text-gray-400">{String(stats?.membership ?? "Standard")} Member</p>
+          <p className="text-[11px] text-gray-500">{String(stats?.membership ?? "Standard")} Member</p>
         </div>
         <div className="space-y-0.5 flex-1">
           {NAV.map(n => <SideNavButton key={n.id} active={tab === n.id} onClick={() => setTab(n.id)} icon={n.icon} label={n.label} />)}
         </div>
-        <button onClick={onSignOut} className="text-xs text-gray-400 hover:text-gray-700 px-3 py-2 text-left">Sign out</button>
+        <button onClick={onSignOut} className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2 text-left">Sign out</button>
       </aside>
 
       <div className="flex-1 overflow-y-auto p-5">
         {loading ? (
-          <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          <div className="flex items-center justify-center h-40"><Loader2 className="w-6 h-6 animate-spin text-gray-500" /></div>
         ) : (
           <>
             {tab === "overview" && (
@@ -175,15 +175,15 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
                 <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                     <span className="text-sm font-bold text-gray-900">Recent Orders</span>
-                    <button onClick={() => setTab("orders")} className="text-xs font-semibold" style={{ color: "#B8862E" }}>View all</button>
+                    <button onClick={() => setTab("orders")} className="text-xs font-semibold" style={{ color: "#8A6420" }}>View all</button>
                   </div>
                   {recentOrders.length === 0 ? (
-                    <p className="text-sm text-gray-400 p-6 text-center">No orders yet — start shopping to see them here.</p>
+                    <p className="text-sm text-gray-500 p-6 text-center">No orders yet — start shopping to see them here.</p>
                   ) : recentOrders.map((o, i) => (
                     <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{String(o.orderNumber)}</p>
-                        <p className="text-[11px] text-gray-400">{new Date(String(o.placedAt)).toLocaleDateString()}</p>
+                        <p className="text-[11px] text-gray-500">{new Date(String(o.placedAt)).toLocaleDateString()}</p>
                       </div>
                       <span className="text-sm font-bold text-gray-700">{fmtZAR(Number(o.totalAmount))}</span>
                       <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: STATUS_META[String(o.status)]?.color, background: `${STATUS_META[String(o.status)]?.color}15` }}>
@@ -198,10 +198,10 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
             {tab === "orders" && (
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">All Orders</span></div>
-                {orders.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">No orders yet.</p> : (
+                {orders.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No orders yet.</p> : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
-                      <thead><tr className="text-left text-[11px] text-gray-400 border-b border-gray-100">
+                      <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                         <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Date</th>
                         <th className="px-4 py-2 font-medium">Items</th><th className="px-4 py-2 font-medium">Amount</th>
                         <th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Actions</th>
@@ -225,14 +225,14 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
               <div className="bg-white rounded-xl border border-gray-100 p-5">
                 <p className="text-sm font-bold text-gray-900 mb-4">Returns & Refunds</p>
                 {returnsOrders.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">No returns or refund requests.</p>
+                  <p className="text-sm text-gray-500 text-center py-6">No returns or refund requests.</p>
                 ) : returnsOrders.map((o, i) => (
                   <div key={i} className="mb-4 last:mb-0 border border-gray-100 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm font-semibold text-gray-900">{String(o.orderNumber)}</span>
                       <span className="text-xs font-semibold" style={{ color: STATUS_META[String(o.status)]?.color }}>{STATUS_META[String(o.status)]?.label}</span>
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                    <div className="flex items-center gap-1 text-[11px] text-gray-500">
                       {["Request Submitted", "Seller Approved", "Courier Pickup", "Refund Processing", "Completed"].map((step, si) => (
                         <span key={step} className="flex items-center gap-1">
                           <span className="px-2 py-1 rounded-full" style={{ background: si === 0 ? "#FFF4E5" : "#F3F4F6", color: si === 0 ? "#B75C00" : "#9CA3AF" }}>{step}</span>
@@ -248,12 +248,12 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
             {tab === "notifications" && (
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Notifications</span></div>
-                {notifications.length === 0 ? <p className="text-sm text-gray-400 p-6 text-center">Nothing yet — order activity will show up here.</p> : notifications.map((n, i) => (
+                {notifications.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">Nothing yet — order activity will show up here.</p> : notifications.map((n, i) => (
                   <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
-                    <Bell className="w-4 h-4 text-gray-400 shrink-0" />
+                    <Bell className="w-4 h-4 text-gray-500 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-800">{n.text}</p>
-                      <p className="text-[11px] text-gray-400">{new Date(String(n.at)).toLocaleString()}</p>
+                      <p className="text-[11px] text-gray-500">{new Date(String(n.at)).toLocaleString()}</p>
                     </div>
                   </div>
                 ))}
@@ -383,7 +383,7 @@ function AddressBook({ userId, addresses, onChanged }: { userId: string; address
     <div className="bg-white rounded-xl border border-gray-100 p-5">
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm font-bold text-gray-900">Address Book</span>
-        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#B8862E" }}>
+        <button onClick={() => setAdding(a => !a)} className="flex items-center gap-1 text-xs font-semibold" style={{ color: "#8A6420" }}>
           <Plus className="w-3.5 h-3.5" /> Add address
         </button>
       </div>
@@ -400,7 +400,7 @@ function AddressBook({ userId, addresses, onChanged }: { userId: string; address
         </div>
       )}
 
-      {addresses.length === 0 && !adding ? <p className="text-sm text-gray-400 text-center py-6">No saved addresses yet.</p> : (
+      {addresses.length === 0 && !adding ? <p className="text-sm text-gray-500 text-center py-6">No saved addresses yet.</p> : (
         <div className="grid sm:grid-cols-2 gap-3">
           {addresses.map((a, i) => (
             <div key={i} className="border border-gray-100 rounded-lg p-3 relative">
@@ -435,12 +435,12 @@ function PaymentMethodsPanel() {
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-5">
       <p className="text-sm font-bold text-gray-900 mb-1">Payment Methods</p>
-      <p className="text-xs text-gray-400 mb-4">Reference only — no card numbers are collected or stored here.</p>
+      <p className="text-xs text-gray-500 mb-4">Reference only — no card numbers are collected or stored here.</p>
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
         {cards.map((c, i) => (
           <div key={i} className="border border-gray-100 rounded-lg p-3 flex items-center gap-3">
-            <CreditCard className="w-6 h-6 text-gray-400" />
-            <div><p className="text-sm font-semibold text-gray-800">{c.brand}</p><p className="text-xs text-gray-400">•••• {c.last4}</p></div>
+            <CreditCard className="w-6 h-6 text-gray-500" />
+            <div><p className="text-sm font-semibold text-gray-800">{c.brand}</p><p className="text-xs text-gray-500">•••• {c.last4}</p></div>
           </div>
         ))}
       </div>
@@ -468,23 +468,23 @@ function ProfilePanel({ user, membership, rewardPoints }: { user: MktAuthUser; m
       <p className="text-sm font-bold text-gray-900 mb-4">Profile</p>
       <div className="space-y-3">
         <div>
-          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Full name</p>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider">Full name</p>
           <p className="text-sm text-gray-800">{user.name}</p>
         </div>
         <div>
-          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Username</p>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider">Username</p>
           <p className="text-sm text-gray-800">{user.username}</p>
         </div>
         <div>
-          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Email</p>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider">Email</p>
           <p className="text-sm text-gray-800">{user.email}</p>
         </div>
         <div>
-          <p className="text-[11px] text-gray-400 uppercase tracking-wider">Membership</p>
+          <p className="text-[11px] text-gray-500 uppercase tracking-wider">Membership</p>
           <p className="text-sm text-gray-800">{membership} Member &middot; {rewardPoints} reward points</p>
         </div>
       </div>
-      <p className="text-[11px] text-gray-400 mt-5">Need to change your name or email? Reach out through Support and our team will help.</p>
+      <p className="text-[11px] text-gray-500 mt-5">Need to change your name or email? Reach out through Support and our team will help.</p>
     </div>
   );
 }
@@ -516,7 +516,7 @@ function SecurityPanel() {
       <button onClick={submit} disabled={saving} className="py-2 px-4 rounded-lg text-white text-sm font-semibold" style={{ background: "#14110D" }}>
         {saving ? "Updating..." : "Update password"}
       </button>
-      <p className="text-[11px] text-gray-400 mt-4">Two-factor authentication and login-history tracking aren't available yet.</p>
+      <p className="text-[11px] text-gray-500 mt-4">Two-factor authentication and login-history tracking aren't available yet.</p>
     </div>
   );
 }
@@ -528,7 +528,7 @@ function SpendingAnalytics({ spending }: { spending: R | null }) {
     <div className="grid lg:grid-cols-2 gap-4">
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <p className="text-sm font-bold text-gray-900 mb-3">Monthly Spending</p>
-        {monthly.length === 0 ? <p className="text-sm text-gray-400 text-center py-10">No paid orders yet.</p> : (
+        {monthly.length === 0 ? <p className="text-sm text-gray-500 text-center py-10">No paid orders yet.</p> : (
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={monthly}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip formatter={(v: number) => fmtZAR(v)} /><Bar dataKey="total" fill="#B8862E" radius={[4,4,0,0]} /></BarChart>
           </ResponsiveContainer>
@@ -536,7 +536,7 @@ function SpendingAnalytics({ spending }: { spending: R | null }) {
       </div>
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <p className="text-sm font-bold text-gray-900 mb-3">Spending by Seller</p>
-        {byCategory.length === 0 ? <p className="text-sm text-gray-400 text-center py-10">No paid orders yet.</p> : (
+        {byCategory.length === 0 ? <p className="text-sm text-gray-500 text-center py-10">No paid orders yet.</p> : (
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={byCategory} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(e: R) => String(e.name)}>

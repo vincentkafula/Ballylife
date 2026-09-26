@@ -12,8 +12,8 @@ const PIPELINE_STAGE_META: Record<string, { label: string; color: string }> = {
   qc_passed_origin: { label: "Quality check passed", color: "#2563EB" },
   qc_failed_origin: { label: "Under review", color: "#DC2626" },
   refunded: { label: "Refunded", color: "#DC2626" },
-  in_transit_to_destination: { label: "In transit", color: "#B8862E" },
-  received_at_destination_hub: { label: "Arrived in-country", color: "#B8862E" },
+  in_transit_to_destination: { label: "In transit", color: "#8A6420" },
+  received_at_destination_hub: { label: "Arrived in-country", color: "#8A6420" },
   customs_cleared: { label: "Customs cleared", color: "#059669" },
   shipped_to_customer: { label: "Out for delivery", color: "#059669" },
   delivered: { label: "Delivered", color: "#10B981" },
@@ -77,7 +77,7 @@ export function OrderTracking({ onBack }: { onBack: () => void }) {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-sm font-bold text-gray-900">{String(order.orderNumber)}</p>
-                <p className="text-xs text-gray-400">Placed {new Date(String(order.placedAt)).toLocaleDateString()}</p>
+                <p className="text-xs text-gray-500">Placed {new Date(String(order.placedAt)).toLocaleDateString()}</p>
               </div>
               <span className="text-xs font-semibold px-3 py-1 rounded-full capitalize" style={{ background: "#EAF7EE", color: "#0B5C2E" }}>{String(order.status).replace(/_/g, " ")}</span>
             </div>
@@ -93,10 +93,10 @@ export function OrderTracking({ onBack }: { onBack: () => void }) {
             )}
 
             <div className="grid sm:grid-cols-2 gap-3 mt-5 pt-4 border-t border-gray-50 text-sm">
-              <div><span className="text-gray-400">Total</span><p className="font-semibold text-gray-800">R{Number(order.totalAmount).toFixed(2)}</p></div>
-              <div><span className="text-gray-400">Estimated delivery</span><p className="font-semibold text-gray-800">{order.estimatedDelivery ? new Date(String(order.estimatedDelivery)).toLocaleDateString() : "—"}</p></div>
-              {order.trackingNumber ? (<div><span className="text-gray-400">Tracking number</span><p className="font-semibold text-gray-800">{String(order.trackingNumber)}</p></div>) : null}
-              {order.carrier ? (<div><span className="text-gray-400">Carrier</span><p className="font-semibold text-gray-800">{String(order.carrier)}</p></div>) : null}
+              <div><span className="text-gray-500">Total</span><p className="font-semibold text-gray-800">R{Number(order.totalAmount).toFixed(2)}</p></div>
+              <div><span className="text-gray-500">Estimated delivery</span><p className="font-semibold text-gray-800">{order.estimatedDelivery ? new Date(String(order.estimatedDelivery)).toLocaleDateString() : "—"}</p></div>
+              {order.trackingNumber ? (<div><span className="text-gray-500">Tracking number</span><p className="font-semibold text-gray-800">{String(order.trackingNumber)}</p></div>) : null}
+              {order.carrier ? (<div><span className="text-gray-500">Carrier</span><p className="font-semibold text-gray-800">{String(order.carrier)}</p></div>) : null}
             </div>
           </div>
 
