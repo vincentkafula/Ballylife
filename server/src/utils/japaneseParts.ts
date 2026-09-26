@@ -54,7 +54,10 @@ export function translateJapanesePartName(text: string): string {
     .replace(/\(\s*[-/:,]*\s*\)/g, "")
     .replace(/\s+([:,)])/g, "$1").replace(/\(\s+/g, "(")
     .replace(/\s*[&/:+,-]\s*$/g, "").replace(/^\s*[&/:+,-]\s*/g, "")
-    .replace(/\s{2,}/g, " ").trim();
+    // "Honda (HONDA)", "Modulo X (Modulo X)": the English repeated in brackets after its translation.
+    .replace(/\b([A-Za-z][\w-]*(?: [A-Za-z][\w-]*)?) \((\1)\)/gi, "$1")
+    .replace(/\s{2,}/g, " ").trim()
+    .replace(/^[a-z]/, c => c.toUpperCase());
 }
 
 /** True when a translated name still says something (not just "150" or "REAL &"). */

@@ -41,7 +41,7 @@ function normalisePunctuation(s: string): string {
   return s
     .replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
     .replace(/　/g, " ").replace(/[，、]/g, ", ").replace(/[；]/g, "; ").replace(/[：]/g, ": ").replace(/[（【「『]/g, "(").replace(/[）】」』]/g, ")")
-    .replace(/[。]/g, ". ").replace(/[～〜]/g, "~").replace(/[“”]/g, "\"").replace(/[‘’]/g, "'");
+    .replace(/[。]/g, ". ").replace(/[～〜]/g, "~").replace(/[“”]/g, "\"").replace(/￠/g, "Ø").replace(/[‘’]/g, "'");
 }
 
 function translateTerms(s: string): string {

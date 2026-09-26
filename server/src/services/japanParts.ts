@@ -93,7 +93,8 @@ function listingName(englishTitle: string, kw: JapanPartsKeyword, part?: { fitme
   if (!isMeaningfulName(englishTitle)) {
     return `Used ${label.toLowerCase()} from Japan${part?.fitment ? ` — fits ${englishOnly(part.fitment)}` : ""}`.slice(0, MAX_NAME);
   }
-  return (englishTitle.toLowerCase().includes(label.toLowerCase()) ? englishTitle : `${label} — ${englishTitle}`).slice(0, MAX_NAME);
+  const title = englishTitle.replace(/^[a-z]/, c => c.toUpperCase());
+  return (title.toLowerCase().includes(label.toLowerCase()) ? title : `${label} — ${title}`).slice(0, MAX_NAME);
 }
 
 function listingDescription(part: UpgaragePart, kw: JapanPartsKeyword, englishTitle = ""): string {
@@ -115,7 +116,7 @@ function listingDescription(part: UpgaragePart, kw: JapanPartsKeyword, englishTi
  * dictionary, and once more when DeepL is switched on (DEEPL_API_KEY).
  */
 export async function retranslateJapanPartsOnce(): Promise<number | null> {
-  const flag = `jp_parts_english_v1_${isTranslationConfigured() ? "deepl" : "dictionary"}`;
+  const flag = `jp_parts_english_v2_${isTranslationConfigured() ? "deepl" : "dictionary"}`;
   const { rows: done } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [flag]);
   if (done.length) return null;
   const { rows } = await pool!.query(
