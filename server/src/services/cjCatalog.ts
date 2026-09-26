@@ -7,7 +7,9 @@ import {
 } from "./cjDropshippingClient";
 import { dedupeImages, isPhotoUrl, parseSupplierImageList, scrubSupplierBranding, splitSupplierDescription } from "../utils/supplierWhiteLabel";
 import { variantIdForVid, parseExternalVariants, type ExternalVariant } from "../utils/cjVariants";
-import { matchCjCategory, resolveCategory, isExcludedFromStore } from "../utils/cjCategoryMap";
+import { matchCjCategory, isExcludedFromStore } from "../utils/cjCategoryMap";
+import { categorizeProduct, CATEGORY_RULES_VERSION } from "../utils/productCategorizer";
+import { cleanProductName, cleanDescriptionText, NAMING_RULES_VERSION } from "../utils/productNaming";
 
 /**
  * CJ catalogue -> our own database -> storefront.
@@ -82,7 +84,7 @@ export interface WhiteLabelledProduct {
  * they reach the database, so no later code path can leak them.
  */
 export async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<WhiteLabelledProduct> {
-  const fallbackName = scrubSupplierBranding(p.productNameEn || p.productName);
+  const fallbackName = cleanProductName(p.productNameEn || p.productName);
   try {
     const d: CjProductDetail = await getCjProductDetail(p.pid);
     const desc = splitSupplierDescription(d.description);
@@ -103,8 +105,8 @@ export async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<Wh
     const inventories = (d.variants ?? []).flatMap(v => v.inventories ?? []);
     const stock = inventories.length ? Math.min(MAX_STOCK, inventories.reduce((n, i) => n + (Number(i.totalInventory) || 0), 0)) : null;
     return {
-      name: scrubSupplierBranding(d.productNameEn || d.productName) || fallbackName,
-      description: desc.text || scrubSupplierBranding(p.remark),
+      name: cleanProductName(d.productNameEn || d.productName) || fallbackName,
+      description: cleanDescriptionText(desc.text || scrubSupplierBranding(p.remark)),
       images, variants, stock,
       cjCategoryName: d.categoryName ?? p.categoryName ?? "",
       videos: parseVideoList(d.productVideo, p.pid),
@@ -114,7 +116,7 @@ export async function buildWhiteLabelledProduct(p: CjProductSummary): Promise<Wh
     if (isCjPointsError(err)) throw err; // out of points: stop the page, don't save a half-fetched product
     logger.warn("cj.product_detail_fallback", { pid: p.pid, error: err instanceof Error ? err.message : String(err) });
     return {
-      name: fallbackName, description: scrubSupplierBranding(p.remark), images: parseSupplierImageList(p.productImage),
+      name: fallbackName, description: cleanDescriptionText(scrubSupplierBranding(p.remark)), images: parseSupplierImageList(p.productImage),
       variants: [], stock: null, cjCategoryName: p.categoryName ?? "", detailOk: false, videos: [],
     };
   }
@@ -179,7 +181,6 @@ export async function syncCjPage(opts: {
 
   const { rows: catRows } = await pool!.query(`SELECT id FROM mkt_categories`);
   const knownCategories = new Set(catRows.map((r: { id: string }) => r.id));
-  const pathCategory = opts.categoryPath?.length ? resolveCategory(matchCjCategory(...opts.categoryPath), knownCategories, DEFAULT_CATEGORY) : null;
   const freshSince = opts.skipFreshHours ? new Date(Date.now() - opts.skipFreshHours * 3600_000) : null;
 
   const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0, skippedFresh: 0, excluded: 0, withVideo: 0 };
@@ -191,11 +192,12 @@ export async function syncCjPage(opts: {
     if (isExcludedFromStore(p.productNameEn, p.categoryName, ...(opts.categoryPath ?? []))) { counts.excluded++; continue; }
 
     const { rows: existing } = await pool!.query(
-      `SELECT id, updated_at FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [CJ_SUPPLIER_ID, p.pid]
+      `SELECT id, name, updated_at FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [CJ_SUPPLIER_ID, p.pid]
     );
     if (existing.length && freshSince && new Date(existing[0].updated_at) > freshSince) {
-      // Recently synced -- no CJ calls. Just file it under the sweep's category.
-      if (pathCategory) await setCategory(existing[0].id, pathCategory);
+      // Recently synced -- no CJ calls. Just make sure it's filed correctly.
+      const cat = categorizeProduct(existing[0].name, [...(opts.categoryPath ?? []), p.categoryName], knownCategories, DEFAULT_CATEGORY);
+      if (cat) await setCategory(existing[0].id, cat);
       counts.skippedFresh++;
       continue;
     }
@@ -210,7 +212,7 @@ export async function syncCjPage(opts: {
     // What sellers see as the base price they mark up from: landed cost
     // (goods + shipping) when CJ quoted shipping, goods only otherwise.
     const baseZar = round2((costUsd + (shippingUsd ?? 0)) * usdToZar);
-    const categoryId = pathCategory ?? resolveCategory(matchCjCategory(w.cjCategoryName, w.name), knownCategories, DEFAULT_CATEGORY);
+    const categoryId = categorizeProduct(w.name, [...(opts.categoryPath ?? []), w.cjCategoryName], knownCategories, DEFAULT_CATEGORY);
     const listable = categoryId !== null && w.detailOk && w.images.length > 0 && w.variants.length > 0 && shippingUsd !== null;
 
     let supplierProductId: string;
@@ -224,7 +226,7 @@ export async function syncCjPage(opts: {
          WHERE id = $8`,
         [w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), categoryId, shippingUsd, supplierProductId, shipping?.logisticName ?? null]
       );
-      if (pathCategory) await setCategory(supplierProductId, pathCategory);
+      if (categoryId) await setCategory(supplierProductId, categoryId);
       // Only overwrite variants from a successful detail call -- a failed
       // one must never wipe the vids that live orders depend on.
       if (w.detailOk && w.variants.length) {
@@ -323,7 +325,7 @@ async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProdu
     );
     return price;
   }
-  const slug = `${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+  const slug = productSlug(w.name, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`);
   await pool!.query(
     `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, currency, images, emoji, status, stock,
        brand, variants, fulfillment_type, supplier_product_id, delivery_profile)
@@ -358,6 +360,58 @@ export async function hideDemoCatalogOnce(): Promise<number | null> {
   await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`, [HIDE_DEMO_FLAG, `hid ${rows.length} products`]);
   logger.info("catalog.demo_products_hidden", { count: rows.length });
   return rows.length;
+}
+
+// ── Re-clean names and re-file categories when the rules change ──────────
+
+export function productSlug(name: string, suffix: string): string {
+  return `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80)}-${suffix}`;
+}
+
+/**
+ * Applies the current naming and category rules to every CJ catalogue item
+ * and its Ballylife listing -- no CJ API calls. Runs once per rules version
+ * (bump NAMING_RULES_VERSION / CATEGORY_RULES_VERSION to re-run). A product
+ * whose name matches no rule keeps its current category. Sellers' own
+ * listings are left alone: those names are theirs.
+ */
+export async function tidyCatalogOnce(): Promise<{ renamed: number; refiled: number } | null> {
+  const flagKey = `catalog_tidy_n${NAMING_RULES_VERSION}_c${CATEGORY_RULES_VERSION}`;
+  const { rows: flag } = await pool!.query(`SELECT 1 FROM app_flags WHERE key = $1`, [flagKey]);
+  if (flag.length) return null;
+
+  const { rows: catRows } = await pool!.query(`SELECT id FROM mkt_categories`);
+  const known = new Set(catRows.map((r: { id: string }) => r.id));
+  const { rows } = await pool!.query(
+    `SELECT id, name, description, category_id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping'`
+  );
+  let renamed = 0, refiled = 0;
+  for (const r of rows) {
+    const name = cleanProductName(r.name) || r.name;
+    const description = cleanDescriptionText(r.description);
+    const categoryId = categorizeProduct(name, [], known, r.category_id ?? DEFAULT_CATEGORY) ?? r.category_id;
+    const nameChanged = name !== r.name;
+    const catChanged = categoryId !== r.category_id;
+    if (!nameChanged && !catChanged && description === (r.description ?? "")) continue;
+    if (nameChanged) renamed++;
+    if (catChanged) refiled++;
+    await pool!.query(`UPDATE mkt_supplier_products SET name = $1, description = $2, category_id = $3 WHERE id = $4`, [name, description, categoryId, r.id]);
+
+    const { rows: listings } = await pool!.query(
+      `SELECT id, slug FROM mkt_products WHERE supplier_product_id = $1 AND seller_id = $2`, [r.id, HOUSE_SELLER_ID]
+    );
+    for (const l of listings) {
+      // Keep the listing's unique suffix so the slug stays unique.
+      const slug = nameChanged ? productSlug(name, String(l.slug).split("-").pop() || Date.now().toString(36)) : l.slug;
+      await pool!.query(
+        `UPDATE mkt_products SET name = $1, slug = $2, description = $3, short_description = $4, category_id = $5, updated_at = now() WHERE id = $6`,
+        [name, slug, description, description.split("\n")[0].slice(0, 160), categoryId, l.id]
+      );
+    }
+  }
+  await pool!.query(`INSERT INTO app_flags (key, detail) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`, [flagKey, `renamed ${renamed}, refiled ${refiled} of ${rows.length}`]);
+  logger.info("catalog.tidied", { renamed, refiled, total: rows.length, namingRules: NAMING_RULES_VERSION, categoryRules: CATEGORY_RULES_VERSION });
+  return { renamed, refiled };
 }
 
 // ── Background catalogue sync ─────────────────────────────────────────────

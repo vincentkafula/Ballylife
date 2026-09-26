@@ -85,6 +85,11 @@ export function matchCjCategory(...levels: (string | undefined | null)[]): Categ
   return null;
 }
 
+/** The broad storefront category a fine one rolls up to (itself when it's already broad). */
+export function broadCategoryFor(fine: string): string {
+  return RULES.find(([f]) => f === fine)?.[1] ?? fine;
+}
+
 /** Picks the most specific of our categories that actually exists in this database. */
 export function resolveCategory(match: CategoryMatch | null, known: Set<string>, fallback: string): string | null {
   if (match && known.has(match.fine)) return match.fine;

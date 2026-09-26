@@ -300,3 +300,22 @@ describe("CJ API points", () => {
     (await client())._setCatalogPointsForTests(100_000_000);
   });
 });
+
+describe("Re-cleaning names and re-filing categories", () => {
+  it("cleans stored names, re-files by name, updates the Ballylife listing, and runs once per rules version", async () => {
+    await pool.query(`UPDATE mkt_supplier_products SET name = 'Cross-border Hot-Selling Plain Mug Wholesale', category_id = 'cat-01' WHERE external_id = 'pid-noimg'`);
+    await pool.query(`UPDATE mkt_supplier_products SET name = 'Amazon Best-selling Wireless Earbuds In Stock' WHERE external_id = 'pid-earbuds'`);
+    await pool.query(`UPDATE mkt_products SET name = 'Amazon Best-selling Wireless Earbuds In Stock', slug = 'amazon-best-selling-wireless-earbuds-in-stock-abc123' WHERE supplier_product_id = (SELECT id FROM mkt_supplier_products WHERE external_id = 'pid-earbuds')`);
+
+    const result = await catalog.tidyCatalogOnce();
+    expect(result).not.toBeNull();
+
+    const { rows: mug } = await pool.query(`SELECT name, category_id FROM mkt_supplier_products WHERE external_id = 'pid-noimg'`);
+    expect(mug[0]).toMatchObject({ name: "Plain Mug", category_id: "cat-03" }); // mug -> Kitchen, rolled up to Home & Garden here
+    const listing = (await houseListing())[0];
+    expect(listing.name).toBe("Wireless Earbuds");
+    expect(listing.slug).toBe("wireless-earbuds-abc123"); // unique suffix kept
+
+    expect(await catalog.tidyCatalogOnce()).toBeNull();
+  });
+});

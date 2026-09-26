@@ -12,7 +12,7 @@ import cjDropshippingRouter from "./routes/cjDropshippingRouter";
 import mediaRouter from "./routes/mediaRouter";
 import programmesRouter from "./routes/programmesRouter";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
-import { startCjCatalogWorker, enforceCjOnlyCatalog } from "./services/cjCatalog";
+import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
 import { startFxRefreshWorker } from "./services/fxRates";
 import { secureDemoAccounts } from "./services/demoAccounts";
@@ -124,6 +124,8 @@ async function start() {
   startCjFulfillmentWorker();
   await secureDemoAccounts().catch(err => logger.error("security.demo_check_failed", { error: err instanceof Error ? err.message : String(err) }));
   if (cjOnlyCatalog()) await enforceCjOnlyCatalog();
+  // Background: a few thousand small updates shouldn't hold up startup.
+  void tidyCatalogOnce().catch(err => logger.error("catalog.tidy_failed", { error: err instanceof Error ? err.message : String(err) }));
   startCjCatalogWorker();
   startFxRefreshWorker();
   startProgrammesWorker();
