@@ -930,3 +930,71 @@ CREATE TABLE IF NOT EXISTS mkt_business_accounts (
   decision_note        TEXT,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── Japan used parts (UP-GARAGE, via an Apify actor) ────────────────────
+-- Listings live in mkt_products like everything else, marked source =
+-- 'upgarage' and keyed by the UP-GARAGE listing id so a refresh updates a
+-- listing instead of duplicating it. `price` is always the final rand
+-- resale price; price_breakdown records how it was reached (JPY price,
+-- rate, forwarding, freight, duty, VAT, markup) so it can be audited and
+-- recalculated when the rate or the admin's pricing settings change.
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source TEXT;                     -- NULL = CJ/seller product | 'upgarage'
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_listing_id TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_keyword TEXT;             -- the refresh keyword that found it
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_status TEXT;              -- listed | removed (gone from UP-GARAGE)
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_last_seen_at TIMESTAMPTZ;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_shop TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS source_location TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS original_name TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS original_currency TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS original_price NUMERIC(14,2);          -- excl. Japanese consumption tax
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS original_price_tax_incl NUMERIC(14,2); -- what UP-GARAGE charges
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS condition_grade TEXT;
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS parts_category TEXT;            -- freight class: wheels | tyres | seats | ...
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS price_breakdown JSONB;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_source_listing ON mkt_products(source, source_listing_id) WHERE source_listing_id IS NOT NULL;
+
+-- Admin-editable settings (one row): keywords to refresh and pricing.
+CREATE TABLE IF NOT EXISTS jp_parts_settings (
+  id          TEXT PRIMARY KEY DEFAULT 'default',
+  settings    JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by  TEXT
+);
+
+-- One row per keyword per refresh, so a blocked scraper or a changed
+-- actor output is visible in the admin panel, not just the logs.
+CREATE TABLE IF NOT EXISTS jp_parts_refresh_runs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  keyword      TEXT NOT NULL,
+  status       TEXT NOT NULL,          -- ok | failed | schema_changed | empty
+  items        INTEGER NOT NULL DEFAULT 0,
+  created      INTEGER NOT NULL DEFAULT 0,
+  updated      INTEGER NOT NULL DEFAULT 0,
+  removed      INTEGER NOT NULL DEFAULT 0,
+  skipped      INTEGER NOT NULL DEFAULT 0,
+  error        TEXT,
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at  TIMESTAMPTZ
+);
+
+-- UP-GARAGE has no order API: a paid order line for a Japan part becomes a
+-- task for staff to buy it and ship it via a forwarder.
+CREATE TABLE IF NOT EXISTS jp_parts_fulfillments (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID NOT NULL REFERENCES mkt_orders(id),
+  product_id       TEXT NOT NULL,
+  product_name     TEXT,
+  quantity         INTEGER NOT NULL DEFAULT 1,
+  source_url       TEXT,
+  status           TEXT NOT NULL DEFAULT 'to_buy', -- to_buy | bought | shipped | delivered | unavailable | cancelled
+  purchase_ref     TEXT,
+  forwarder        TEXT,
+  tracking_number  TEXT,
+  carrier          TEXT,
+  notes            TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (order_id, product_id)
+);

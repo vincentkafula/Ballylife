@@ -96,6 +96,7 @@ import { DefaultPasswordBanner } from "./DefaultPasswordBanner";
 import { MorePlansPage } from "./MembershipPanels";
 import { CardPaymentPanel, CardSchemeMarks, EftDetailsTable, SecureCheckoutNote, type PaymentMethodsInfo } from "./PaymentBadges";
 import { OrderTracking } from "./OrderTracking";
+import { JapanPartBadge, JapanPartDisclosure } from "./JapanParts";
 // These five are static content pages (legal/policy text with large
 // embedded HTML) reachable only from footer links most shoppers never
 // click -- lazy-loaded so their weight sits in its own chunk instead of
@@ -348,6 +349,7 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
             -{discount}%
           </div>
         )}
+        {p.japanPart && <JapanPartBadge className="absolute bottom-2 left-2" />}
         <button onClick={e => { e.stopPropagation(); onWishlist(); }}
           className="absolute top-2 right-2 w-8 h-8 bg-white rounded-full shadow flex items-center justify-center hover:scale-110 transition-transform">
           <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-300"}`} />
@@ -369,16 +371,16 @@ function ProductCard({ p, onView, onCart, wishlistIds, onWishlist }: {
             )}
           </div>
           {Number(p.stock) > 0 && Number(p.stock) < 10 && (
-            <p className="text-[10px] text-orange-500 font-semibold mt-0.5">Only {p.stock as number} left</p>
+            <p className="text-[10px] text-orange-500 font-semibold mt-0.5">{p.japanPart ? "One-off used part" : `Only ${p.stock as number} left`}</p>
           )}
         </div>
       </div>
 
       <div className="px-3 pb-3">
-        <button onClick={e => { e.stopPropagation(); onCart(); }}
-          className="w-full py-2 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90"
-          style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-          <ShoppingCart className="w-3.5 h-3.5" />Add to Cart
+        <button onClick={e => { e.stopPropagation(); onCart(); }} disabled={Number(p.stock) <= 0}
+          className="w-full py-2 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ background: Number(p.stock) <= 0 ? "#9CA3AF" : "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+          <ShoppingCart className="w-3.5 h-3.5" />{Number(p.stock) <= 0 ? "Sold out" : "Add to Cart"}
         </button>
       </div>
     </div>
@@ -1274,6 +1276,8 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
             </div>
           </div>
 
+          {p.japanPart && <JapanPartDisclosure part={p.japanPart as R} deliveryWindow={deliveryWindowFor(p)} soldOut={Number(p.stock) <= 0} />}
+
           {/* Delivery */}
           <div className="flex items-center gap-2.5 p-3 rounded-xl bg-green-50 border border-green-100">
             <Truck className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -1285,10 +1289,10 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
 
           {/* CTAs */}
           <div className="flex gap-3">
-            <button onClick={() => onCart(p, selVariant || undefined)}
-              className="flex-1 py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2"
-              style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-              <ShoppingCart className="w-4 h-4" />Add to Cart
+            <button onClick={() => onCart(p, selVariant || undefined)} disabled={Number(p.stock) <= 0}
+              className="flex-1 py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+              style={{ background: Number(p.stock) <= 0 ? "#9CA3AF" : "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
+              <ShoppingCart className="w-4 h-4" />{Number(p.stock) <= 0 ? "Sold out" : "Add to Cart"}
             </button>
             <button onClick={() => onWishlist(p.id as string)}
               className={`px-4 rounded-2xl border transition-all ${inWishlist ? "bg-red-50 border-red-200" : "border-gray-200"}`}>

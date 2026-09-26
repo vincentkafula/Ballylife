@@ -11,12 +11,14 @@ import reconciliationRouter from "./routes/reconciliationRouter";
 import cjDropshippingRouter from "./routes/cjDropshippingRouter";
 import mediaRouter from "./routes/mediaRouter";
 import programmesRouter from "./routes/programmesRouter";
+import japanPartsRouter from "./routes/japanPartsRouter";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
 import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
 import { startFxRefreshWorker } from "./services/fxRates";
 import { secureDemoAccounts } from "./services/demoAccounts";
 import { startProgrammesWorker } from "./services/programmes";
+import { startJapanPartsWorker, ensureJapanPartsCategory } from "./services/japanParts";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 import { logger } from "./utils/logger";
@@ -98,6 +100,7 @@ app.use("/api/marketplace", marketplaceRouter);
 app.use("/api/marketplace", reconciliationRouter);
 app.use("/api/marketplace", cjDropshippingRouter);
 app.use("/api/marketplace", programmesRouter);
+app.use("/api/marketplace", japanPartsRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -129,6 +132,8 @@ async function start() {
   startCjCatalogWorker();
   startFxRefreshWorker();
   startProgrammesWorker();
+  await ensureJapanPartsCategory().catch(err => logger.error("jp_parts.category_failed", { error: err instanceof Error ? err.message : String(err) }));
+  startJapanPartsWorker();
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);

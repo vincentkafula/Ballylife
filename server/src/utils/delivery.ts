@@ -12,9 +12,21 @@ export const INTERNATIONAL_DELIVERY_DAYS = {
 };
 export const LOCAL_DELIVERY_DAYS = { min: 3, max: 5 };
 
-export type DeliveryProfile = "local" | "international";
+// Japan used parts: bought in Japan once ordered, then forwarded -- slower
+// than supplier dropship. Admin-editable (Japan Parts settings), so kept in
+// memory and refreshed whenever those settings are loaded or saved.
+export const JAPAN_IMPORT_DELIVERY_DAYS = { min: 15, max: 30 };
+export function setJapanImportDeliveryDays(days: { min: number; max: number }): void {
+  JAPAN_IMPORT_DELIVERY_DAYS.min = days.min;
+  JAPAN_IMPORT_DELIVERY_DAYS.max = days.max;
+}
+
+export type DeliveryProfile = "local" | "international" | "japan_import";
 
 export function deliveryInfo(profile: string | null | undefined) {
+  if (profile === "japan_import") {
+    return { deliveryProfile: "japan_import" as DeliveryProfile, shippingIncluded: true, deliveryDays: { ...JAPAN_IMPORT_DELIVERY_DAYS } };
+  }
   const international = profile === "international";
   return {
     deliveryProfile: (international ? "international" : "local") as DeliveryProfile,

@@ -176,6 +176,14 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   fulfillmentType: r.fulfillment_type ?? "local", supplierProductId: r.supplier_product_id ?? null,
   vehicleDetails: r.vehicle_details ?? null, condition: r.condition ?? null, nrcsApproved: r.nrcs_approved ?? false, nrcsReference: r.nrcs_reference ?? null,
   ...deliveryInfo(r.delivery_profile),
+  // Used parts from Japan: condition and origin are disclosed to the shopper.
+  // Never the UP-GARAGE link or our price breakdown (admin-only).
+  japanPart: r.source === "upgarage" ? {
+    conditionGrade: r.condition_grade ?? null,
+    fitment: r.attributes?.fitment ?? null, year: r.attributes?.year ?? null, mileage: r.attributes?.mileage ?? null,
+    location: r.source_location ?? null, originalName: r.original_name ?? null,
+    stillListedInJapan: r.source_status !== "removed",
+  } : null,
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
@@ -1001,9 +1009,10 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     // and, further down, to open the two-leg supplier-order records.
     const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null; vehicleDetails: any; condition: string | null; nrcsApproved: boolean; costCurrency: string | null; commissionPct: number }>();
     let maxLeadTimeDays = 0;
+    let slowestShippedDays = 0; // business days, over items whose price includes delivery
     for (const item of items) {
       const { rows: prodRows } = await client.query(
-        `SELECT p.fulfillment_type, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.currency AS cost_currency, sp.origin_country, sup.lead_time_days, s.commission_pct
+        `SELECT p.fulfillment_type, p.delivery_profile, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.currency AS cost_currency, sp.origin_country, sup.lead_time_days, s.commission_pct
          FROM mkt_products p
          LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
          LEFT JOIN mkt_suppliers sup ON sup.id = sp.supplier_id
@@ -1018,6 +1027,8 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
         vehicleDetails: p?.vehicle_details ?? null, condition: p?.condition ?? null, nrcsApproved: p?.nrcs_approved ?? false,
         commissionPct: p?.commission_pct !== undefined && p?.commission_pct !== null ? Number(p.commission_pct) : 8,
       });
+      const delivery = deliveryInfo(p?.delivery_profile);
+      if (delivery.shippingIncluded) slowestShippedDays = Math.max(slowestShippedDays, delivery.deliveryDays.max);
       if (p?.fulfillment_type === "imported" && p?.lead_time_days) maxLeadTimeDays = Math.max(maxLeadTimeDays, Number(p.lead_time_days));
 
       // Vehicle compliance — checked against THIS order's actual delivery
@@ -1037,7 +1048,7 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     // is INTERNATIONAL_DELIVERY_DAYS business days, dated from the latest end.
     const hasInternational = items.some((i: any) => i.shippingIncluded);
     const estimatedDeliveryDays = hasInternational
-      ? calendarDaysForBusinessDays(new Date(), INTERNATIONAL_DELIVERY_DAYS.max)
+      ? calendarDaysForBusinessDays(new Date(), slowestShippedDays || INTERNATIONAL_DELIVERY_DAYS.max)
       : maxLeadTimeDays > 0 ? maxLeadTimeDays + 12 : 5;
 
     // VAT is domestic sales tax charged to the customer on every order

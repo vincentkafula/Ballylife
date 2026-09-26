@@ -473,6 +473,28 @@ export const mktProgrammes = {
   },
 };
 
+// ── Japan Used Parts (admin) ──────────────────────────────────────────────
+export interface JapanPartsKeyword { keyword: string; label: string; partsCategory: string; enabled: boolean }
+export interface JapanPartsSettings {
+  enabled: boolean; keywords: JapanPartsKeyword[]; maxItemsPerKeyword: number; refreshHours: number;
+  markupPct: number; forwarderFeeZar: number; dutyPct: number; vatPct: number; vatUpliftPct: number;
+  freightByCategory: Record<string, number>; defaultFreightZar: number; deliveryDays: { min: number; max: number };
+}
+export interface JapanPartsRun { id: string; keyword: string; status: string; items: number; created: number; updated: number; removed: number; skipped: number; error: string | null; startedAt: string; finishedAt: string | null }
+export interface JapanPartsListing { id: string; name: string; price: number; status: string; stock: number; conditionGrade: string | null; sourceUrl: string | null; sourceStatus: string | null; keyword: string | null; lastSeenAt: string | null; jpyTaxIncl: number | null; partsCategory: string | null; priceBreakdown: Record<string, number | string> | null }
+export interface JapanPartsTask { id: string; orderNumber: string | null; placedAt: string | null; productId: string; productName: string | null; quantity: number; sourceUrl: string | null; status: string; purchaseRef: string | null; forwarder: string | null; trackingNumber: string | null; carrier: string | null; notes: string | null; updatedAt: string }
+
+export const mktJapanParts = {
+  settings: () => api<Ok<{ settings: JapanPartsSettings; apifyConfigured: boolean; refreshing: boolean }>>("/api/marketplace/admin/japan-parts/settings"),
+  saveSettings: (settings: JapanPartsSettings) => api<Ok<{ settings: JapanPartsSettings; repriced: number }>>("/api/marketplace/admin/japan-parts/settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+  refresh: () => api<Ok<{ started: boolean }>>("/api/marketplace/admin/japan-parts/refresh", { method: "POST" }),
+  runs: () => api<Ok<JapanPartsRun[]>>("/api/marketplace/admin/japan-parts/runs"),
+  listings: () => api<Ok<JapanPartsListing[]>>("/api/marketplace/admin/japan-parts/listings"),
+  tasks: () => api<Ok<JapanPartsTask[]>>("/api/marketplace/admin/japan-parts/fulfillments"),
+  updateTask: (id: string, patch: Partial<Pick<JapanPartsTask, "status" | "purchaseRef" | "forwarder" | "trackingNumber" | "carrier" | "notes">>) =>
+    api<Ok<JapanPartsTask>>(`/api/marketplace/admin/japan-parts/fulfillments/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+};
+
 /** PayFast is redirect-based: post the signed fields to its hosted page. */
 export function submitToPayfast(url: string, fields: Record<string, string>): void {
   const form = document.createElement("form");
