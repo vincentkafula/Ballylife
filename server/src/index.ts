@@ -13,6 +13,8 @@ import mediaRouter from "./routes/mediaRouter";
 import programmesRouter from "./routes/programmesRouter";
 import japanPartsRouter from "./routes/japanPartsRouter";
 import sourcing1688Router from "./routes/sourcing1688Router";
+import superAdminRouter from "./routes/superAdminRouter";
+import { ensureSuperAdminFromEnv } from "./services/superAdmin";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
 import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
@@ -104,6 +106,7 @@ app.use("/api/marketplace", cjDropshippingRouter);
 app.use("/api/marketplace", programmesRouter);
 app.use("/api/marketplace", japanPartsRouter);
 app.use("/api/marketplace", sourcing1688Router);
+app.use("/api/marketplace", superAdminRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -128,6 +131,7 @@ async function start() {
   }
   await migrate();
   startCjFulfillmentWorker();
+  await ensureSuperAdminFromEnv();
   await secureDemoAccounts().catch(err => logger.error("security.demo_check_failed", { error: err instanceof Error ? err.message : String(err) }));
   if (cjOnlyCatalog()) await enforceCjOnlyCatalog();
   // Background: a few thousand small updates shouldn't hold up startup.

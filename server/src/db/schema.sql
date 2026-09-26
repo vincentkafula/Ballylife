@@ -1076,3 +1076,15 @@ ALTER TABLE sourcing_1688_offers ADD COLUMN IF NOT EXISTS not_listed_reason TEXT
 ALTER TABLE jp_parts_fulfillments ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'upgarage'; -- upgarage | 1688
 ALTER TABLE jp_parts_fulfillments ADD COLUMN IF NOT EXISTS variant_label TEXT;
 ALTER TABLE jp_parts_fulfillments ADD COLUMN IF NOT EXISTS supplier_sku TEXT;
+
+-- ── Super admin and account removal ─────────────────────────────────────
+-- role 'super_admin': exactly one account, defined by SUPER_ADMIN_* env
+-- vars (Railway) and re-applied at every boot. It alone adds and removes
+-- managers and removes other accounts. "Removing" an account closes it
+-- (account_status 'removed', every session revoked, a seller's store
+-- suspended and products hidden) rather than deleting rows orders,
+-- payouts and the audit trail still point at; it can be restored.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS removed_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS removed_by TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS removal_reason TEXT;
+ALTER TABLE mkt_sellers ADD COLUMN IF NOT EXISTS suspended_by_removal BOOLEAN NOT NULL DEFAULT false;

@@ -522,6 +522,15 @@ export const mkt1688 = {
   syncCj: () => api<Ok<{ checked: number; sourced: number; failed: number; listed: number }>>("/api/marketplace/admin/sourcing-1688/sync-cj", { method: "POST" }),
 };
 
+// ── Super admin ───────────────────────────────────────────────────────────
+export const mktSuperAdmin = {
+  managers: () => api<{ success: boolean; data: unknown[]; error?: string }>("/api/marketplace/admin/managers"),
+  createManager: (body: { username: string; name: string; email: string; password: string }) =>
+    api<{ success: boolean; data?: unknown; error?: string }>("/api/marketplace/admin/managers", { method: "POST", body: JSON.stringify(body) }),
+  removeUser: (id: string, reason: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/admin/users/${id}/remove`, { method: "POST", body: JSON.stringify({ reason }) }),
+  restoreUser: (id: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/admin/users/${id}/restore`, { method: "POST" }),
+};
+
 /** PayFast is redirect-based: post the signed fields to its hosted page. */
 export function submitToPayfast(url: string, fields: Record<string, string>): void {
   const form = document.createElement("form");

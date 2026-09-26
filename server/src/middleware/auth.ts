@@ -30,7 +30,7 @@ export const JWT_EXPIRES = "8h";
 export interface MktAuthPayload {
   userId: string;
   username: string;
-  role: "customer" | "seller" | "marketplace_admin" | "supplier" | "revenue_authority" | "shipping_company" | "credit_provider";
+  role: "customer" | "seller" | "marketplace_admin" | "super_admin" | "supplier" | "revenue_authority" | "shipping_company" | "credit_provider";
   tokenVersion: number;
 }
 
@@ -98,10 +98,15 @@ export function requireRole(...roles: MktAuthPayload["role"][]) {
       res.status(401).json({ success: false, error: "Not authenticated" });
       return;
     }
-    if (!roles.includes(req.user.role)) {
+    // The super admin can do everything a manager (marketplace_admin) can.
+    const allowed = roles.includes(req.user.role) || (req.user.role === "super_admin" && roles.includes("marketplace_admin"));
+    if (!allowed) {
       res.status(403).json({ success: false, error: "Insufficient privileges" });
       return;
     }
     next();
   };
 }
+
+/** Only the super admin (defined by SUPER_ADMIN_* Railway variables). */
+export const requireSuperAdmin = requireRole("super_admin");

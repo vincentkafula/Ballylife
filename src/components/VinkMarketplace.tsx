@@ -2146,7 +2146,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const [showSuggests, setShowSuggests] = useState(false);
   const navSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const MANAGER_ROLES = ["superadmin", "noc_engineer", "billing_admin", "marketplace_admin"];
+  const MANAGER_ROLES = ["super_admin", "superadmin", "noc_engineer", "billing_admin", "marketplace_admin"];
   const role: "customer" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "manager" | null =
     !authUser ? null : MANAGER_ROLES.includes(authUser.role) ? "manager" : authUser.role === "seller" ? "seller" : authUser.role === "supplier" ? "supplier" : authUser.role === "revenue_authority" ? "authority" : authUser.role === "shipping_company" ? "shipping" : authUser.role === "credit_provider" ? "credit" : "customer";
 

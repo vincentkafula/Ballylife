@@ -27,7 +27,7 @@ import { MORE_PLANS, STANDARD_RETURN_WINDOW_DAYS, type MorePlanId } from "../uti
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
 // roles that don't exist in this backend's own users.role column).
-const MANAGER_ROLES = ["marketplace_admin"] as const;
+const MANAGER_ROLES = ["marketplace_admin", "super_admin"] as const;
 
 // Only the account owner (or a marketplace manager) may read/write a
 // customer's own cart, wishlist, addresses, or stats — a valid login alone
@@ -1916,7 +1916,7 @@ router.get("/admin/users", requireAuth, requireRole(...MANAGER_ROLES), async (re
   if (search) { params.push(`%${search}%`); conditions.push(`(username ILIKE $${params.length} OR name ILIKE $${params.length} OR email ILIKE $${params.length})`); }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const { rows } = await pool!.query(
-    `SELECT id, username, name, email, role, oauth_provider, last_login, created_at FROM users ${where} ORDER BY created_at DESC LIMIT 500`,
+    `SELECT id, username, name, email, role, oauth_provider, last_login, created_at, account_status, removed_at, removal_reason FROM users ${where} ORDER BY created_at DESC LIMIT 500`,
     params
   );
   res.json({
@@ -1924,6 +1924,7 @@ router.get("/admin/users", requireAuth, requireRole(...MANAGER_ROLES), async (re
     data: rows.map(u => ({
       id: u.id, username: u.username, name: u.name, email: u.email, role: u.role,
       oauthProvider: u.oauth_provider, lastLogin: u.last_login, createdAt: u.created_at,
+      accountStatus: u.account_status, removedAt: u.removed_at, removalReason: u.removal_reason,
     })),
     meta: { total: rows.length },
   });
@@ -1961,6 +1962,16 @@ router.patch("/admin/users/:id/role", requireAuth, requireRole(...MANAGER_ROLES)
   const { rows: beforeRows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [req.params.id]);
   if (!beforeRows.length) { res.status(404).json({ success: false, error: "User not found" }); return; }
   const before = beforeRows[0];
+  if (before.role === "super_admin") {
+    res.status(403).json({ success: false, error: "The super admin account is managed through Railway variables." }); return;
+  }
+  // Only the super admin adds or removes managers.
+  if ((role === "marketplace_admin" || before.role === "marketplace_admin") && req.user!.role !== "super_admin") {
+    res.status(403).json({ success: false, error: "Only the super admin can add or remove managers." }); return;
+  }
+  if (before.account_status === "removed") {
+    res.status(409).json({ success: false, error: "Restore this account before changing its role." }); return;
+  }
 
   if (before.role === role) {
     res.status(400).json({ success: false, error: `User already has the role "${role}"` });

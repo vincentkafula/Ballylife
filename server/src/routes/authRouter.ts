@@ -67,11 +67,14 @@ const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : nul
  */
 async function findOrCreateOauthUser(provider: "google" | "facebook", providerId: string, email: string, name: string) {
   const byIdentity = await pool!.query(`SELECT * FROM users WHERE oauth_provider = $1 AND oauth_id = $2`, [provider, providerId]);
-  if (byIdentity.rows.length) return byIdentity.rows[0];
+  if (byIdentity.rows.length) return byIdentity.rows[0]; // status/role checked by the caller's shared response helper
 
   const byEmail = await pool!.query(`SELECT * FROM users WHERE email = $1`, [email]);
   if (byEmail.rows.length) {
     const existing = byEmail.rows[0];
+    // A removed account stays closed, and the super admin only signs in
+    // with the password set in Railway -- never through a social login.
+    if (existing.account_status === "removed" || existing.role === "super_admin") return existing;
     // Google/Facebook have just verified this exact email address as
     // part of this very sign-in -- that's a legitimate verification
     // signal in its own right, so an account that registered via
@@ -124,6 +127,14 @@ async function findOrCreateOauthUser(provider: "google" | "facebook", providerId
 // the gap where /google and /facebook could previously issue a token
 // for an account that hadn't met the verification requirement at all.
 async function respondWithSessionOrVerificationNeeded(user: any, res: Response): Promise<void> {
+  if (user.oauth_login && user.role === "super_admin") {
+    res.status(403).json({ success: false, error: "Sign in with your username and password." });
+    return;
+  }
+  if (user.account_status === "removed") {
+    res.status(403).json({ success: false, error: "This account has been closed. Contact Ballylife support if you think this is a mistake.", data: { accountRemoved: true } });
+    return;
+  }
   if (user.account_status !== "active") {
     res.status(403).json({
       success: false,
@@ -156,7 +167,7 @@ router.post("/google", async (req: Request, res: Response): Promise<void> => {
     if (!payload?.sub || !payload.email) { res.status(401).json({ success: false, error: "Invalid Google credential" }); return; }
 
     const user = await findOrCreateOauthUser("google", payload.sub, payload.email, payload.name ?? "");
-    await respondWithSessionOrVerificationNeeded(user, res);
+    await respondWithSessionOrVerificationNeeded({ ...user, oauth_login: true }, res);
   } catch (err) {
     console.error("[auth] Google sign-in failed:", err);
     res.status(401).json({ success: false, error: "Could not verify that Google sign-in — please try again." });
@@ -189,7 +200,7 @@ router.post("/facebook", async (req: Request, res: Response): Promise<void> => {
     }
 
     const user = await findOrCreateOauthUser("facebook", profile.id, profile.email, profile.name ?? "");
-    await respondWithSessionOrVerificationNeeded(user, res);
+    await respondWithSessionOrVerificationNeeded({ ...user, oauth_login: true }, res);
   } catch (err) {
     console.error("[auth] Facebook sign-in failed:", err);
     res.status(401).json({ success: false, error: "Could not verify that Facebook sign-in — please try again." });
@@ -409,6 +420,10 @@ router.post("/change-password", requireAuth, async (req: Request, res: Response)
     return;
   }
 
+  if (req.user!.role === "super_admin") {
+    res.status(400).json({ success: false, error: "The super admin password is set by SUPER_ADMIN_PASSWORD in Railway. Change it there and redeploy." });
+    return;
+  }
   const { rows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [req.user!.userId]);
   const user = rows[0];
   if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
@@ -447,7 +462,8 @@ router.post("/forgot-password", async (req: Request, res: Response): Promise<voi
   if (!email) { res.status(400).json({ success: false, error: "email is required" }); return; }
 
   const generic = { success: true, message: "If an account exists with that email, a password reset link has been sent." };
-  const { rows } = await pool!.query(`SELECT id FROM users WHERE email = $1`, [email]);
+  // No reset links for removed accounts or the super admin (its password lives in Railway).
+  const { rows } = await pool!.query(`SELECT id FROM users WHERE email = $1 AND account_status <> 'removed' AND role <> 'super_admin'`, [email]);
   if (!rows.length) { res.json(generic); return; }
   const userId = rows[0].id;
 
@@ -484,6 +500,10 @@ router.post("/reset-password", async (req: Request, res: Response): Promise<void
   );
   if (!rows.length) { res.status(400).json({ success: false, error: "This reset link is invalid or has expired — request a new one." }); return; }
   const resetRow = rows[0];
+  const { rows: target } = await pool!.query(`SELECT role, account_status FROM users WHERE id = $1`, [resetRow.user_id]);
+  if (!target.length || target[0].role === "super_admin" || target[0].account_status === "removed") {
+    res.status(400).json({ success: false, error: "This reset link is invalid or has expired — request a new one." }); return;
+  }
 
   const passwordHash = await hashPassword(newPassword);
   // Bumps token_version too -- a forgot-password reset is exactly the

@@ -6,6 +6,8 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob, type CjSourcingJob } from "../services/marketplaceApi";
 import { toast } from "sonner";
+import { SuperAdminManagersCard } from "./SuperAdminPanel";
+import { mktSuperAdmin } from "../services/marketplaceApi";
 import { ProgrammesAdminPanel } from "./MembershipPanels";
 import { JapanPartsAdminPanel } from "./JapanParts";
 import { Sourcing1688AdminPanel } from "./Sourcing1688Admin";
@@ -212,7 +214,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
-            {tab === "users" && <UserManagementPanel customers={customers} sellers={sellers} />}
+            {tab === "users" && <UserManagementPanel customers={customers} sellers={sellers} isSuperAdmin={user.role === "super_admin"} />}
 
             {tab === "sellerApproval" && (
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -328,7 +330,9 @@ const SUPPLIER_ORDER_NEXT: Record<string, string[]> = {
   delivered: [],
 };
 
-function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: R[] }) {
+const ALL_ROLES = ["customer", "seller", "marketplace_admin", "supplier", "revenue_authority", "shipping_company", "credit_provider"];
+
+function UserManagementPanel({ customers, sellers, isSuperAdmin }: { customers: R[]; sellers: R[]; isSuperAdmin: boolean }) {
   const [users, setUsers] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState("");
@@ -349,6 +353,32 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]); // debounced -- search fires on every keystroke otherwise
 
+  const [actingId, setActingId] = useState<string | null>(null);
+  // Only the super admin grants or removes manager rights.
+  const roleChoices = (current: string) => ALL_ROLES.filter(r => r !== "marketplace_admin" || isSuperAdmin || current === "marketplace_admin");
+  const canEditRole = (u: R) => u.role !== "super_admin" && u.accountStatus !== "removed" && (isSuperAdmin || u.role !== "marketplace_admin");
+
+  const removeUser = async (u: R) => {
+    const reason = window.prompt(`Remove ${String(u.username)}? They'll be signed out everywhere and can't sign in again${u.role === "seller" ? "; their store will be suspended and products hidden" : ""}. Reason (kept in the audit log):`);
+    if (reason === null) return;
+    setActingId(String(u.id));
+    try {
+      const res = await mktSuperAdmin.removeUser(String(u.id), reason);
+      if (!res.success) { toast.error(res.error ?? "Couldn't remove that account."); return; }
+      toast.success(`${String(u.username)} removed.`);
+      load();
+    } catch { toast.error("Couldn't remove that account — please try again."); } finally { setActingId(null); }
+  };
+  const restoreUser = async (u: R) => {
+    setActingId(String(u.id));
+    try {
+      const res = await mktSuperAdmin.restoreUser(String(u.id));
+      if (!res.success) { toast.error(res.error ?? "Couldn't restore that account."); return; }
+      toast.success(`${String(u.username)} restored.${u.role === "seller" ? " Their store is open again; products stay hidden until relisted." : ""}`);
+      load();
+    } catch { toast.error("Couldn't restore that account — please try again."); } finally { setActingId(null); }
+  };
+
   const saveRole = async (userId: string) => {
     const role = pendingRole[userId];
     if (!role) return;
@@ -368,6 +398,7 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
 
   return (
     <div className="space-y-4">
+      {isSuperAdmin && <SuperAdminManagersCard onChanged={load} />}
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customers ({customers.length})</span></div>
@@ -391,7 +422,7 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
             ))}
           </div>
         </div>
-        <p className="lg:col-span-2 text-[11px] text-gray-500">Suspend/ban actions aren't available yet. Role changes below are — changing a role signs that account out everywhere immediately.</p>
+        <p className="lg:col-span-2 text-[11px] text-gray-500">Changing a role signs that account out everywhere immediately.{isSuperAdmin ? " Removing an account closes it (it can be restored); only you can remove accounts." : " Only the super admin can add or remove managers and remove accounts."}</p>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -416,6 +447,7 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
               <thead><tr className="text-left text-gray-500 border-b border-gray-100">
                 <th className="px-4 py-2 font-semibold">Account</th>
                 <th className="px-4 py-2 font-semibold">Current role</th>
+                <th className="px-4 py-2 font-semibold">Status</th>
                 <th className="px-4 py-2 font-semibold">Change to</th>
                 <th className="px-4 py-2 font-semibold"></th>
               </tr></thead>
@@ -425,12 +457,19 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
                     <td className="px-4 py-2.5"><p className="font-medium text-gray-800">{String(u.username)}</p><p className="text-gray-500">{String(u.email)}</p></td>
                     <td className="px-4 py-2.5 text-gray-700">{String(u.role).replace(/_/g, " ")}</td>
                     <td className="px-4 py-2.5">
-                      <select value={pendingRole[String(u.id)] ?? String(u.role)} onChange={e => setPendingRole(p => ({ ...p, [String(u.id)]: e.target.value }))}
-                        className="border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#B8862E]">
-                        {["customer", "seller", "marketplace_admin", "supplier", "revenue_authority", "shipping_company", "credit_provider"].map(r => (
-                          <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
-                        ))}
-                      </select>
+                      {u.accountStatus === "removed"
+                        ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-700" title={u.removalReason ? String(u.removalReason) : undefined}>removed</span>
+                        : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-50 text-gray-600">{String(u.accountStatus ?? "active")}</span>}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {canEditRole(u) ? (
+                        <select value={pendingRole[String(u.id)] ?? String(u.role)} onChange={e => setPendingRole(p => ({ ...p, [String(u.id)]: e.target.value }))}
+                          className="border border-gray-200 rounded-lg px-2 py-1 text-xs outline-none focus:border-[#B8862E]">
+                          {roleChoices(String(u.role)).map(r => (
+                            <option key={r} value={r}>{r.replace(/_/g, " ")}</option>
+                          ))}
+                        </select>
+                      ) : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-2.5">
                       {pendingRole[String(u.id)] && pendingRole[String(u.id)] !== String(u.role) && (
@@ -438,6 +477,11 @@ function UserManagementPanel({ customers, sellers }: { customers: R[]; sellers: 
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-60" style={{ background: "#14110D" }}>
                           {savingId === String(u.id) ? "Saving…" : "Save"}
                         </button>
+                      )}
+                      {isSuperAdmin && u.role !== "super_admin" && (
+                        u.accountStatus === "removed"
+                          ? <button onClick={() => restoreUser(u)} disabled={actingId === String(u.id)} className="ml-2 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-60">Restore</button>
+                          : <button onClick={() => removeUser(u)} disabled={actingId === String(u.id)} className="ml-2 text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-700 disabled:opacity-60">Remove</button>
                       )}
                     </td>
                   </tr>
