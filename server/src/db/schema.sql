@@ -837,3 +837,10 @@ CREATE TABLE IF NOT EXISTS app_flags (
 ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'pages';
 ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS plan JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE cj_sync_jobs ADD COLUMN IF NOT EXISTS plan_index INTEGER NOT NULL DEFAULT 0;
+
+-- 'international' = shipped by the supplier straight to the customer: the
+-- price includes delivery (no local delivery fee) and the promise is
+-- 10-20 business days (utils/delivery.ts). NULL = dispatched locally.
+ALTER TABLE mkt_products ADD COLUMN IF NOT EXISTS delivery_profile TEXT;
+UPDATE mkt_products SET delivery_profile = 'international'
+ WHERE delivery_profile IS NULL AND supplier_product_id IN (SELECT id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping');

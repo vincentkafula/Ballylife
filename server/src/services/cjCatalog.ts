@@ -257,7 +257,7 @@ async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProdu
   );
   if (existing.length) {
     await pool!.query(
-      `UPDATE mkt_products SET name = $1, description = $2, short_description = $3, price = $4, images = $5, variants = $6, stock = $7, category_id = $8, updated_at = now()
+      `UPDATE mkt_products SET name = $1, description = $2, short_description = $3, price = $4, images = $5, variants = $6, stock = $7, category_id = $8, delivery_profile = 'international', updated_at = now()
        WHERE id = $9`,
       [w.name, w.description, shortDescription, price, JSON.stringify(w.images), JSON.stringify(variants), stock, w.categoryId, existing[0].id]
     );
@@ -266,8 +266,8 @@ async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProdu
   const slug = `${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   await pool!.query(
     `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, currency, images, emoji, status, stock,
-       brand, variants, fulfillment_type, supplier_product_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'ZAR',$8,'📦','active',$9,'Ballylife',$10,'imported',$11)`,
+       brand, variants, fulfillment_type, supplier_product_id, delivery_profile)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'ZAR',$8,'📦','active',$9,'Ballylife',$10,'imported',$11,'international')`,
     [HOUSE_SELLER_ID, w.categoryId, w.name, slug, shortDescription, w.description, price, JSON.stringify(w.images), stock, JSON.stringify(variants), supplierProductId]
   );
 }

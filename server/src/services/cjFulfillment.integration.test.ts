@@ -149,6 +149,27 @@ describe("Placing the paid order with CJ", () => {
     expect(calls("createOrderV2").length).toBe(0);
   });
 
+  it("charges no delivery fee and promises 10-20 business days, even for a cart saved before the item was flagged", async () => {
+    const product = await request(app).get(`/api/marketplace/products/${productId}`);
+    expect((product.body.data.product ?? product.body.data)).toMatchObject({ shippingIncluded: true, deliveryDays: { min: 10, max: 20 } });
+
+    await pool.query(`UPDATE mkt_products SET stock = 20 WHERE id = $1`, [productId]); // pg-mem stock quirk, see paidOrder()
+    await request(app).delete(`/api/marketplace/cart/${custId}/item/${productId}`).set("Authorization", `Bearer ${custToken}`);
+    await request(app).post(`/api/marketplace/cart/${custId}/add`).set("Authorization", `Bearer ${custToken}`).send({ productId, variantId: variantIds.black, quantity: 1 });
+    // Simulate an old cart: item stored without the flag and charged R99.
+    await pool.query(`UPDATE mkt_carts SET items = $1, shipping = 99 WHERE user_id = $2`,
+      [JSON.stringify((await pool.query(`SELECT items FROM mkt_carts WHERE user_id = $1`, [custId])).rows[0].items.map((i: any) => ({ ...i, shippingIncluded: undefined }))), custId]);
+    await pool.query(`UPDATE mkt_products SET stock = 20 WHERE id = $1`, [productId]);
+
+    const res = await request(app).post("/api/marketplace/orders").set("Authorization", `Bearer ${custToken}`).send({ paymentMethod: "bank_transfer" });
+    const { rows } = await pool.query(`SELECT shipping_cost, placed_at, estimated_delivery FROM mkt_orders WHERE id = $1`, [res.body.data.id]);
+    expect(Number(rows[0].shipping_cost)).toBe(0);
+    const days = (new Date(rows[0].estimated_delivery).getTime() - new Date(rows[0].placed_at).getTime()) / 86400_000;
+    expect(days).toBeGreaterThanOrEqual(26); // 20 business days = 26-28 calendar days
+    expect(days).toBeLessThanOrEqual(28.1);
+    await pool.query(`UPDATE mkt_orders SET status = 'cancelled' WHERE id = $1`, [res.body.data.id]); // keep it out of the fulfilment tests below
+  });
+
   it("places it with the customer's chosen variant, the cheapest route, and our order number -- no customer email", async () => {
     order = await paidOrder(variantIds.red);
     await fulfillment.runCjFulfillmentCycle();

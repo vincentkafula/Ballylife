@@ -17,6 +17,7 @@ import { recalcCartTotals } from "../utils/cart";
 import { checkPaymentVelocity } from "../services/fraudChecks";
 import { publicImages, firstPhoto } from "../utils/supplierWhiteLabel";
 import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
+import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
@@ -158,6 +159,7 @@ const mapProduct = (r: any, sellerName?: string, categoryName?: string) => ({
   isFeatured: r.is_featured, isFlashDeal: r.is_flash_deal, flashDealEndsAt: r.flash_deal_ends_at,
   fulfillmentType: r.fulfillment_type ?? "local", supplierProductId: r.supplier_product_id ?? null,
   vehicleDetails: r.vehicle_details ?? null, condition: r.condition ?? null, nrcsApproved: r.nrcs_approved ?? false, nrcsReference: r.nrcs_reference ?? null,
+  ...deliveryInfo(r.delivery_profile),
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
@@ -527,7 +529,7 @@ router.post("/cart/:userId/add", requireAuth, requireSelf, async (req: Request, 
   const unitPrice = round2(product.price + Number(variant?.additionalPrice ?? 0));
 
   if (existing) existing.quantity += (quantity ?? 1);
-  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity: quantity ?? 1, unitPrice, name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
+  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity: quantity ?? 1, unitPrice, shippingIncluded: product.shippingIncluded, name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
 
   const updated = await saveCart(cartRow.id, items, cartRow.coupon_code);
   res.json({ success: true, data: cartRowToApi(updated) });
@@ -856,6 +858,18 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
   if (!cart || !cart.items.length) { res.status(400).json({ success: false, error: "Cart is empty" }); return; }
   const customerEmail = userRows[0]?.email ?? "customer@example.com";
 
+  // Delivery is charged by each product's CURRENT delivery profile, not
+  // whatever the cart recorded when the item was added -- so a cart from
+  // before a product became supplier-fulfilled (or a tampered one) can't
+  // be charged the wrong delivery fee.
+  let cartItemsChanged = false;
+  for (const i of cart.items as any[]) {
+    const { rows: pr } = await pool!.query(`SELECT delivery_profile FROM mkt_products WHERE id::text = $1`, [i.productId]);
+    const included = deliveryInfo(pr[0]?.delivery_profile).shippingIncluded;
+    if (Boolean(i.shippingIncluded) !== included) { i.shippingIncluded = included; cartItemsChanged = true; }
+  }
+  if (cartItemsChanged) Object.assign(cart, await saveCart(cart.id, cart.items, cart.coupon_code));
+
   const { rows: addrRows } = await pool!.query(
     addressId ? `SELECT * FROM mkt_addresses WHERE id::text = $1 AND user_id = $2` : `SELECT * FROM mkt_addresses WHERE user_id = $1 LIMIT 1`,
     addressId ? [addressId, userId] : [userId]
@@ -865,6 +879,7 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
   const items = cart.items.map((i: any) => ({
     productId: i.productId, productName: i.name, emoji: i.emoji, image: i.image ?? null, variantId: i.variantId, variantLabel: i.variantLabel ?? null,
     quantity: i.quantity, unitPrice: i.unitPrice, totalPrice: i.unitPrice * i.quantity, sellerId: i.sellerId ?? "sel-01", sellerName: i.sellerName,
+    shippingIncluded: Boolean(i.shippingIncluded),
   }));
   const shippingAddress = {
     label: "Home", firstName: addr.first_name ?? "Customer", lastName: addr.last_name ?? "", line1: addr.line1 ?? "",
@@ -931,7 +946,12 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     // last-mile once it lands — matches the 10-30 day range international
     // dropship realistically takes. Local-only orders keep the original
     // 5-day promise.
-    const estimatedDeliveryDays = maxLeadTimeDays > 0 ? maxLeadTimeDays + 12 : 5;
+    // Supplier-fulfilled items ship straight from the supplier: the promise
+    // is INTERNATIONAL_DELIVERY_DAYS business days, dated from the latest end.
+    const hasInternational = items.some((i: any) => i.shippingIncluded);
+    const estimatedDeliveryDays = hasInternational
+      ? calendarDaysForBusinessDays(new Date(), INTERNATIONAL_DELIVERY_DAYS.max)
+      : maxLeadTimeDays > 0 ? maxLeadTimeDays + 12 : 5;
 
     // VAT is domestic sales tax charged to the customer on every order
     // regardless of fulfilment type — the cart's running total only ever
@@ -1644,12 +1664,12 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
     await client.query("BEGIN");
     const { rows } = await client.query(
       `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
-         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference, variants)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17,$18) RETURNING *`,
+         currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference, variants, delivery_profile)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
       [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", finalRetailPrice, finalCompareAtPrice,
        JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId,
        sp.vehicle_details ? JSON.stringify(sp.vehicle_details) : null, sp.condition ?? null, sp.nrcs_approved ?? false, sp.nrcs_reference ?? null,
-       JSON.stringify(listingVariants)]
+       JSON.stringify(listingVariants), sp.external_source === "cjdropshipping" ? "international" : null]
     );
     await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [supplierProductId]);
     await client.query("COMMIT");

@@ -11,7 +11,12 @@
 export interface CartItem {
   unitPrice: number;
   quantity: number;
+  /** Supplier-fulfilled item whose price already includes delivery -- never charged the local delivery fee. */
+  shippingIncluded?: boolean;
 }
+
+export const LOCAL_DELIVERY_FEE = 99;
+export const FREE_LOCAL_DELIVERY_OVER = 500;
 
 export interface Coupon {
   type: "percentage" | "fixed_amount" | "free_shipping";
@@ -40,7 +45,12 @@ export function recalcCartTotals(items: CartItem[], coupon: Coupon | null): Cart
     }
   }
 
-  const shipping = subtotal > 500 || coupon?.type === "free_shipping" ? 0 : (items.length ? 99 : 0);
+  // The local delivery fee applies only to locally dispatched items, and the
+  // free-delivery threshold is measured on those items alone. Supplier-
+  // fulfilled items already carry their shipping in the price.
+  const localItems = items.filter(i => !i.shippingIncluded);
+  const localSubtotal = localItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+  const shipping = !localItems.length || localSubtotal > FREE_LOCAL_DELIVERY_OVER || coupon?.type === "free_shipping" ? 0 : LOCAL_DELIVERY_FEE;
   const tax = +(subtotal * 0.15).toFixed(2);
   const total = +(subtotal + shipping + tax - couponDiscount).toFixed(2);
 

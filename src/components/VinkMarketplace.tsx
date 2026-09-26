@@ -62,6 +62,24 @@ function ProductPhoto({ src, alt, className = "" }: { src: string; alt: string; 
       className={`absolute inset-0 w-full h-full object-contain bg-white ${className}`} />
   );
 }
+// Delivery promises. Imported (supplier-fulfilled) items ship straight to the
+// customer with delivery included in the price; local items keep the flat
+// local fee (free over R500) and the shorter window. Mirrors utils/delivery.ts.
+const LOCAL_DELIVERY_WINDOW = "3–5 business days";
+const INTL_DELIVERY_WINDOW = "10–20 business days";
+
+function deliveryWindowFor(p: R): string {
+  const d = p.deliveryDays as { min?: number; max?: number } | undefined;
+  return p.shippingIncluded ? (d?.min && d?.max ? `${d.min}–${d.max} business days` : INTL_DELIVERY_WINDOW) : LOCAL_DELIVERY_WINDOW;
+}
+
+/** What to promise for a whole cart/order, given its items' shippingIncluded flags. */
+function cartDeliveryWindow(items: R[]): string {
+  const intl = items.some(i => i.shippingIncluded);
+  const local = items.some(i => !i.shippingIncluded);
+  if (intl && local) return `${LOCAL_DELIVERY_WINDOW} for local items, ${INTL_DELIVERY_WINDOW} for imported items`;
+  return intl ? INTL_DELIVERY_WINDOW : LOCAL_DELIVERY_WINDOW;
+}
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { OrderTracking } from "./OrderTracking";
 // These five are static content pages (legal/policy text with large
@@ -269,8 +287,8 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
             <svg viewBox="0 0 24 24" fill="none" stroke="#0B1A3D" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: "2cqw", height: "2cqw" }}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" /></svg>
           </span>
           <div className="leading-none">
-            <div className="text-white font-black" style={{ fontSize: "clamp(9px,1.3cqw,14px)" }}>60 mins</div>
-            <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "clamp(6px,0.85cqw,9px)" }}>avg. delivery</div>
+            <div className="text-white font-black" style={{ fontSize: "clamp(9px,1.3cqw,14px)" }}>Door-to-door</div>
+            <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "clamp(6px,0.85cqw,9px)" }}>delivery, tracked</div>
           </div>
         </div>
       </div>
@@ -611,7 +629,7 @@ function HomeView({ categories, products, onCategory, onProduct, onCart, wishlis
   const brandsSlide = useManualSlide<HTMLDivElement>();
 
   const BENEFITS = [
-    { icon: <Truck className="w-4 h-4" />,   label: "Free Delivery",    sub: "On orders over R500" },
+    { icon: <Truck className="w-4 h-4" />,   label: "Delivery Included", sub: "On Ballylife store items" },
     { icon: <Shield className="w-4 h-4" />,  label: "Secure Payments",  sub: "100% safe & secure" },
     { icon: <RotateCcw className="w-4 h-4" />, label: "Easy Returns",   sub: "7 day return policy" },
     { icon: <User className="w-4 h-4" />,    label: "Ballylife Support", sub: "We're here to help" },
@@ -1280,8 +1298,8 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           <div className="flex items-center gap-2.5 p-3 rounded-xl bg-green-50 border border-green-100">
             <Truck className="w-4 h-4 text-green-600 flex-shrink-0" />
             <div>
-              <p className="text-xs font-semibold text-green-700">{Number(p.price) > 500 ? "Free delivery" : "R99 delivery"}</p>
-              <p className="text-[10px] text-green-600">Estimated 3–5 business days</p>
+              <p className="text-xs font-semibold text-green-700">{p.shippingIncluded ? "Delivery included in the price" : Number(p.price) > 500 ? "Free delivery" : "R99 delivery"}</p>
+              <p className="text-[10px] text-green-600">Estimated {deliveryWindowFor(p)}{p.shippingIncluded ? " to your door" : ""}</p>
             </div>
           </div>
 
@@ -1499,7 +1517,8 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
         <div className="space-y-2.5 mb-5">
           {[
             { label: "Subtotal",      value: fmtZAR(Number(cart?.subtotal ?? 0)) },
-            { label: "Shipping",      value: Number(cart?.shipping) === 0 ? "Free" : fmtZAR(Number(cart?.shipping)) },
+            { label: "Delivery",      value: Number(cart?.shipping) > 0 ? fmtZAR(Number(cart?.shipping)) : items.length && items.every(i => i.shippingIncluded) ? "Included" : "Free" },
+            { label: "Estimated",     value: cartDeliveryWindow(items) },
             { label: "Tax (15% VAT)", value: fmtZAR(Number(cart?.tax ?? 0)) },
             ...(Number(cart?.couponDiscount) > 0 ? [{ label: "Discount", value: `-${fmtZAR(Number(cart?.couponDiscount))}` }] : []),
           ].map((r, i) => (
@@ -1536,6 +1555,11 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
   const [paymentPending, setPaymentPending] = useState(false);
   const [selAddr, setSelAddr] = useState(0);
   const [shipping, setShipping] = useState("standard");
+  // Keep the last non-empty item list: the cart is emptied once the order is
+  // placed, but the confirmation screen still needs to describe delivery.
+  const checkoutItemsRef = useRef<R[]>([]);
+  if (((cart?.items as R[]) ?? []).length) checkoutItemsRef.current = cart!.items as R[];
+  const checkoutItems = checkoutItemsRef.current;
   const [payment, setPayment] = useState("card");
   const [bnplProvider, setBnplProvider] = useState<"payflex" | "payjustnow">("payflex");
   const [placing, setPlacing] = useState(false);
@@ -1715,11 +1739,17 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
 
       {step === "shipping" && (
         <div className="max-w-lg mx-auto space-y-3">
-          <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Shipping Method</h2>
+          <h2 className="font-serif text-lg text-gray-900" style={{ fontWeight: 600 }}>Delivery</h2>
+          {/* One option, priced exactly as the server charges it. (Express and
+              Click & Collect were shown here before but never existed on the
+              server -- every order was charged standard delivery.) */}
           {[
-            { id:"standard", label:"Standard Delivery", sub:"3–5 business days", price:"R99" },
-            { id:"express",  label:"Express Delivery",  sub:"Next business day", price:"R199" },
-            { id:"collect",  label:"Click & Collect",   sub:"At your nearest Ballylife Hub", price:"FREE" },
+            {
+              id: "standard",
+              label: checkoutItems.every(i => i.shippingIncluded) ? "Door-to-door delivery" : "Standard Delivery",
+              sub: cartDeliveryWindow(checkoutItems),
+              price: Number(cart?.shipping) > 0 ? fmtZAR(Number(cart?.shipping)) : checkoutItems.every(i => i.shippingIncluded) ? "INCLUDED" : "FREE",
+            },
           ].map(opt => (
             <button key={opt.id} onClick={() => setShipping(opt.id)}
               className={`w-full p-4 rounded-2xl text-left border flex items-center gap-3 transition-all ${shipping === opt.id ? "border-emerald-400 bg-emerald-50" : "border-gray-200 bg-white"}`}>
@@ -1728,7 +1758,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
                 <p className="text-sm font-semibold text-gray-900">{opt.label}</p>
                 <p className="text-xs text-gray-400">{opt.sub}</p>
               </div>
-              <span className={`text-sm font-bold ${opt.price === "FREE" ? "text-green-600" : "text-gray-800"}`}>{opt.price}</span>
+              <span className={`text-sm font-bold ${opt.price === "FREE" || opt.price === "INCLUDED" ? "text-green-600" : "text-gray-800"}`}>{opt.price}</span>
             </button>
           ))}
           <div className="flex gap-3 pt-2">
@@ -1847,7 +1877,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Order total</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Payment status</span><span className="font-semibold text-amber-600">Pending confirmation</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold">3–5 business days after payment clears</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)} after payment clears</span></div>
               </div>
             </>
           ) : (
@@ -1857,8 +1887,8 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               <p className="text-gray-500 mb-6">Thank you! A confirmation email is on its way.</p>
               <div className="bg-white rounded-2xl p-5 border border-gray-100 mb-6 space-y-2 text-left">
                 <div className="flex justify-between text-sm"><span className="text-gray-500">Total paid</span><span className="font-black" style={{ color: "#B8862E" }}>{fmtZAR(Number(cart?.total ?? 0))}</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold">3–5 business days</span></div>
-                <div className="flex justify-between text-sm"><span className="text-gray-500">Carrier</span><span className="font-semibold">DHL Express</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Estimated delivery</span><span className="font-semibold text-right">{cartDeliveryWindow(checkoutItems)}</span></div>
+                <div className="flex justify-between text-sm"><span className="text-gray-500">Tracking</span><span className="font-semibold text-right">Emailed and shown in My Orders once dispatched</span></div>
               </div>
             </>
           )}
