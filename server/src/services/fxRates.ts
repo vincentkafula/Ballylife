@@ -2,6 +2,7 @@ import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
 import { repriceHouseListings } from "./cjCatalog";
 import { repriceJapanParts } from "./japanParts";
+import { reestimateAll as reprice1688 } from "./sourcing1688";
 
 /**
  * Keeps mkt_fx_rates current. Every catalogue price is in ZAR, and these
@@ -59,6 +60,12 @@ export async function refreshFxRates(): Promise<FxRefreshResult> {
   const jpyPerZar = json.rates.JPY;
   if (oldJpy && typeof jpyPerZar === "number" && jpyPerZar > 0 && !rejected.includes("JPY") && Math.abs(1 / jpyPerZar - oldJpy) / oldJpy > REPRICE_THRESHOLD) {
     await repriceJapanParts().catch(err => logger.error("jp_parts.reprice_failed", { error: err instanceof Error ? err.message : String(err) }));
+  }
+
+  const oldCny = before.get("CNY") ?? null;
+  const cnyPerZar = json.rates.CNY;
+  if (oldCny && typeof cnyPerZar === "number" && cnyPerZar > 0 && !rejected.includes("CNY") && Math.abs(1 / cnyPerZar - oldCny) / oldCny > REPRICE_THRESHOLD) {
+    await reprice1688().catch(err => logger.error("sourcing1688.reprice_failed", { error: err instanceof Error ? err.message : String(err) }));
   }
 
   logger.info("fx.rates_refreshed", { updated, rejected, usdToZar, previousUsdToZar: oldUsd, repriced });

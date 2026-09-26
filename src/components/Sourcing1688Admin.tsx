@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle, ExternalLink, Loader2, Plus, RefreshCw, Send, Star, Trash2, X } from "lucide-react";
-import { mkt1688, ApiConnectionError, type Sourcing1688Settings, type Offer1688, type Run1688 } from "../services/marketplaceApi";
+import { mkt1688, mktJapanParts, ApiConnectionError, type Sourcing1688Settings, type Offer1688, type Run1688, type JapanPartsTask } from "../services/marketplaceApi";
+import { TaskRow } from "./JapanParts";
 
 const zar = (n: number) => `R${Math.round(n).toLocaleString("en-ZA")}`;
 const errMessage = (err: unknown, fallback: string) => (err instanceof ApiConnectionError ? err.message : fallback);
@@ -29,6 +30,17 @@ export function Sourcing1688AdminPanel() {
   const [filter, setFilter] = useState({ status: "", sort: "sold", search: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [tasks, setTasks] = useState<JapanPartsTask[]>([]);
+  const loadTasks = useCallback(async () => {
+    try { const r = await mktJapanParts.tasks("1688"); if (r.success) setTasks(r.data); } catch { /* shown elsewhere */ }
+  }, []);
+  useEffect(() => { void loadTasks(); }, [loadTasks]);
+  const updateTask = async (t: JapanPartsTask, patch: Parameters<typeof mktJapanParts.updateTask>[1]) => {
+    try {
+      const res = await mktJapanParts.updateTask(t.id, patch);
+      if (res.success) setTasks(ts => ts.map(x => (x.id === t.id ? { ...res.data, source: "1688" } : x))); else toast.error(res.error ?? "Couldn't update.");
+    } catch (err) { toast.error(errMessage(err, "Couldn't update.")); }
+  };
 
   const loadOffers = useCallback(async () => {
     try {
@@ -54,6 +66,7 @@ export function Sourcing1688AdminPanel() {
   const set = <K extends keyof Sourcing1688Settings>(k: K, v: Sourcing1688Settings[K]) => setSettings({ ...settings, [k]: v });
   const setFilterVal = <K extends keyof Sourcing1688Settings["filters"]>(k: K, v: Sourcing1688Settings["filters"][K]) => set("filters", { ...settings.filters, [k]: v });
   const setEst = <K extends keyof Sourcing1688Settings["estimate"]>(k: K, v: Sourcing1688Settings["estimate"][K]) => set("estimate", { ...settings.estimate, [k]: v });
+  const setList = <K extends keyof Sourcing1688Settings["listing"]>(k: K, v: Sourcing1688Settings["listing"][K]) => set("listing", { ...settings.listing, [k]: v });
   const optNum = (v: string) => (v.trim() === "" ? null : Number(v));
 
   const act = async (key: string, fn: () => Promise<{ success: boolean; error?: string }>, ok: string) => {
@@ -91,7 +104,7 @@ export function Sourcing1688AdminPanel() {
       <div className={card + " flex flex-wrap items-center justify-between gap-3"}>
         <div>
           <h3 className="font-bold text-gray-900">1688 product research</h3>
-          <p className="text-xs text-gray-500 max-w-2xl">Find products on 1688, compare their estimated South African landed cost and resale price, and send winners to CJ to source. Once CJ sources one it's listed in the store automatically, priced and shipped like any CJ product. Shoppers never see 1688.</p>
+          <p className="text-xs text-gray-500 max-w-2xl">Finds with a minimum order of {settings.listing.maxMoq} go straight into the store{settings.listing.autoList ? "" : " (auto-listing is off)"}, priced from the estimate and bought through your China agent when ordered. Each is also sent to CJ{settings.listing.autoSendToCj ? "" : " (automatic sending is off)"}; once CJ sources it, CJ's listing replaces it and CJ ships. Shoppers never see 1688.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowSettings(v => !v)} className="text-sm font-semibold px-3 py-1.5 rounded-lg border border-gray-200">{showSettings ? "Hide settings" : "Settings"}</button>
@@ -149,6 +162,24 @@ export function Sourcing1688AdminPanel() {
           </div>
 
           <div>
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Selling in the store</p>
+            <div className="grid sm:grid-cols-4 gap-3 text-xs text-gray-600">
+              <label className="flex items-center gap-2 sm:col-span-2"><input type="checkbox" checked={settings.listing.autoList} onChange={e => setList("autoList", e.target.checked)} className="w-4 h-4" />List eligible finds in the store automatically</label>
+              <label className="flex items-center gap-2 sm:col-span-2"><input type="checkbox" checked={settings.listing.autoSendToCj} onChange={e => setList("autoSendToCj", e.target.checked)} className="w-4 h-4" />Send listed finds to CJ automatically</label>
+              <label className="space-y-1"><span>Max MOQ to list</span><input type="number" min={1} className={input} value={settings.listing.maxMoq} onChange={e => setList("maxMoq", Number(e.target.value))} /></label>
+              <label className="space-y-1"><span>Stock shown (cap)</span><input type="number" min={1} className={input} value={settings.listing.stockCap} onChange={e => setList("stockCap", Number(e.target.value))} /></label>
+              <label className="space-y-1"><span>CJ requests per day</span><input type="number" min={0} className={input} value={settings.listing.maxCjRequestsPerDay} onChange={e => setList("maxCjRequestsPerDay", Number(e.target.value))} /></label>
+              <label className="space-y-1"><span>Delivery (business days)</span>
+                <div className="flex gap-1">
+                  <input type="number" min={1} className={input} value={settings.listing.deliveryDays.min} onChange={e => setList("deliveryDays", { ...settings.listing.deliveryDays, min: Number(e.target.value) })} />
+                  <input type="number" min={1} className={input} value={settings.listing.deliveryDays.max} onChange={e => setList("deliveryDays", { ...settings.listing.deliveryDays, max: Number(e.target.value) })} />
+                </div></label>
+              <label className="space-y-1"><span>China agent fee %</span><input type="number" min={0} className={input} value={settings.estimate.agentFeePct} onChange={e => setEst("agentFeePct", Number(e.target.value))} /></label>
+              <label className="space-y-1"><span>China shipping ¥ / unit</span><input type="number" min={0} className={input} value={settings.estimate.domesticShippingCny} onChange={e => setEst("domesticShippingCny", Number(e.target.value))} /></label>
+            </div>
+          </div>
+
+          <div>
             <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Estimate: duty and freight per product class</p>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs text-gray-600">
               {Object.entries(settings.estimate.classes).map(([k, v]) => (
@@ -168,11 +199,17 @@ export function Sourcing1688AdminPanel() {
               <label className="space-y-1"><span>Default duty %</span><input type="number" min={0} className={input} value={settings.estimate.defaultClass.dutyPct} onChange={e => setEst("defaultClass", { ...settings.estimate.defaultClass, dutyPct: Number(e.target.value) })} /></label>
               <label className="space-y-1"><span>Default freight R</span><input type="number" min={0} className={input} value={settings.estimate.defaultClass.freightZar} onChange={e => setEst("defaultClass", { ...settings.estimate.defaultClass, freightZar: Number(e.target.value) })} /></label>
             </div>
-            <p className="text-xs text-gray-500 mt-2">Estimate only, to compare finds: 1688 unit price × live ¥ rate + freight + duty on (unit + freight) + import VAT on (unit × 1.1 + duty), then markup. Products CJ sources are priced from CJ's own cost.</p>
+            <p className="text-xs text-gray-500 mt-2">Store price for agent listings: (1688 price + China shipping) × live ¥ rate + agent fee, + freight + duty on (unit + freight) + import VAT on (unit × 1.1 + duty), then markup, rounded up — per option. Saving re-prices every listing. Once CJ sources a product it's priced from CJ's own cost.</p>
           </div>
           <button onClick={save} disabled={busy === "save"} className="px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ background: "#14110D" }}>{busy === "save" ? "Saving…" : "Save settings"}</button>
         </div>
       )}
+
+      <div className={card}>
+        <h3 className="font-bold text-gray-900 mb-1">To buy & ship (China agent)</h3>
+        <p className="text-xs text-gray-500 mb-3">Paid orders for 1688 listings. Order the exact option through your China agent, send it via the forwarder, then add tracking and mark it shipped. If it's no longer available, mark it unavailable and refund the customer.</p>
+        {tasks.length === 0 ? <p className="text-sm text-gray-500">Nothing yet.</p> : <div className="space-y-2">{tasks.map(t => <TaskRow key={t.id} t={t} onUpdate={patch => updateTask(t, patch)} />)}</div>}
+      </div>
 
       {runs.length > 0 && (
         <div className={card}>
@@ -208,6 +245,7 @@ export function Sourcing1688AdminPanel() {
                 <div className="relative bg-white" style={{ aspectRatio: "4 / 3" }}>
                   {o.images[0] && <img src={o.images[0]} alt="" loading="lazy" referrerPolicy="no-referrer" className="absolute inset-0 w-full h-full object-contain" />}
                   <span className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${STATUS_STYLE[o.status] ?? "bg-gray-100"}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+                  {o.directProductId && o.status !== "listed" && <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white">In store (agent)</span>}
                 </div>
                 <div className="p-3 text-xs space-y-1.5 flex-1 flex flex-col">
                   <p className="font-semibold text-sm text-gray-900 line-clamp-2" title={o.title}>{o.title}</p>
@@ -221,6 +259,7 @@ export function Sourcing1688AdminPanel() {
                   <div className="flex justify-between gap-2"><span className="text-gray-500">Supplier</span><span className="text-right truncate" title={o.supplierName ?? ""}>{o.supplierYears ? `${o.supplierYears} yrs · ` : ""}{o.supplierType ?? ""}</span></div>
                   {o.cjSourcingStatus && o.status !== "listed" && <p className="text-blue-700">CJ: {o.cjSourcingStatus}</p>}
                   {o.cjFailReason && <p className="text-red-700">CJ: {o.cjFailReason}</p>}
+                  {!o.directProductId && o.notListedReason && <p className="text-gray-500">Not listed: {o.notListedReason}</p>}
                   <div className="flex flex-wrap gap-1.5 pt-2 mt-auto">
                     {["new", "shortlisted", "dismissed", "sourcing_failed"].includes(o.status) && (
                       <button onClick={() => act(`send-${o.id}`, () => mkt1688.sendToCj(o.id), "Sent to CJ for sourcing.")} disabled={!flags.cj || busy === `send-${o.id}`}

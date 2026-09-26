@@ -30,7 +30,7 @@ const mapOffer = (r: Record<string, any>) => ({
   categoryPath: r.category_path, images: Array.isArray(r.images) ? r.images : [], videoUrl: r.video_url, totalVariants: r.total_variants,
   supportsDropship: r.supports_dropship, deliveryLimitDays: r.delivery_limit_days, keyword: r.source_keyword, productClass: r.product_class,
   estimate: r.estimate, status: r.status, cjSourcingId: r.cj_sourcing_id, cjSourcingStatus: r.cj_sourcing_status, cjFailReason: r.cj_fail_reason,
-  cjProductId: r.cj_product_id, storeProductId: r.store_product_id, sentToCjAt: r.sent_to_cj_at, firstSeenAt: r.first_seen_at, lastSeenAt: r.last_seen_at,
+  cjProductId: r.cj_product_id, storeProductId: r.store_product_id, directProductId: r.direct_product_id, notListedReason: r.not_listed_reason, sentToCjAt: r.sent_to_cj_at, firstSeenAt: r.first_seen_at, lastSeenAt: r.last_seen_at,
 });
 
 router.get("/admin/sourcing-1688/settings", ...admin, async (_req: Request, res: Response): Promise<void> => {

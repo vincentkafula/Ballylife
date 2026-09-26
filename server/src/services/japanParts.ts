@@ -269,40 +269,61 @@ export async function repriceJapanParts(settings?: JapanPartsSettings): Promise<
 
 const LOOKBACK_DAYS = 30;
 
+/**
+ * Paid order lines for products we buy by hand -- Japan used parts
+ * (UP-GARAGE) and 1688 finds sold through a China agent -- become tasks in
+ * the buy-and-forward queue. One task per product per order; when an order
+ * has several options of the same product they're listed on that task.
+ */
 export async function enqueueJapanPartOrders(): Promise<number> {
-  const { rows: parts } = await pool!.query(`SELECT id, source_url FROM mkt_products WHERE source = $1`, [JAPAN_PARTS_SOURCE]);
+  const { rows: parts } = await pool!.query(`SELECT id, source, source_url, variants FROM mkt_products WHERE source IN ('upgarage', '1688')`);
   if (!parts.length) return 0;
-  const urlById = new Map(parts.map((p: Row) => [String(p.id), p.source_url as string | null]));
+  const byId = new Map(parts.map((p: Row) => [String(p.id), p]));
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86400_000);
   const { rows: orders } = await pool!.query(
     `SELECT id, order_number, items, placed_at FROM mkt_orders WHERE payment_status = 'payment_confirmed' AND placed_at > $1`, [since]
   );
-  const created: { order: string; name: string; url: string | null }[] = [];
+  const created: { source: string; order: string; name: string; url: string | null }[] = [];
   for (const o of orders) {
-    const items = (Array.isArray(o.items) ? o.items : []) as Row[];
-    for (const item of items) {
+    const lines = new Map<string, { name: string; qty: number; labels: string[]; skus: string[] }>();
+    for (const item of (Array.isArray(o.items) ? o.items : []) as Row[]) {
       const pid = String(item.productId ?? "");
-      if (!urlById.has(pid)) continue;
+      const product = byId.get(pid);
+      if (!product) continue;
+      const line = lines.get(pid) ?? { name: String(item.productName ?? pid), qty: 0, labels: [], skus: [] };
+      const qty = Number(item.quantity) || 1;
+      line.qty += qty;
+      const variant = item.variantId ? ((Array.isArray(product.variants) ? product.variants : []) as Row[]).find(v => v.id === item.variantId) : null;
+      if (item.variantLabel || variant) line.labels.push(`${item.variantLabel ?? variant?.value} ×${qty}`);
+      if (variant?.sku) line.skus.push(String(variant.sku));
+      lines.set(pid, line);
+    }
+    for (const [pid, line] of lines) {
       const { rows: exists } = await pool!.query(`SELECT 1 FROM jp_parts_fulfillments WHERE order_id = $1 AND product_id = $2`, [o.id, pid]);
       if (exists.length) continue;
+      const product = byId.get(pid)!;
       await pool!.query(
-        `INSERT INTO jp_parts_fulfillments (order_id, product_id, product_name, quantity, source_url) VALUES ($1,$2,$3,$4,$5)`,
-        [o.id, pid, item.productName ?? null, Number(item.quantity) || 1, urlById.get(pid) ?? null]
+        `INSERT INTO jp_parts_fulfillments (order_id, product_id, product_name, quantity, source_url, source, variant_label, supplier_sku) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [o.id, pid, line.name, line.qty, product.source_url ?? null, product.source, line.labels.join("; ") || null, line.skus.join(", ") || null]
       );
-      // Used parts are one-offs: take it off sale now it's sold.
-      await pool!.query(`UPDATE mkt_products SET stock = 0, status = 'out_of_stock', updated_at = now() WHERE id::text = $1`, [pid]);
-      created.push({ order: o.order_number, name: String(item.productName ?? pid), url: urlById.get(pid) ?? null });
+      // Used parts are one-offs: take it off sale now it's sold. (1688 stock just counts down as usual.)
+      if (product.source === JAPAN_PARTS_SOURCE) await pool!.query(`UPDATE mkt_products SET stock = 0, status = 'out_of_stock', updated_at = now() WHERE id::text = $1`, [pid]);
+      created.push({ source: product.source, order: o.order_number, name: line.name + (line.labels.length ? ` (${line.labels.join("; ")})` : ""), url: product.source_url ?? null });
     }
   }
   if (created.length) {
     logger.info("jp_parts.fulfillment_enqueued", { count: created.length });
     if (ALERT_EMAIL) {
+      const section = (source: string, title: string, where: string, linkText: string) => {
+        const list = created.filter(c => c.source === source);
+        return list.length ? `<p><b>${title}</b> — buy ${where}:</p><ul>${list.map(c => `<li>${esc(c.order)} — ${esc(c.name)}${c.url ? ` — <a href="${esc(c.url)}">${linkText}</a>` : ""}</li>`).join("")}</ul>` : "";
+      };
       await sendEmail({
         to: ALERT_EMAIL,
-        subject: `Japan parts to buy: ${created.length} new paid order line${created.length === 1 ? "" : "s"}`,
-        html: `<p>These Japan used parts have been paid for and need buying on UP-GARAGE and shipping via the forwarder:</p><ul>${
-          created.map(c => `<li>${esc(c.order)} — ${esc(c.name)}${c.url ? ` — <a href="${esc(c.url)}">UP-GARAGE listing</a>` : ""}</li>`).join("")
-        }</ul><p>Update each one in Admin → Japan Parts as you go. If a part is no longer available, mark it unavailable and refund the customer.</p>`,
+        subject: `Orders to buy: ${created.length} new paid order line${created.length === 1 ? "" : "s"}`,
+        html: section("upgarage", "Japan used parts", "on UP-GARAGE and ship via the Japan forwarder", "UP-GARAGE listing")
+          + section("1688", "1688 products", "on 1688 through the China agent (exact option shown) and ship via the forwarder", "1688 listing")
+          + `<p>Update each one in the admin panel (Japan Parts / 1688 Research) as you go. If something is no longer available, mark it unavailable and refund the customer.</p>`,
       }).catch(() => undefined);
     }
   }

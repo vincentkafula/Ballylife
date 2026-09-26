@@ -38,8 +38,25 @@ export interface Sourcing1688Settings {
     markupPct: number;
     vatPct: number;
     vatUpliftPct: number;
+    /** China buying agent's commission on the goods. */
+    agentFeePct: number;
+    /** Supplier -> agent warehouse shipping inside China, per unit. */
+    domesticShippingCny: number;
     classes: Record<string, ProductClassRates>;
     defaultClass: ProductClassRates;
+  };
+  /** Selling 1688 finds directly (bought through a China agent), and handing them to CJ. */
+  listing: {
+    /** List eligible finds in the store straight away. */
+    autoList: boolean;
+    /** Only offers selling this few units or fewer per order can be listed (we sell one at a time). */
+    maxMoq: number;
+    /** Stock shown to shoppers, capped -- the supplier's own stock isn't reserved for us. */
+    stockCap: number;
+    /** Also file a CJ sourcing request for each listed find; the listing switches to CJ once CJ sources it. */
+    autoSendToCj: boolean;
+    maxCjRequestsPerDay: number;
+    deliveryDays: { min: number; max: number };
   };
 }
 
@@ -57,11 +74,13 @@ export const DEFAULT_1688_SETTINGS: Sourcing1688Settings = {
   ],
   maxItemsPerKeyword: 50,
   refreshHours: 24 * 7,
-  filters: { sortType: "normal", merchantType: "any", supplierYears: "5", fastShippingOnly: false, maxMoq: null, priceMinCny: null, priceMaxCny: null },
+  filters: { sortType: "normal", merchantType: "any", supplierYears: "5", fastShippingOnly: false, maxMoq: 1, priceMinCny: null, priceMaxCny: null },
   estimate: {
     markupPct: 50,
     vatPct: 15,
     vatUpliftPct: 10,
+    agentFeePct: 5,
+    domesticShippingCny: 10,
     // SA customs duty is set per tariff heading; these are typical rates for each class.
     classes: {
       apparel: { dutyPct: 45, freightZar: 120 },
@@ -76,6 +95,7 @@ export const DEFAULT_1688_SETTINGS: Sourcing1688Settings = {
     },
     defaultClass: { dutyPct: 20, freightZar: 150 },
   },
+  listing: { autoList: true, maxMoq: 1, stockCap: 20, autoSendToCj: true, maxCjRequestsPerDay: 20, deliveryDays: { min: 15, max: 25 } },
 };
 
 // Storefront category -> estimate class, for productClass "auto".
@@ -110,6 +130,7 @@ export function normalise1688Settings(input: unknown): Sourcing1688Settings {
   const s = (input && typeof input === "object" ? input : {}) as Record<string, any>;
   const f = (s.filters && typeof s.filters === "object" ? s.filters : {}) as Record<string, unknown>;
   const e = (s.estimate && typeof s.estimate === "object" ? s.estimate : {}) as Record<string, any>;
+  const l = (s.listing && typeof s.listing === "object" ? s.listing : {}) as Record<string, any>;
   const classesIn = (e.classes && typeof e.classes === "object" ? e.classes : d.estimate.classes) as Record<string, unknown>;
   const classes: Record<string, ProductClassRates> = {};
   for (const [k, v] of Object.entries(classesIn)) {
@@ -130,7 +151,7 @@ export function normalise1688Settings(input: unknown): Sourcing1688Settings {
       merchantType: oneOf(f.merchantType, ["any", "superFactory", "certifiedMerchant"] as const, d.filters.merchantType),
       supplierYears: oneOf(String(f.supplierYears ?? d.filters.supplierYears), ["any", "5", "7", "10"] as const, d.filters.supplierYears),
       fastShippingOnly: Boolean(f.fastShippingOnly),
-      maxMoq: optNum(f.maxMoq, 1, 100_000),
+      maxMoq: f.maxMoq === undefined ? d.filters.maxMoq : optNum(f.maxMoq, 1, 100_000),
       priceMinCny: optNum(f.priceMinCny),
       priceMaxCny: optNum(f.priceMaxCny),
     },
@@ -138,9 +159,23 @@ export function normalise1688Settings(input: unknown): Sourcing1688Settings {
       markupPct: num(e.markupPct, d.estimate.markupPct, 0, 500),
       vatPct: num(e.vatPct, d.estimate.vatPct, 0, 100),
       vatUpliftPct: num(e.vatUpliftPct, d.estimate.vatUpliftPct, 0, 100),
+      agentFeePct: num(e.agentFeePct, d.estimate.agentFeePct, 0, 100),
+      domesticShippingCny: num(e.domesticShippingCny, d.estimate.domesticShippingCny, 0, 10_000),
       classes,
       defaultClass: rates(e.defaultClass, d.estimate.defaultClass),
     },
+    listing: (() => {
+      const days = (l.deliveryDays ?? d.listing.deliveryDays) as { min?: unknown; max?: unknown };
+      const min = num(days?.min, d.listing.deliveryDays.min, 1, 120);
+      return {
+        autoList: l.autoList === undefined ? d.listing.autoList : Boolean(l.autoList),
+        maxMoq: Math.round(num(l.maxMoq, d.listing.maxMoq, 1, 100)),
+        stockCap: Math.round(num(l.stockCap, d.listing.stockCap, 1, 10_000)),
+        autoSendToCj: l.autoSendToCj === undefined ? d.listing.autoSendToCj : Boolean(l.autoSendToCj),
+        maxCjRequestsPerDay: Math.round(num(l.maxCjRequestsPerDay, d.listing.maxCjRequestsPerDay, 0, 500)),
+        deliveryDays: { min, max: Math.max(min, num(days?.max, d.listing.deliveryDays.max, 1, 180)) },
+      };
+    })(),
   };
 }
 
@@ -158,7 +193,7 @@ export function actorInput(s: Sourcing1688Settings) {
     ...(s.filters.maxMoq ? { minOrderQuantity: s.filters.maxMoq } : {}),
     ...(s.filters.priceMinCny !== null ? { priceMin: s.filters.priceMinCny } : {}),
     ...(s.filters.priceMaxCny !== null ? { priceMax: s.filters.priceMaxCny } : {}),
-    includeSkuDetails: false,
+    includeSkuDetails: s.listing.autoList,
     proxyConfiguration: { useApifyProxy: true },
   };
 }
@@ -172,7 +207,10 @@ export interface Offer1688 {
   supplierName: string | null; supplierType: string | null; supplierYears: number | null; location: string | null;
   categoryPath: string | null; images: string[]; videoUrl: string | null; totalVariants: number | null;
   supportsDropship: boolean | null; deliveryLimitDays: number | null; sourceKeyword: string | null;
+  variants: Variant1688[]; specs: string[]; sellingPoints: string[];
 }
+
+export interface Variant1688 { skuId: string; label: string; priceCny: number | null; stock: number | null; image: string | null }
 
 const toNum = (v: unknown): number | null => {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -196,6 +234,41 @@ const images = (v: unknown): string[] =>
     .filter(u => /^https?:\/\//i.test(u))
     .slice(0, 12);
 
+const labelOf = (v: unknown): string | null => {
+  if (typeof v === "string") return v.trim() || null;
+  if (Array.isArray(v)) return v.map(x => labelOf(x)).filter(Boolean).join(" / ") || null;
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if (o.value !== undefined) return labelOf(o.value);
+    return Object.values(o).map(x => labelOf(x)).filter(Boolean).join(" / ") || null;
+  }
+  return v === null || v === undefined ? null : String(v);
+};
+
+function parseVariants(v: unknown): Variant1688[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((x): Variant1688 | null => {
+    if (!x || typeof x !== "object") return null;
+    const o = x as Record<string, unknown>;
+    const skuId = toStr(o.skuId ?? o.id ?? o.specId ?? o.sku);
+    const label = labelOf(o.skuSpec ?? o.spec ?? o.specs ?? o.attributes ?? o.specAttrs ?? o.name);
+    if (!skuId || !label) return null;
+    const img = toStr(o.image ?? o.imageUrl);
+    return {
+      skuId, label: label.replace(/;/g, " / ").slice(0, 80),
+      priceCny: toNum(o.discountPrice ?? o.price ?? o.priceCny ?? o.consignPrice),
+      stock: toNum(o.stock ?? o.amountOnSale ?? o.canBookCount),
+      image: img ? (img.startsWith("//") ? `https:${img}` : img) : null,
+    };
+  }).filter((x): x is Variant1688 => x !== null).slice(0, 60);
+}
+
+function textList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(x => (x && typeof x === "object" ? [labelOf((x as Record<string, unknown>).name), labelOf((x as Record<string, unknown>).value)].filter(Boolean).join(": ") : toStr(x))).filter((x): x is string => Boolean(x)).slice(0, 20);
+  if (v && typeof v === "object") return Object.entries(v as Record<string, unknown>).map(([k, x]) => `${k}: ${labelOf(x) ?? ""}`).slice(0, 20);
+  return [];
+}
+
 /** One search row -> an offer, or null for rows that aren't products (or lack an id, title or price). */
 export function parse1688Item(item: Record<string, unknown>): Offer1688 | null {
   const offerId = toStr(item.offerId);
@@ -212,6 +285,7 @@ export function parse1688Item(item: Record<string, unknown>): Offer1688 | null {
     images: images(item.images), videoUrl: toStr(item.videoUrl), totalVariants: toNum(item.totalVariants),
     supportsDropship: typeof item.supportsDropship === "boolean" ? item.supportsDropship : null,
     deliveryLimitDays: toNum(item.deliveryLimitDays), sourceKeyword: toStr(item.sourceKeyword),
+    variants: parseVariants(item.variants), specs: textList(item.specs), sellingPoints: textList(item.sellingPoints),
   };
 }
 
@@ -242,13 +316,13 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function estimate1688(priceCny: number, productClass: string, cnyToZar: number, usdToZar: number | null, s: Sourcing1688Settings): Estimate1688 {
   const rates = s.estimate.classes[productClass] ?? s.estimate.defaultClass;
-  const unitZar = priceCny * cnyToZar;
+  const unitZar = (priceCny + s.estimate.domesticShippingCny) * cnyToZar * (1 + s.estimate.agentFeePct / 100);
   const dutyZar = (rates.dutyPct / 100) * (unitZar + rates.freightZar);
   const importVatZar = (s.estimate.vatPct / 100) * (unitZar * (1 + s.estimate.vatUpliftPct / 100) + dutyZar);
   const landedZar = unitZar + rates.freightZar + dutyZar + importVatZar;
   return {
     productClass, cnyToZar, unitZar: r2(unitZar), freightZar: r2(rates.freightZar), dutyZar: r2(dutyZar), importVatZar: r2(importVatZar),
     landedZar: r2(landedZar), markupPct: s.estimate.markupPct, resaleZar: Math.ceil(landedZar * (1 + s.estimate.markupPct / 100) - 1e-9),
-    unitUsd: usdToZar ? r2(unitZar / usdToZar) : null,
+    unitUsd: usdToZar ? r2((priceCny * cnyToZar) / usdToZar) : null, // CJ's target: the bare goods price
   };
 }

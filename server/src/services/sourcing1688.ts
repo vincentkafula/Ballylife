@@ -12,26 +12,41 @@
  *     that CJ product is imported and listed like any other CJ product --
  *     priced from CJ's cost, fulfilled by CJ. Failures record CJ's reason.
  *
- * Shoppers never see 1688 data: nothing here is served by storefront routes.
+ * Selling before CJ has it (listing.autoList): eligible finds (MOQ within
+ * listing.maxMoq, photos, known options) are also listed in the Ballylife
+ * store straight away -- priced from the estimate (goods + China shipping +
+ * agent fee + freight + duty + VAT + markup), white-labelled like CJ items,
+ * and fulfilled by hand: a paid order becomes a task in the buy-and-forward
+ * queue (staff buy on 1688 through a China agent). With autoSendToCj each
+ * listed find is also sent to CJ (up to a daily cap); when CJ sources it the
+ * CJ listing replaces the agent listing.
  */
 import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
 import { runApifyActor, isApifyConfigured, ApifyError } from "./apifyClient";
 import { createCjSourcing, queryCjSourcing, isCjConfigured, isCjPointsError } from "./cjDropshippingClient";
-import { importCjProductByPid } from "./cjCatalog";
+import { importCjProductByPid, HOUSE_SELLER_ID, ensureHouseStore, productSlug } from "./cjCatalog";
+import { categorizeProduct } from "../utils/productCategorizer";
+import { cleanProductName, cleanDescriptionText } from "../utils/productNaming";
+import { setChinaAgentDeliveryDays } from "../utils/delivery";
+import { variantIdForVid } from "../utils/cjVariants";
 import {
   normalise1688Settings, DEFAULT_1688_SETTINGS, actorInput, parse1688Run, estimate1688, classFor,
-  type Sourcing1688Settings, type Offer1688,
+  type Sourcing1688Settings, type Offer1688, type Variant1688,
 } from "../utils/sourcing1688";
 
 type Row = Record<string, any>;
 export const ACTOR_1688 = process.env.SOURCING_1688_ACTOR_ID || "sourabhbgp~1688-scraper";
+export const SOURCE_1688 = "1688";
+const FALLBACK_CATEGORY = process.env.CJ_DEFAULT_CATEGORY_ID || "cat-03";
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
 export async function get1688Settings(): Promise<Sourcing1688Settings> {
   const { rows } = await pool!.query(`SELECT settings FROM sourcing_1688_settings WHERE id = 'default'`);
-  return normalise1688Settings(rows[0]?.settings ?? DEFAULT_1688_SETTINGS);
+  const s = normalise1688Settings(rows[0]?.settings ?? DEFAULT_1688_SETTINGS);
+  setChinaAgentDeliveryDays(s.listing.deliveryDays);
+  return s;
 }
 
 export async function save1688Settings(input: unknown, userId: string): Promise<{ settings: Sourcing1688Settings; reestimated: number }> {
@@ -39,6 +54,7 @@ export async function save1688Settings(input: unknown, userId: string): Promise<
   const { rows } = await pool!.query(`SELECT 1 FROM sourcing_1688_settings WHERE id = 'default'`);
   if (rows.length) await pool!.query(`UPDATE sourcing_1688_settings SET settings = $1, updated_at = now(), updated_by = $2 WHERE id = 'default'`, [JSON.stringify(settings), userId]);
   else await pool!.query(`INSERT INTO sourcing_1688_settings (id, settings, updated_by) VALUES ('default', $1, $2)`, [JSON.stringify(settings), userId]);
+  setChinaAgentDeliveryDays(settings.listing.deliveryDays);
   const reestimated = await reestimateAll(settings);
   logger.info("sourcing1688.settings_saved", { by: userId, enabled: settings.enabled, keywords: settings.keywords.length });
   return { settings, reestimated };
@@ -51,18 +67,132 @@ async function rates(): Promise<{ cny: number | null; usd: number | null }> {
 }
 
 /** Recomputes every offer's estimate (after settings or rate changes) -- no actor calls. */
+/** Also re-prices direct listings. Called on settings save and when the yuan rate moves. */
 export async function reestimateAll(settings?: Sourcing1688Settings): Promise<number> {
   const s = settings ?? await get1688Settings();
   const { cny, usd } = await rates();
   if (!cny) return 0;
-  const { rows } = await pool!.query(`SELECT id, title, price_cny, source_keyword FROM sourcing_1688_offers`);
+  const { rows } = await pool!.query(`SELECT id, title, price_cny, source_keyword, direct_product_id, variants FROM sourcing_1688_offers`);
   for (const r of rows) {
     const kwClass = s.keywords.find(k => k.keyword === r.source_keyword)?.productClass ?? "auto";
     const cls = classFor(r.title, kwClass);
     await pool!.query(`UPDATE sourcing_1688_offers SET product_class = $1, estimate = $2 WHERE id = $3`,
       [cls, JSON.stringify(estimate1688(Number(r.price_cny), cls, cny, usd, s)), r.id]);
+    if (r.direct_product_id) {
+      const pricing = listingPricing(Number(r.price_cny), Array.isArray(r.variants) ? r.variants : [], cls, cny, usd, s);
+      await pool!.query(`UPDATE mkt_products SET price = $1, variants = $2, price_breakdown = $3, updated_at = now() WHERE id::text = $4`,
+        [pricing.price, JSON.stringify(pricing.variants.map(v => ({ ...v, stock: v.stock }))), JSON.stringify(pricing.breakdown), r.direct_product_id]);
+    }
   }
   return rows.length;
+}
+
+// ── Direct listings (bought through a China agent) ───────────────────────
+
+interface ListingVariant { id: string; type: string; value: string; sku: string; stock: number; additionalPrice: number }
+
+/** Store price for an offer: the estimate's resale price, per option. */
+function listingPricing(priceCny: number, variants: Variant1688[], cls: string, cny: number, usd: number | null, s: Sourcing1688Settings, stockCap = s.listing.stockCap) {
+  const priced = variants.map(v => ({ v, resale: estimate1688(v.priceCny ?? priceCny, cls, cny, usd, s).resaleZar }));
+  const base = priced.length ? Math.min(...priced.map(x => x.resale)) : estimate1688(priceCny, cls, cny, usd, s).resaleZar;
+  const breakdown = estimate1688(priced.length ? (Math.min(...variants.map(v => v.priceCny ?? priceCny))) : priceCny, cls, cny, usd, s);
+  const listingVariants: ListingVariant[] = variants.length > 1 ? priced.map(({ v, resale }) => ({
+    id: variantIdForVid(`1688:${v.skuId}`), type: "Option", value: v.label, sku: v.skuId,
+    stock: Math.max(0, Math.min(stockCap, v.stock ?? stockCap)), additionalPrice: Math.max(0, resale - base),
+  })) : [];
+  return { price: base, variants: listingVariants, breakdown };
+}
+
+function whyNotListable(o: Offer1688, s: Sourcing1688Settings): string | null {
+  if (o.outOfStock) return "Out of stock on 1688";
+  if (o.moq !== null && o.moq > s.listing.maxMoq) return `MOQ ${o.moq} is above ${s.listing.maxMoq}`;
+  if (!o.images.length) return "No photos";
+  if ((o.totalVariants ?? 0) > 1 && o.variants.length < 2) return "Has options, but the options weren't returned";
+  return null;
+}
+
+function listingDescription(o: Offer1688): string {
+  const lines = [...o.sellingPoints, ...o.specs].map(l => cleanDescriptionText(l)).filter(Boolean);
+  return lines.length ? lines.join("\n") : cleanProductName(o.title);
+}
+
+/** Lists (or refreshes) one find in the Ballylife store, or records why it can't be. */
+async function listOffer(offerRowId: string, o: Offer1688, cls: string, s: Sourcing1688Settings, cny: number, usd: number | null, known: Set<string>): Promise<"listed" | "updated" | "skipped"> {
+  const { rows: offerRows } = await pool!.query(`SELECT status, direct_product_id FROM sourcing_1688_offers WHERE id = $1`, [offerRowId]);
+  const state = offerRows[0];
+  if (!state || state.status === "dismissed" || state.status === "listed") return "skipped"; // dismissed, or CJ's listing has taken over
+  const reason = whyNotListable(o, s);
+  const existingId: string | null = state.direct_product_id ?? null;
+  if (reason) {
+    await pool!.query(`UPDATE sourcing_1688_offers SET not_listed_reason = $1 WHERE id = $2`, [reason, offerRowId]);
+    if (existingId) await pool!.query(`UPDATE mkt_products SET status = 'out_of_stock', updated_at = now() WHERE id::text = $1 AND status = 'active'`, [existingId]);
+    return "skipped";
+  }
+  const name = cleanProductName(o.title) || o.title;
+  const description = listingDescription(o);
+  const categoryId = categorizeProduct(name, [o.categoryPath], known, FALLBACK_CATEGORY) ?? FALLBACK_CATEGORY;
+  const pricing = listingPricing(o.priceCny, o.variants, cls, cny, usd, s);
+  const stock = pricing.variants.length ? pricing.variants.reduce((n, v) => n + v.stock, 0) : Math.min(s.listing.stockCap, o.stock ?? s.listing.stockCap);
+  const images = [...o.images, ...o.variants.map(v => v.image).filter((x): x is string => Boolean(x))].filter((u, i, a) => a.indexOf(u) === i).slice(0, 12);
+  const common = [name, description, description.split("\n")[0].slice(0, 160), pricing.price, JSON.stringify(images), JSON.stringify(pricing.variants), stock,
+    categoryId, o.url, o.sourceKeyword, o.priceCny, JSON.stringify(pricing.breakdown), stock > 0 ? "active" : "out_of_stock"];
+
+  if (existingId) {
+    const { rows } = await pool!.query(
+      `UPDATE mkt_products SET name = $1, description = $2, short_description = $3, price = $4, images = $5, variants = $6, stock = $7, category_id = $8,
+         source_url = $9, source_keyword = $10, original_price = $11, price_breakdown = $12, status = $13, source_status = 'listed', source_last_seen_at = now(), updated_at = now()
+       WHERE id::text = $14 AND status <> 'inactive' RETURNING id`,
+      [...common, existingId]
+    );
+    await pool!.query(`UPDATE sourcing_1688_offers SET not_listed_reason = NULL WHERE id = $1`, [offerRowId]);
+    return rows.length ? "updated" : "skipped";
+  }
+  const slug = productSlug(name, `cn-${o.offerId}`);
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_products (name, description, short_description, price, images, variants, stock, category_id, source_url, source_keyword, original_price, price_breakdown, status,
+       seller_id, slug, currency, emoji, brand, fulfillment_type, delivery_profile, source, source_listing_id, source_status, source_last_seen_at, original_currency, original_name)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'ZAR','📦','Ballylife','imported','china_agent',$16,$17,'listed',now(),'CNY',$18) RETURNING id`,
+    [...common, HOUSE_SELLER_ID, slug, SOURCE_1688, o.offerId, o.title]
+  );
+  await pool!.query(`UPDATE sourcing_1688_offers SET direct_product_id = $1, not_listed_reason = NULL WHERE id = $2`, [String(rows[0].id), offerRowId]);
+  return "listed";
+}
+
+/** Direct listings whose find wasn't in the last two runs: take them off sale (they come back if it reappears). */
+async function markMissingListings(seenOfferIds: Set<string>, keywords: string[], s: Sourcing1688Settings): Promise<number> {
+  const graceMs = s.refreshHours * 1.5 * 3600_000;
+  const { rows } = await pool!.query(
+    `SELECT offer_id, direct_product_id, last_seen_at, source_keyword FROM sourcing_1688_offers WHERE direct_product_id IS NOT NULL AND status <> 'listed'`
+  );
+  let removed = 0;
+  for (const r of rows) {
+    if (seenOfferIds.has(String(r.offer_id)) || !keywords.includes(r.source_keyword)) continue;
+    if (Date.now() - new Date(r.last_seen_at).getTime() < graceMs) continue;
+    const { rows: upd } = await pool!.query(
+      `UPDATE mkt_products SET status = 'out_of_stock', source_status = 'removed', updated_at = now() WHERE id::text = $1 AND status = 'active' RETURNING id`, [r.direct_product_id]
+    );
+    removed += upd.length;
+  }
+  return removed;
+}
+
+/** Sends the best-selling listed finds that aren't with CJ yet, up to the daily cap. */
+export async function autoSendToCj(s: Sourcing1688Settings): Promise<number> {
+  if (!s.listing.autoSendToCj || !isCjConfigured() || s.listing.maxCjRequestsPerDay <= 0) return 0;
+  const { rows: today } = await pool!.query(`SELECT COUNT(*)::int AS n FROM sourcing_1688_offers WHERE sent_to_cj_at > $1`, [new Date(Date.now() - 86400_000)]);
+  const room = s.listing.maxCjRequestsPerDay - Number(today[0].n);
+  if (room <= 0) return 0;
+  const { rows } = await pool!.query(
+    `SELECT id FROM sourcing_1688_offers WHERE direct_product_id IS NOT NULL AND cj_sourcing_id IS NULL AND status IN ('new', 'shortlisted')
+     ORDER BY sold_count DESC NULLS LAST LIMIT $1`, [room]
+  );
+  let sent = 0;
+  for (const r of rows) {
+    try { await sendOfferToCj(r.id); sent++; }
+    catch (err) { logger.warn("sourcing1688.auto_send_failed", { id: r.id, error: err instanceof Error ? err.message : String(err) }); }
+  }
+  if (sent) logger.info("sourcing1688.auto_sent_to_cj", { sent });
+  return sent;
 }
 
 // ── Research run ─────────────────────────────────────────────────────────
@@ -99,14 +229,22 @@ async function upsertOffer(o: Offer1688, s: Sourcing1688Settings, cny: number, u
   return "created";
 }
 
-export interface Run1688Result { ran: boolean; reason?: string; status?: string; items?: number; created?: number; updated?: number; error?: string }
+async function saveOfferExtras(o: Offer1688): Promise<{ id: string; cls: string }> {
+  const { rows } = await pool!.query(
+    `UPDATE sourcing_1688_offers SET variants = $1, specs = $2, selling_points = $3 WHERE offer_id = $4 RETURNING id, product_class`,
+    [JSON.stringify(o.variants), JSON.stringify(o.specs), JSON.stringify(o.sellingPoints), o.offerId]
+  );
+  return { id: rows[0].id, cls: rows[0].product_class };
+}
+
+export interface Run1688Result { ran: boolean; reason?: string; status?: string; items?: number; created?: number; updated?: number; listed?: number; error?: string }
 
 /** One actor run covering every enabled keyword. Never throws. */
 export async function run1688Research(opts: { force?: boolean } = {}): Promise<Run1688Result> {
   if (running) return { ran: false, reason: "A research run is already in progress." };
   running = true;
   const startedAt = new Date();
-  const out = { status: "ok", items: 0, created: 0, updated: 0, skipped: 0, excluded: 0, error: null as string | null, runId: null as string | null };
+  const out = { status: "ok", items: 0, created: 0, updated: 0, skipped: 0, excluded: 0, listed: 0, removed: 0, error: null as string | null, runId: null as string | null };
   let keywords: string[] = [];
   try {
     const s = await get1688Settings();
@@ -131,7 +269,18 @@ export async function run1688Research(opts: { force?: boolean } = {}): Promise<R
         logger.error("sourcing1688.schema_changed", { items: items.length, usable: parsed.offers.length, sampleKeys: parsed.sampleKeys });
       } else {
         if (!items.length) out.status = "empty";
-        for (const o of parsed.offers) out[await upsertOffer(o, s, cny, usd)]++;
+        const { rows: catRows } = await pool!.query(`SELECT id FROM mkt_categories`);
+        const known = new Set<string>(catRows.map((r: Row) => r.id));
+        if (s.listing.autoList) await ensureHouseStore();
+        for (const o of parsed.offers) {
+          out[await upsertOffer(o, s, cny, usd)]++;
+          const { id, cls } = await saveOfferExtras(o);
+          if (s.listing.autoList) {
+            const outcome = await listOffer(id, o, cls, s, cny, usd, known);
+            if (outcome === "listed") out.listed++;
+          }
+        }
+        if (s.listing.autoList && items.length) out.removed = await markMissingListings(new Set(parsed.offers.map(o => o.offerId)), keywords, s);
       }
     } catch (err) {
       out.status = "failed";
@@ -144,7 +293,8 @@ export async function run1688Research(opts: { force?: boolean } = {}): Promise<R
       [out.runId, JSON.stringify(keywords), out.status, out.items, out.created, out.updated, out.skipped, out.excluded, out.error, startedAt]
     ).catch(() => undefined);
     logger.info("sourcing1688.run_finished", { ...out, keywords: keywords.length });
-    return { ran: true, status: out.status, items: out.items, created: out.created, updated: out.updated, error: out.error ?? undefined };
+    if (out.status === "ok") await autoSendToCj(s).catch(err => logger.error("sourcing1688.auto_send_crashed", { error: err instanceof Error ? err.message : String(err) }));
+    return { ran: true, status: out.status, items: out.items, created: out.created, updated: out.updated, listed: out.listed, error: out.error ?? undefined };
   } catch (err) {
     logger.error("sourcing1688.run_crashed", { error: err instanceof Error ? err.message : String(err) });
     return { ran: false, reason: "Research run failed -- see server logs." };
@@ -161,7 +311,13 @@ export async function setOfferStatus(id: string, status: typeof PICK_STATUSES[nu
   const { rows } = await pool!.query(
     `UPDATE sourcing_1688_offers SET status = $1, updated_at = now() WHERE id::text = $2 AND status IN ('new', 'shortlisted', 'dismissed') RETURNING *`, [status, id]
   );
-  return rows[0] ?? null;
+  const o = rows[0];
+  if (o?.direct_product_id) {
+    // Dismissing a find takes its listing down; restoring it puts it back.
+    if (status === "dismissed") await pool!.query(`UPDATE mkt_products SET status = 'inactive', updated_at = now() WHERE id::text = $1`, [o.direct_product_id]);
+    else await pool!.query(`UPDATE mkt_products SET status = CASE WHEN stock > 0 THEN 'active' ELSE 'out_of_stock' END, updated_at = now() WHERE id::text = $1 AND status = 'inactive'`, [o.direct_product_id]);
+  }
+  return o ?? null;
 }
 
 export class SourcingError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
@@ -198,7 +354,7 @@ export async function sendOfferToCj(id: string): Promise<Row> {
 export async function syncCjSourcing(): Promise<{ checked: number; sourced: number; failed: number; listed: number }> {
   const result = { checked: 0, sourced: 0, failed: 0, listed: 0 };
   if (!isCjConfigured()) return result;
-  const { rows } = await pool!.query(`SELECT id, offer_id, cj_sourcing_id, cj_product_id, status FROM sourcing_1688_offers WHERE status IN ('sent_to_cj', 'sourced') AND cj_sourcing_id IS NOT NULL`);
+  const { rows } = await pool!.query(`SELECT id, offer_id, cj_sourcing_id, cj_product_id, direct_product_id, status FROM sourcing_1688_offers WHERE status IN ('sent_to_cj', 'sourced') AND cj_sourcing_id IS NOT NULL`);
   if (!rows.length) return result;
   const pending = rows.filter((r: Row) => r.status === "sent_to_cj");
   for (let i = 0; i < pending.length; i += 100) {
@@ -231,6 +387,10 @@ export async function syncCjSourcing(): Promise<{ checked: number; sourced: numb
       if (listed && productId) {
         result.listed++;
         await pool!.query(`UPDATE sourcing_1688_offers SET status = 'listed', store_product_id = $1, updated_at = now() WHERE id = $2`, [productId, row.id]);
+        // CJ now stocks and ships it: retire the agent listing in favour of CJ's.
+        if (row.direct_product_id) {
+          await pool!.query(`UPDATE mkt_products SET status = 'inactive', source_status = 'replaced_by_cj', updated_at = now() WHERE id::text = $1`, [row.direct_product_id]);
+        }
       }
     } catch (err) {
       if (isCjPointsError(err)) break; // try the rest on the next pass

@@ -75,7 +75,7 @@ export function JapanPartsAdminPanel() {
 
   const load = useCallback(async () => {
     try {
-      const [s, r, l, t] = await Promise.all([mktJapanParts.settings(), mktJapanParts.runs(), mktJapanParts.listings(), mktJapanParts.tasks()]);
+      const [s, r, l, t] = await Promise.all([mktJapanParts.settings(), mktJapanParts.runs(), mktJapanParts.listings(), mktJapanParts.tasks("upgarage")]);
       if (s.success) { setSettings(s.data.settings); setApifyConfigured(s.data.apifyConfigured); setRefreshing(s.data.refreshing); }
       if (r.success) setRuns(r.data);
       if (l.success) setListings(l.data);
@@ -281,7 +281,7 @@ export function JapanPartsAdminPanel() {
   );
 }
 
-function TaskRow({ t, onUpdate }: { t: JapanPartsTask; onUpdate: (patch: Parameters<typeof mktJapanParts.updateTask>[1]) => void }) {
+export function TaskRow({ t, onUpdate }: { t: JapanPartsTask; onUpdate: (patch: Parameters<typeof mktJapanParts.updateTask>[1]) => void }) {
   const [tracking, setTracking] = useState(t.trackingNumber ?? "");
   const [carrier, setCarrier] = useState(t.carrier ?? "");
   const [ref, setRef] = useState(t.purchaseRef ?? "");
@@ -290,11 +290,12 @@ function TaskRow({ t, onUpdate }: { t: JapanPartsTask; onUpdate: (patch: Paramet
     <div className="rounded-xl border border-gray-100 p-3 grid sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] gap-2 items-center text-xs">
       <div className="min-w-0">
         <p className="font-semibold text-gray-900 truncate" title={t.productName ?? ""}>{t.productName ?? t.productId}</p>
+        {t.variantLabel && <p className="text-gray-700">Option: <b>{t.variantLabel}</b>{t.supplierSku ? <span className="text-gray-500"> · SKU {t.supplierSku}</span> : null}</p>}
         <p className="text-gray-500">{t.orderNumber} · qty {t.quantity}
-          {t.sourceUrl && <> · <a href={t.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#8A6420] inline-flex items-center gap-0.5">UP-GARAGE <ExternalLink className="w-3 h-3" /></a></>}
+          {t.sourceUrl && <> · <a href={t.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#8A6420] inline-flex items-center gap-0.5">{t.source === "1688" ? "1688" : "UP-GARAGE"} <ExternalLink className="w-3 h-3" /></a></>}
         </p>
       </div>
-      <input className={input} placeholder="UP-GARAGE order ref" value={ref} onChange={e => setRef(e.target.value)} onBlur={() => ref !== (t.purchaseRef ?? "") && onUpdate({ purchaseRef: ref })} />
+      <input className={input} placeholder={t.source === "1688" ? "Agent order ref" : "UP-GARAGE order ref"} value={ref} onChange={e => setRef(e.target.value)} onBlur={() => ref !== (t.purchaseRef ?? "") && onUpdate({ purchaseRef: ref })} />
       <input className={input} placeholder="Tracking number" value={tracking} onChange={e => setTracking(e.target.value)} onBlur={() => tracking !== (t.trackingNumber ?? "") && onUpdate({ trackingNumber: tracking })} />
       <input className={input} placeholder="Carrier" value={carrier} onChange={e => setCarrier(e.target.value)} onBlur={() => carrier !== (t.carrier ?? "") && onUpdate({ carrier })} />
       <select className={input} value={t.status} onChange={e => onUpdate({ status: e.target.value, trackingNumber: tracking || undefined, carrier: carrier || undefined })}>

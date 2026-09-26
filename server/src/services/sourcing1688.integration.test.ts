@@ -22,6 +22,7 @@ let datasetItems: unknown[] = [];
 let runStatus = "SUCCEEDED";
 let sourcingRecords: unknown[] = [];
 const cjCalls: { path: string; body?: unknown }[] = [];
+let nextSourcingId = 285;
 
 const EARBUDS = {
   offerId: "617247852601", title: "Wireless Bluetooth Earphones TWS", url: "https://detail.1688.com/offer/617247852601.html",
@@ -41,17 +42,21 @@ beforeAll(async () => {
   const authRouter = (await import("../routes/authRouter")).default;
   const marketplaceRouter = (await import("../routes/marketplaceRouter")).default;
   const router = (await import("../routes/sourcing1688Router")).default;
+  const japanPartsRouter = (await import("../routes/japanPartsRouter")).default;
   app = express();
   app.use(express.json());
   app.use("/api/auth", authRouter);
   app.use("/api/marketplace", marketplaceRouter);
   app.use("/api/marketplace", router);
+  app.use("/api/marketplace", japanPartsRouter);
 
   await pool.query(`INSERT INTO mkt_categories (id, name, slug, icon) VALUES ('cat-01','Electronics','electronics','📱'), ('cat-03','Home & Garden','home-garden','🏠')`);
   await pool.query(`INSERT INTO mkt_fx_rates (currency, rate_to_zar) VALUES ('USD', 18), ('CNY', 2.5)`);
   const hash = await bcrypt.hash("AdminPass123", 5);
   await pool.query(`INSERT INTO users (username, password_hash, role, name, email) VALUES ('s1688admin','${hash}','marketplace_admin','Admin','s1688@example.com')`);
   adminToken = (await request(app).post("/api/auth/login").send({ username: "s1688admin", password: "AdminPass123" })).body.data.token;
+  // Manual CJ hand-off first; automatic sending is covered at the end.
+  await s1688.save1688Settings({ listing: { autoSendToCj: false } }, "test");
 });
 
 beforeEach(() => {
@@ -67,7 +72,7 @@ beforeEach(() => {
       const path = url.pathname.replace(/^.*\/v1/, "");
       cjCalls.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       if (path.includes("getAccessToken")) return cj({ accessToken: "t", accessTokenExpiryDate: new Date(Date.now() + 864e5).toISOString(), refreshToken: "r", refreshTokenExpiryDate: new Date(Date.now() + 864e5).toISOString() });
-      if (path === "/product/sourcing/create") return cj({ cjSourcingId: "285", result: "success" });
+      if (path === "/product/sourcing/create") return cj({ cjSourcingId: String(nextSourcingId++), result: "success" });
       if (path === "/product/sourcing/queryList") return cj(sourcingRecords);
       if (path === "/product/query") return cj({
         pid: "cj-pid-1", productNameEn: "Wireless Earbuds TWS", categoryName: "Earphones", sellPrice: 4,
@@ -107,7 +112,8 @@ describe("1688 research", () => {
 
     const o = await offer("617247852601");
     expect(o).toMatchObject({ status: "new", moq: 2, supplier_years: 8, product_class: "electronics" });
-    expect(o.estimate).toMatchObject({ unitZar: 63.75, resaleZar: 392, unitUsd: 3.54 });
+    expect(o.estimate).toMatchObject({ unitZar: 93.19, resaleZar: 451, unitUsd: 3.54 }); // incl. 5% agent fee + ¥10 China shipping
+    expect(o).toMatchObject({ direct_product_id: null, not_listed_reason: "MOQ 2 is above 1" }); // we sell one at a time
   });
 
   it("updates offers on the next run instead of duplicating them", async () => {
@@ -184,7 +190,7 @@ describe("CJ sourcing", () => {
     await pool.query(`UPDATE sourcing_1688_offers SET status = 'shortlisted', cj_sourcing_id = NULL WHERE offer_id = '700000000001'`);
     const lamp = await offer("700000000001");
     await request(app).post(`/api/marketplace/admin/sourcing-1688/offers/${lamp.id}/send-to-cj`).set("Authorization", `Bearer ${adminToken}`);
-    sourcingRecords = [{ sourceId: "285", sourceStatus: "5", sourceStatusStr: "Sourcing failed", failReason: 31, failReasonStr: "The product link is invalid" }];
+    sourcingRecords = [{ sourceId: (await offer("700000000001")).cj_sourcing_id, sourceStatus: "5", sourceStatusStr: "Sourcing failed", failReason: 31, failReasonStr: "The product link is invalid" }];
     await s1688.syncCjSourcing();
     expect(await offer("700000000001")).toMatchObject({ status: "sourcing_failed", cj_fail_reason: "The product link is invalid" });
     const again = await request(app).post(`/api/marketplace/admin/sourcing-1688/offers/${lamp.id}/send-to-cj`).set("Authorization", `Bearer ${adminToken}`);
@@ -194,5 +200,98 @@ describe("CJ sourcing", () => {
   it("nothing from 1688 is visible on the storefront", async () => {
     const res = await request(app).get("/api/marketplace/products?limit=50");
     expect(JSON.stringify(res.body)).not.toMatch(/1688|alicdn|Shenzhen Audio/);
+  });
+});
+
+describe("Selling 1688 finds directly (China agent), then handing them to CJ", () => {
+  const FAN = {
+    offerId: "800000000001", title: "USB Desk Fan Rechargeable", url: "https://detail.1688.com/offer/800000000001.html", priceCny: 20, minOrderQuantity: 1,
+    soldCount: 90000, supplierYearsOnPlatform: 9, images: ["https://cbu01.alicdn.com/img/fan.jpg"], totalVariants: 2, sourceKeyword: "desk fan",
+    sellingPoints: ["3 speeds", "USB-C rechargeable"],
+    variants: [{ skuId: "sku-white", skuSpec: "Color:White", price: 20, stock: 500 }, { skuId: "sku-pink", skuSpec: "Color:Pink", price: 24, stock: 3 }],
+  };
+  let fanProductId: string;
+
+  it("lists an eligible find in the store straight away, priced per option from the estimate", async () => {
+    datasetItems = [FAN];
+    const out = await s1688.run1688Research({ force: true });
+    expect(out.listed).toBe(1);
+    const o = await offer("800000000001");
+    fanProductId = o.direct_product_id;
+    const { rows } = await pool.query(`SELECT * FROM mkt_products WHERE id::text = $1`, [fanProductId]);
+    const p = rows[0];
+    expect(p).toMatchObject({ source: "1688", source_listing_id: "800000000001", status: "active", delivery_profile: "china_agent", seller_id: "sel-ballylife", original_currency: "CNY" });
+    expect(p.variants).toHaveLength(2);
+    const [white, pink] = p.variants;
+    expect(white).toMatchObject({ value: "Color:White", sku: "sku-white", stock: 20, additionalPrice: 0 }); // stock capped at 20
+    expect(pink).toMatchObject({ value: "Color:Pink", sku: "sku-pink", stock: 3 });
+    expect(pink.additionalPrice).toBeGreaterThan(0);
+    expect(p.description).toContain("USB-C rechargeable");
+  });
+
+  it("is white-labelled on the storefront, with the China-agent delivery window", async () => {
+    const res = await request(app).get(`/api/marketplace/products/${fanProductId}`);
+    const p = res.body.data.product ?? res.body.data;
+    expect(p).toMatchObject({ shippingIncluded: true, deliveryDays: { min: 15, max: 25 } });
+    expect(JSON.stringify(res.body)).not.toMatch(/1688|alicdn/);
+  });
+
+  it("turns a paid order into a buy task with the exact option and 1688 SKU", async () => {
+    const { rows: p } = await pool.query(`SELECT variants, name FROM mkt_products WHERE id::text = $1`, [fanProductId]);
+    const pink = p[0].variants[1];
+    await pool.query(
+      `INSERT INTO mkt_orders (order_number, user_id, items, total_amount, status, payment_status) VALUES ('VNK-ORD-CN1', 'u1', $1, 500, 'confirmed', 'payment_confirmed')`,
+      [JSON.stringify([{ productId: fanProductId, productName: p[0].name, quantity: 2, variantId: pink.id, variantLabel: pink.value }])]
+    );
+    const { enqueueJapanPartOrders } = await import("./japanParts");
+    expect(await enqueueJapanPartOrders()).toBe(1);
+    const res = await request(app).get("/api/marketplace/admin/japan-parts/fulfillments?source=1688").set("Authorization", `Bearer ${adminToken}`);
+    expect(res.body.data[0]).toMatchObject({ orderNumber: "VNK-ORD-CN1", source: "1688", quantity: 2, variantLabel: "Color:Pink ×2", supplierSku: "sku-pink", sourceUrl: FAN.url });
+    // Not a one-off: stays on sale.
+    const { rows } = await pool.query(`SELECT status FROM mkt_products WHERE id::text = $1`, [fanProductId]);
+    expect(rows[0].status).toBe("active");
+    // And it isn't mixed into the Japan parts queue.
+    const jp = await request(app).get("/api/marketplace/admin/japan-parts/fulfillments").set("Authorization", `Bearer ${adminToken}`);
+    expect(jp.body.data.find((t: { orderNumber: string }) => t.orderNumber === "VNK-ORD-CN1")).toBeUndefined();
+  });
+
+  it("survives the CJ-only catalogue rule", async () => {
+    const { enforceCjOnlyCatalog } = await import("./cjCatalog");
+    await enforceCjOnlyCatalog();
+    const { rows } = await pool.query(`SELECT status FROM mkt_products WHERE id::text = $1`, [fanProductId]);
+    expect(rows[0].status).toBe("active");
+  });
+
+  it("re-prices listings when the pricing settings change", async () => {
+    const before = Number((await pool.query(`SELECT price FROM mkt_products WHERE id::text = $1`, [fanProductId])).rows[0].price);
+    const s = await s1688.get1688Settings();
+    await s1688.save1688Settings({ ...s, estimate: { ...s.estimate, markupPct: 100 } }, "test");
+    const after = Number((await pool.query(`SELECT price FROM mkt_products WHERE id::text = $1`, [fanProductId])).rows[0].price);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("sends listed finds to CJ automatically, best sellers first, within the daily cap", async () => {
+    const s = await s1688.get1688Settings();
+    await s1688.save1688Settings({ ...s, listing: { ...s.listing, autoSendToCj: true, maxCjRequestsPerDay: 20 } }, "test");
+    expect(await s1688.autoSendToCj(await s1688.get1688Settings())).toBe(1);
+    expect((await offer("800000000001")).status).toBe("sent_to_cj");
+  });
+
+  it("when CJ sources it, CJ's listing takes over and the agent listing is retired", async () => {
+    sourcingRecords = [{ sourceId: (await offer("800000000001")).cj_sourcing_id, sourceStatus: "3", sourceStatusStr: "Sourcing succeeded", cjProductId: "cj-pid-1" }];
+    await s1688.syncCjSourcing();
+    const o = await offer("800000000001");
+    expect(o.status).toBe("listed");
+    const { rows } = await pool.query(`SELECT status, source_status FROM mkt_products WHERE id::text = $1`, [fanProductId]);
+    expect(rows[0]).toMatchObject({ status: "inactive", source_status: "replaced_by_cj" });
+    const { rows: cjListing } = await pool.query(`SELECT status FROM mkt_products WHERE id::text = $1`, [o.store_product_id]);
+    expect(cjListing[0].status).toBe("active");
+  });
+
+  it("a later research run doesn't bring the retired agent listing back", async () => {
+    datasetItems = [FAN];
+    await s1688.run1688Research({ force: true });
+    const { rows } = await pool.query(`SELECT status FROM mkt_products WHERE id::text = $1`, [fanProductId]);
+    expect(rows[0].status).toBe("inactive");
   });
 });

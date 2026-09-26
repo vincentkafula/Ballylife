@@ -680,7 +680,7 @@ export async function enforceCjOnlyCatalog(): Promise<{ products: number; catalo
   const { rows: products } = await pool!.query(
     `UPDATE mkt_products SET status = 'inactive', updated_at = now()
      WHERE status IN ('active', 'out_of_stock', 'pending_review')
-       AND (source IS NULL OR source <> 'upgarage') -- Japan used parts: the one allowed second source
+       AND (source IS NULL OR source NOT IN ('upgarage', '1688')) -- Japan used parts and 1688 agent listings
        AND (supplier_product_id IS NULL
             OR supplier_product_id NOT IN (SELECT id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping'))
      RETURNING id`

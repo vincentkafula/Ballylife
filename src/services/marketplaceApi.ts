@@ -482,7 +482,7 @@ export interface JapanPartsSettings {
 }
 export interface JapanPartsRun { id: string; keyword: string; status: string; items: number; created: number; updated: number; removed: number; skipped: number; error: string | null; startedAt: string; finishedAt: string | null }
 export interface JapanPartsListing { id: string; name: string; price: number; status: string; stock: number; conditionGrade: string | null; sourceUrl: string | null; sourceStatus: string | null; keyword: string | null; lastSeenAt: string | null; jpyTaxIncl: number | null; partsCategory: string | null; priceBreakdown: Record<string, number | string> | null }
-export interface JapanPartsTask { id: string; orderNumber: string | null; placedAt: string | null; productId: string; productName: string | null; quantity: number; sourceUrl: string | null; status: string; purchaseRef: string | null; forwarder: string | null; trackingNumber: string | null; carrier: string | null; notes: string | null; updatedAt: string }
+export interface JapanPartsTask { id: string; source?: string; variantLabel?: string | null; supplierSku?: string | null; orderNumber: string | null; placedAt: string | null; productId: string; productName: string | null; quantity: number; sourceUrl: string | null; status: string; purchaseRef: string | null; forwarder: string | null; trackingNumber: string | null; carrier: string | null; notes: string | null; updatedAt: string }
 
 export const mktJapanParts = {
   settings: () => api<Ok<{ settings: JapanPartsSettings; apifyConfigured: boolean; refreshing: boolean }>>("/api/marketplace/admin/japan-parts/settings"),
@@ -490,7 +490,7 @@ export const mktJapanParts = {
   refresh: () => api<Ok<{ started: boolean }>>("/api/marketplace/admin/japan-parts/refresh", { method: "POST" }),
   runs: () => api<Ok<JapanPartsRun[]>>("/api/marketplace/admin/japan-parts/runs"),
   listings: () => api<Ok<JapanPartsListing[]>>("/api/marketplace/admin/japan-parts/listings"),
-  tasks: () => api<Ok<JapanPartsTask[]>>("/api/marketplace/admin/japan-parts/fulfillments"),
+  tasks: (source: "upgarage" | "1688" = "upgarage") => api<Ok<JapanPartsTask[]>>(`/api/marketplace/admin/japan-parts/fulfillments?source=${source}`),
   updateTask: (id: string, patch: Partial<Pick<JapanPartsTask, "status" | "purchaseRef" | "forwarder" | "trackingNumber" | "carrier" | "notes">>) =>
     api<Ok<JapanPartsTask>>(`/api/marketplace/admin/japan-parts/fulfillments/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 };
@@ -499,14 +499,15 @@ export const mktJapanParts = {
 export interface Sourcing1688Settings {
   enabled: boolean; keywords: { keyword: string; productClass: string; enabled: boolean }[]; maxItemsPerKeyword: number; refreshHours: number;
   filters: { sortType: "normal" | "va_sales360" | "price"; merchantType: "any" | "superFactory" | "certifiedMerchant"; supplierYears: "any" | "5" | "7" | "10"; fastShippingOnly: boolean; maxMoq: number | null; priceMinCny: number | null; priceMaxCny: number | null };
-  estimate: { markupPct: number; vatPct: number; vatUpliftPct: number; classes: Record<string, { dutyPct: number; freightZar: number }>; defaultClass: { dutyPct: number; freightZar: number } };
+  estimate: { markupPct: number; vatPct: number; vatUpliftPct: number; agentFeePct: number; domesticShippingCny: number; classes: Record<string, { dutyPct: number; freightZar: number }>; defaultClass: { dutyPct: number; freightZar: number } };
+  listing: { autoList: boolean; maxMoq: number; stockCap: number; autoSendToCj: boolean; maxCjRequestsPerDay: number; deliveryDays: { min: number; max: number } };
 }
 export interface Offer1688 {
   id: string; offerId: string; title: string; url: string | null; priceCny: number; priceRangeCny: string | null; moq: number | null; unit: string | null;
   stock: number | null; outOfStock: boolean; soldCount: number | null; repurchaseRate: number | null; starLevel: number | null;
   supplierName: string | null; supplierType: string | null; supplierYears: number | null; location: string | null; images: string[];
   keyword: string | null; productClass: string | null; estimate: { landedZar: number; resaleZar: number; unitZar: number; dutyZar: number; freightZar: number; importVatZar: number } | null;
-  status: string; cjSourcingStatus: string | null; cjFailReason: string | null; storeProductId: string | null; lastSeenAt: string;
+  status: string; cjSourcingStatus: string | null; cjFailReason: string | null; storeProductId: string | null; directProductId: string | null; notListedReason: string | null; lastSeenAt: string;
 }
 export interface Run1688 { id: string; status: string; items: number; created: number; updated: number; skipped: number; excluded: number; error: string | null; startedAt: string; keywords: string[] }
 

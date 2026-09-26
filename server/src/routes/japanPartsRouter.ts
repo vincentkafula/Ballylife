@@ -76,10 +76,12 @@ router.get("/admin/japan-parts/listings", ...admin, async (req: Request, res: Re
   } catch (err) { fail(res, err, "Couldn't load listings."); }
 });
 
-router.get("/admin/japan-parts/fulfillments", ...admin, async (_req: Request, res: Response): Promise<void> => {
+// ?source=upgarage (default) | 1688 -- the same buy-and-forward queue serves both.
+router.get("/admin/japan-parts/fulfillments", ...admin, async (req: Request, res: Response): Promise<void> => {
   try {
+    const source = req.query.source === "1688" ? "1688" : "upgarage";
     const { rows } = await pool!.query(
-      `SELECT f.*, o.order_number, o.placed_at FROM jp_parts_fulfillments f JOIN mkt_orders o ON o.id = f.order_id ORDER BY f.created_at DESC LIMIT 200`
+      `SELECT f.*, o.order_number, o.placed_at FROM jp_parts_fulfillments f JOIN mkt_orders o ON o.id = f.order_id WHERE f.source = $1 ORDER BY f.created_at DESC LIMIT 200`, [source]
     );
     res.json({ success: true, data: rows.map(mapFulfillment) });
   } catch (err) { fail(res, err, "Couldn't load the queue."); }
@@ -103,7 +105,7 @@ router.patch("/admin/japan-parts/fulfillments/:id", ...admin, async (req: Reques
 function mapFulfillment(r: Record<string, any>) {
   return {
     id: r.id, orderId: r.order_id, orderNumber: r.order_number ?? null, placedAt: r.placed_at ?? null, productId: r.product_id,
-    productName: r.product_name, quantity: r.quantity, sourceUrl: r.source_url, status: r.status, purchaseRef: r.purchase_ref,
+    productName: r.product_name, quantity: r.quantity, sourceUrl: r.source_url, source: r.source, variantLabel: r.variant_label, supplierSku: r.supplier_sku, status: r.status, purchaseRef: r.purchase_ref,
     forwarder: r.forwarder, trackingNumber: r.tracking_number, carrier: r.carrier, notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }

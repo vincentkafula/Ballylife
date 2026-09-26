@@ -1064,3 +1064,15 @@ CREATE TABLE IF NOT EXISTS sourcing_1688_runs (
   started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   finished_at  TIMESTAMPTZ
 );
+
+-- 1688 finds sold directly (bought through a China agent) until CJ sources them.
+ALTER TABLE sourcing_1688_offers ADD COLUMN IF NOT EXISTS direct_product_id TEXT;  -- our mkt_products listing, bought via agent
+ALTER TABLE sourcing_1688_offers ADD COLUMN IF NOT EXISTS variants JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE sourcing_1688_offers ADD COLUMN IF NOT EXISTS specs JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE sourcing_1688_offers ADD COLUMN IF NOT EXISTS selling_points JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE sourcing_1688_offers ADD COLUMN IF NOT EXISTS not_listed_reason TEXT;
+
+-- The manual buy-and-forward queue serves Japan parts and 1688 agent orders alike.
+ALTER TABLE jp_parts_fulfillments ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'upgarage'; -- upgarage | 1688
+ALTER TABLE jp_parts_fulfillments ADD COLUMN IF NOT EXISTS variant_label TEXT;
+ALTER TABLE jp_parts_fulfillments ADD COLUMN IF NOT EXISTS supplier_sku TEXT;

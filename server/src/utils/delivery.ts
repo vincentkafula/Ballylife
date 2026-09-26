@@ -21,11 +21,22 @@ export function setJapanImportDeliveryDays(days: { min: number; max: number }): 
   JAPAN_IMPORT_DELIVERY_DAYS.max = days.max;
 }
 
-export type DeliveryProfile = "local" | "international" | "japan_import";
+// 1688 finds sold before CJ has sourced them: bought through a China
+// agent once ordered, then forwarded. Admin-editable (1688 Research settings).
+export const CHINA_AGENT_DELIVERY_DAYS = { min: 15, max: 25 };
+export function setChinaAgentDeliveryDays(days: { min: number; max: number }): void {
+  CHINA_AGENT_DELIVERY_DAYS.min = days.min;
+  CHINA_AGENT_DELIVERY_DAYS.max = days.max;
+}
+
+export type DeliveryProfile = "local" | "international" | "japan_import" | "china_agent";
 
 export function deliveryInfo(profile: string | null | undefined) {
   if (profile === "japan_import") {
     return { deliveryProfile: "japan_import" as DeliveryProfile, shippingIncluded: true, deliveryDays: { ...JAPAN_IMPORT_DELIVERY_DAYS } };
+  }
+  if (profile === "china_agent") {
+    return { deliveryProfile: "china_agent" as DeliveryProfile, shippingIncluded: true, deliveryDays: { ...CHINA_AGENT_DELIVERY_DAYS } };
   }
   const international = profile === "international";
   return {
