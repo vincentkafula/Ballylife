@@ -227,7 +227,7 @@ const CREDIT_REWARDS_PAGE_HTML = String.raw`<!DOCTYPE html>
       <h1>Ballylife.credit Rewards Programme Terms</h1>
       <p class="lede">Ballylife.credit is our way of giving something back when you use your Ballylife.credit account to shop with us. These terms explain exactly how that works -- what qualifies, how much you earn, and when it lands in your account.</p>
       <div class="hero-stats">
-        <div class="hero-stat"><div class="num">%</div><div class="lbl">of eligible spend earned back as credit</div></div>
+        <div class="hero-stat"><div class="num">1%</div><div class="lbl">of eligible spend earned back as credit</div></div>
         <div class="hero-stat"><div class="num">4x</div><div class="lbl">yearly payouts, one per quarter</div></div>
         <div class="hero-stat"><div class="num">3yr</div><div class="lbl">window to redeem before credit expires</div></div>
         <div class="hero-stat"><div class="num">30d</div><div class="lbl">wait after delivery before rewards accrue</div></div>

@@ -6,9 +6,10 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob, type CjSourcingJob } from "../services/marketplaceApi";
 import { toast } from "sonner";
+import { ProgrammesAdminPanel } from "./MembershipPanels";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "supplyChain" | "financial" | "reports" | "security";
+type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
 
 // Maps a specific granted Marketplace Management position (from the job
 // application flow) to which of the 8 real tabs this dashboard already
@@ -43,8 +44,8 @@ const TIER_TABS: Record<MarketTier, Tab[]> = {
   executive: ["overview", "financial", "reports"],
   marketplace_ops: ["overview", "sellerApproval", "productApproval"],
   fulfillment: ["overview", "orders", "fulfilment", "supplyChain"],
-  finance_security: ["overview", "financial", "security", "reports"],
-  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "supplyChain", "financial", "reports", "security"],
+  finance_security: ["overview", "financial", "programmes", "security", "reports"],
+  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "programmes", "supplyChain", "financial", "reports", "security"],
 };
 
 function positionToMarketTier(position: string | null): MarketTier {
@@ -158,6 +159,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     { id: "supplyChain", label: "Supply Chain", icon: <Globe2 className="w-4 h-4" /> },
     { id: "financial", label: "Financial", icon: <DollarSign className="w-4 h-4" /> },
     { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
+    { id: "programmes", label: "Memberships & Business", icon: <Users className="w-4 h-4" /> },
     { id: "security", label: "Security & Fraud", icon: <Shield className="w-4 h-4" /> },
   ];
   const NAV = ALL_NAV.filter(item => TIER_TABS[tier].includes(item.id));
@@ -295,6 +297,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
+            {tab === "programmes" && <ProgrammesAdminPanel />}
             {tab === "security" && <SecurityAndAuditPanel />}
           </>
         )}

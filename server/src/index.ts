@@ -10,11 +10,13 @@ import sitemapRouter from "./routes/sitemapRouter";
 import reconciliationRouter from "./routes/reconciliationRouter";
 import cjDropshippingRouter from "./routes/cjDropshippingRouter";
 import mediaRouter from "./routes/mediaRouter";
+import programmesRouter from "./routes/programmesRouter";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
 import { startCjCatalogWorker, enforceCjOnlyCatalog } from "./services/cjCatalog";
 import { cjOnlyCatalog } from "./utils/catalogPolicy";
 import { startFxRefreshWorker } from "./services/fxRates";
 import { secureDemoAccounts } from "./services/demoAccounts";
+import { startProgrammesWorker } from "./services/programmes";
 import { migrate } from "./db/migrate";
 import { hasDb, pool } from "./db/pool";
 import { logger } from "./utils/logger";
@@ -95,6 +97,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/marketplace", marketplaceRouter);
 app.use("/api/marketplace", reconciliationRouter);
 app.use("/api/marketplace", cjDropshippingRouter);
+app.use("/api/marketplace", programmesRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -123,6 +126,7 @@ async function start() {
   if (cjOnlyCatalog()) await enforceCjOnlyCatalog();
   startCjCatalogWorker();
   startFxRefreshWorker();
+  startProgrammesWorker();
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);

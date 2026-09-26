@@ -149,3 +149,81 @@ export async function confirmWithPayfast(rawBody: string): Promise<boolean> {
     return false;
   }
 }
+
+// ── Recurring billing (BallylifeMORE subscriptions) ─────────────────────
+// Redirect fields follow PayFast's documented order, with the recurring
+// block last: subscription_type=1, billing_date (first recurring charge),
+// recurring_amount, frequency (3 = monthly), cycles (0 = until cancelled).
+// An initial amount of 0.00 authorises and tokenises the card through 3D
+// Secure without charging it -- how the free trial works. Every later
+// charge arrives as an ITN with the same m_payment_id and a `token`.
+
+export function isPayfastConfigured(): boolean {
+  return payfastProcessor.isConfigured();
+}
+
+export function buildSubscriptionRedirect(req: {
+  subscriptionId: string; email: string; planName: string;
+  initialAmount: number; recurringAmount: number; billingDate: Date;
+}): { url: string; fields: Record<string, string> } {
+  if (!isPayfastConfigured()) throw new Error("PayFast is not configured");
+  const ymd = req.billingDate.toISOString().slice(0, 10);
+  const fields: Record<string, string> = {
+    merchant_id: MERCHANT_ID!,
+    merchant_key: MERCHANT_KEY!,
+    return_url: `${PUBLIC_APP_URL}/?subscription=success`,
+    cancel_url: `${PUBLIC_APP_URL}/?subscription=cancelled`,
+    notify_url: `${API_PUBLIC_URL}/api/marketplace/payfast/notify`,
+    email_address: req.email,
+    m_payment_id: `sub_${req.subscriptionId}`,
+    amount: req.initialAmount.toFixed(2),
+    item_name: `BallylifeMORE ${req.planName}`.slice(0, 100),
+    subscription_type: "1",
+    billing_date: ymd,
+    recurring_amount: req.recurringAmount.toFixed(2),
+    frequency: "3",
+    cycles: "0",
+  };
+  fields.signature = pfSignature(fields);
+  return { url: payfastRedirectUrl(), fields };
+}
+
+// PayFast's REST API (api.payfast.co.za) signs differently from the
+// redirect: every header and body field plus the passphrase, sorted
+// alphabetically by key, URL-encoded, MD5'd. Sandbox calls add ?testing=true.
+function apiSignature(params: Record<string, string>): string {
+  const all: Record<string, string> = { ...params };
+  if (PASSPHRASE) all.passphrase = PASSPHRASE.trim();
+  const str = Object.keys(all).sort()
+    .map(k => `${k}=${encodeURIComponent(String(all[k]).trim()).replace(/%20/g, "+")}`)
+    .join("&");
+  return crypto.createHash("md5").update(str).digest("hex");
+}
+
+async function payfastApi(method: "PUT" | "PATCH", path: string, body: Record<string, string> = {}): Promise<void> {
+  if (!isPayfastConfigured()) throw new Error("PayFast is not configured");
+  const headers: Record<string, string> = {
+    "merchant-id": MERCHANT_ID!,
+    version: "v1",
+    timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, "+00:00"),
+  };
+  const signature = apiSignature({ ...headers, ...body });
+  const url = `https://api.payfast.co.za${path}${SANDBOX ? "?testing=true" : ""}`;
+  const res = await fetch(url, {
+    method,
+    headers: { ...headers, signature, "Content-Type": "application/json" },
+    ...(Object.keys(body).length ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`PayFast API ${method} ${path} failed (${res.status})`);
+}
+
+export function cancelPayfastSubscription(token: string): Promise<void> {
+  return payfastApi("PUT", `/subscriptions/${encodeURIComponent(token)}/cancel`);
+}
+
+/** Changes what future recurring charges bill (plan upgrade/downgrade). */
+export function updatePayfastSubscriptionAmount(token: string, amountZar: number): Promise<void> {
+  // PayFast's update endpoint takes the amount in cents.
+  return payfastApi("PATCH", `/subscriptions/${encodeURIComponent(token)}/update`, { amount: String(Math.round(amountZar * 100)) });
+}

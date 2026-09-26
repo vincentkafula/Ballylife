@@ -20,6 +20,9 @@ import { parseExternalVariants, variantIdForVid } from "../utils/cjVariants";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 import { cjOnlyCatalog, CJ_ONLY_MESSAGE } from "../utils/catalogPolicy";
 import { hashPassword, passwordProblem, demoModeEnabled } from "../utils/authSecurity";
+import { activeMembership, markBenefitUsed, handleSubscriptionItn } from "../services/subscriptions";
+import { storeCreditBalance, addLedgerEntry } from "../services/programmes";
+import { MORE_PLANS, STANDARD_RETURN_WINDOW_DAYS, type MorePlanId } from "../utils/plans";
 
 // Standalone marketplace has one manager role, not Vink's RBAC roles
 // (owner/superadmin/noc_engineer/billing_admin were Vink-side authority
@@ -245,6 +248,8 @@ const ORIGIN_WAREHOUSE_BY_SUPPLIER_COUNTRY: Record<string, string> = { CN: "wh-o
 const DEMO_USERNAMES = new Set(["admin", "seller1", "supplier1", "customer1", "sars1", "shipping1", "credit1", "credit2"]);
 
 const mapOrder = (r: any) => ({
+  memberPlan: r.member_plan ?? null, memberDiscount: Number(r.member_discount ?? 0), storeCreditApplied: Number(r.store_credit_applied ?? 0),
+  prioritySupport: Boolean(MORE_PLANS[r.member_plan as MorePlanId]?.prioritySupport),
   id: r.id, orderNumber: r.order_number, userId: r.user_id, customerName: r.customer_name,
   customerEmail: r.customer_email, items: r.items, subtotal: Number(r.subtotal),
   shippingCost: Number(r.shipping_cost), taxAmount: Number(r.tax_amount), dutyAmount: Number(r.duty_amount ?? 0), discountAmount: Number(r.discount_amount),
@@ -338,6 +343,7 @@ const mapAddress = (r: any) => ({
 const cartRowToApi = (r: any) => ({
   id: r.id, userId: r.user_id, items: r.items, couponCode: r.coupon_code, couponDiscount: Number(r.coupon_discount),
   subtotal: Number(r.subtotal), shipping: Number(r.shipping), tax: Number(r.tax), total: Number(r.total),
+  memberDiscount: Number(r.member_discount ?? 0), memberPlan: r.member_plan ?? null,
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
@@ -504,11 +510,14 @@ async function saveCart(cartId: string, items: any[], couponCode: string | null)
     const { rows } = await pool!.query(`SELECT * FROM mkt_coupons WHERE code = $1 AND active = true`, [couponCode]);
     coupon = rows[0] ?? null;
   }
-  const totals = recalcCartTotals(items, coupon);
+  const { rows: owner } = await pool!.query(`SELECT user_id FROM mkt_carts WHERE id = $1`, [cartId]);
+  const membership = owner[0] ? await activeMembership(owner[0].user_id) : null;
+  const totals = recalcCartTotals(items, coupon, membership?.plan ?? null);
   const { rows } = await pool!.query(
     `UPDATE mkt_carts SET items = $1, coupon_code = $2, coupon_discount = $3, subtotal = $4,
-       shipping = $5, tax = $6, total = $7, updated_at = now() WHERE id = $8 RETURNING *`,
-    [JSON.stringify(items), couponCode, totals.couponDiscount, totals.subtotal, totals.shipping, totals.tax, totals.total, cartId]
+       shipping = $5, tax = $6, total = $7, member_discount = $8, member_plan = $9, updated_at = now() WHERE id = $10 RETURNING *`,
+    [JSON.stringify(items), couponCode, totals.couponDiscount, totals.subtotal, totals.shipping, totals.tax, totals.total,
+     totals.memberDiscount, totals.memberDiscount > 0 ? membership!.plan.id : null, cartId]
   );
   return rows[0];
 }
@@ -543,7 +552,7 @@ router.post("/cart/:userId/add", requireAuth, requireSelf, async (req: Request, 
   const unitPrice = round2(product.price + Number(variant?.additionalPrice ?? 0));
 
   if (existing) existing.quantity += (quantity ?? 1);
-  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity: quantity ?? 1, unitPrice, shippingIncluded: product.shippingIncluded, name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
+  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity: quantity ?? 1, unitPrice, shippingIncluded: product.shippingIncluded, isDeal: Boolean(product.isFlashDeal), name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
 
   const updated = await saveCart(cartRow.id, items, cartRow.coupon_code);
   res.json({ success: true, data: cartRowToApi(updated) });
@@ -611,6 +620,11 @@ router.post("/payfast/notify", async (req: Request, res: Response): Promise<void
     if (!rawBody || !(await confirmWithPayfast(rawBody))) {
       logger.warn("payfast.itn_not_confirmed_by_payfast", { paymentId: body?.m_payment_id });
       res.status(400).send("not confirmed by payfast");
+      return;
+    }
+    if (String(body.m_payment_id ?? "").startsWith("sub_")) {
+      await handleSubscriptionItn(body);
+      res.status(200).send("OK");
       return;
     }
     const processorRef = body.m_payment_id;
@@ -837,6 +851,9 @@ router.post("/orders/:id/cancel", requireAuth, async (req: Request, res: Respons
       await client.query(`UPDATE mkt_products SET stock = stock + $1, total_sold = GREATEST(0, total_sold - $1) WHERE id::text = $2`, [item.quantity, item.productId]);
     }
     const { rows: updated } = await client.query(`UPDATE mkt_orders SET status = 'cancelled', cancelled_at = now() WHERE id = $1 RETURNING *`, [order.id]);
+    if (Number(order.store_credit_applied ?? 0) > 0) {
+      await addLedgerEntry(client, { userId: order.user_id, amount: Number(order.store_credit_applied), source: "order_reversal", reference: `order-cancel:${order.id}`, description: `Returned from cancelled order ${order.order_number}` });
+    }
     await client.query("COMMIT");
     res.json({ success: true, data: mapOrder(updated[0]) });
   } catch (err) {
@@ -854,6 +871,10 @@ router.post("/orders/:id/request-return", requireAuth, async (req: Request, res:
   const order = rows[0];
   if (order.user_id !== req.user!.userId) { res.status(403).json({ success: false, error: "You can only request returns on your own orders" }); return; }
   if (order.status !== "delivered") { res.status(400).json({ success: false, error: "Only delivered orders are eligible for a return." }); return; }
+  const windowDays = MORE_PLANS[order.member_plan as MorePlanId]?.returnWindowDays ?? STANDARD_RETURN_WINDOW_DAYS;
+  if (order.delivered_at && Date.now() - new Date(order.delivered_at).getTime() > windowDays * 86400_000) {
+    res.status(400).json({ success: false, error: `Returns can be requested within ${windowDays} days of delivery.` }); return;
+  }
   const { rows: updated } = await pool!.query(
     `UPDATE mkt_orders SET status = 'return_requested', notes = COALESCE(notes || E'\\n', '') || $1 WHERE id = $2 RETURNING *`,
     [`Return requested: ${req.body.reason ?? "No reason given"}`, order.id]
@@ -863,7 +884,7 @@ router.post("/orders/:id/request-return", requireAuth, async (req: Request, res:
 
 router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.userId; // always the signed-in customer, never trusted from the body
-  const { addressId, paymentMethod } = req.body;
+  const { addressId, paymentMethod, useStoreCredit } = req.body;
   const [{ rows: cartRows }, { rows: userRows }] = await Promise.all([
     pool!.query(`SELECT * FROM mkt_carts WHERE user_id = $1`, [userId]),
     pool!.query(`SELECT email FROM users WHERE id = $1`, [userId]),
@@ -876,13 +897,15 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
   // whatever the cart recorded when the item was added -- so a cart from
   // before a product became supplier-fulfilled (or a tampered one) can't
   // be charged the wrong delivery fee.
-  let cartItemsChanged = false;
   for (const i of cart.items as any[]) {
     const { rows: pr } = await pool!.query(`SELECT delivery_profile FROM mkt_products WHERE id::text = $1`, [i.productId]);
     const included = deliveryInfo(pr[0]?.delivery_profile).shippingIncluded;
-    if (Boolean(i.shippingIncluded) !== included) { i.shippingIncluded = included; cartItemsChanged = true; }
+    i.shippingIncluded = included;
   }
-  if (cartItemsChanged) Object.assign(cart, await saveCart(cart.id, cart.items, cart.coupon_code));
+  // Always re-total here: delivery flags and the member discount must reflect
+  // the products and membership as they are at the moment of ordering.
+  Object.assign(cart, await saveCart(cart.id, cart.items, cart.coupon_code));
+  const membershipAtOrder = Number(cart.member_discount) > 0 ? await activeMembership(userId) : null;
 
   const { rows: addrRows } = await pool!.query(
     addressId ? `SELECT * FROM mkt_addresses WHERE id::text = $1 AND user_id = $2` : `SELECT * FROM mkt_addresses WHERE user_id = $1 LIMIT 1`,
@@ -1041,7 +1064,11 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
       }
     }
     dutyAmount = round2(dutyAmount);
-    const totalAmount = round2(cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount);
+    const memberDiscount = Number(cart.member_discount ?? 0);
+    const totalBeforeCredit = round2(Math.max(0, cart.subtotal + cart.shipping + taxAmount - cart.coupon_discount - memberDiscount));
+    // Store credit (business rebates, Ballylife.credit rewards) pays part or all of it, if asked.
+    const storeCreditApplied = useStoreCredit ? round2(Math.min(await storeCreditBalance(userId, client), totalBeforeCredit)) : 0;
+    const totalAmount = round2(totalBeforeCredit - storeCreditApplied);
 
     // A BNPL payment method carries the provider's key as its suffix
     // ('bnpl_payflex' -> 'payflex') -- look up the matching credit
@@ -1058,15 +1085,20 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     const { rows } = await client.query(
       `INSERT INTO mkt_orders (order_number, user_id, customer_name, customer_email, items, subtotal, shipping_cost,
          tax_amount, duty_amount, discount_amount, total_amount, currency, status, payment_status, payment_method, shipping_address,
-         shipping_status, estimated_delivery, coupon_code, confirmed_at, credit_provider_id, credit_decision)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ZAR','pending','pending_payment',$12,$13,'not_shipped', now() + ($15 || ' days')::interval, $14, NULL, $16, $17)
+         shipping_status, estimated_delivery, coupon_code, confirmed_at, credit_provider_id, credit_decision,
+         member_plan, member_discount, store_credit_applied)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ZAR','pending','pending_payment',$12,$13,'not_shipped', now() + ($15 || ' days')::interval, $14, NULL, $16, $17, $18, $19, $20)
        RETURNING *`,
       [orderNumber, userId, `${shippingAddress.firstName} ${shippingAddress.lastName}`, customerEmail,
-       JSON.stringify(items), cart.subtotal, cart.shipping, taxAmount, dutyAmount, cart.coupon_discount, totalAmount,
+       JSON.stringify(items), cart.subtotal, cart.shipping, taxAmount, dutyAmount, round2(Number(cart.coupon_discount) + memberDiscount), totalAmount,
        paymentMethod ?? "card", JSON.stringify(shippingAddress), cart.coupon_code, estimatedDeliveryDays,
-       creditProviderId, creditProviderId ? "pending" : null]
+       creditProviderId, creditProviderId ? "pending" : null,
+       membershipAtOrder?.plan.id ?? null, memberDiscount, storeCreditApplied]
     );
     const order = rows[0];
+    if (storeCreditApplied > 0) {
+      await addLedgerEntry(client, { userId, amount: -storeCreditApplied, source: "order_redemption", reference: `order:${order.id}`, description: `Used on order ${order.order_number}` });
+    }
 
     // For every line that's an imported (supplier-sourced) listing, open a
     // mkt_supplier_orders row that starts the two-leg fulfilment pipeline —
@@ -1121,8 +1153,18 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
       );
     }
 
-    await client.query(`UPDATE mkt_carts SET items = '[]', coupon_code = NULL, coupon_discount = 0, subtotal = 0, shipping = 0, tax = 0, total = 0, updated_at = now() WHERE id = $1`, [cart.id]);
+    await client.query(`UPDATE mkt_carts SET items = '[]', coupon_code = NULL, coupon_discount = 0, member_discount = 0, member_plan = NULL, subtotal = 0, shipping = 0, tax = 0, total = 0, updated_at = now() WHERE id = $1`, [cart.id]);
     await client.query("COMMIT");
+    if (membershipAtOrder) await markBenefitUsed(membershipAtOrder.subscriptionId); // ends cooling-off refund eligibility
+
+    // Paid in full with store credit: nothing for a card processor to do.
+    if (Number(order.total_amount) === 0 && storeCreditApplied > 0) {
+      const { rows: paid } = await pool!.query(
+        `UPDATE mkt_orders SET status = 'confirmed', payment_status = 'payment_confirmed', confirmed_at = now() WHERE id = $1 RETURNING *`, [order.id]
+      );
+      res.status(201).json({ success: true, data: mapOrder(paid[0]), meta: { paymentStatus: "payment_confirmed", paidWithStoreCredit: true } });
+      return;
+    }
 
     // Deliberately fire-and-forget, same discipline as the application risk
     // check in applicationsRouter.ts -- advisory only (Section 5.1.4: flags,

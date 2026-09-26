@@ -13,6 +13,14 @@ export interface CartItem {
   quantity: number;
   /** Supplier-fulfilled item whose price already includes delivery -- never charged the local delivery fee. */
   shippingIncluded?: boolean;
+  /** Marked as a deal (Premium members get an extra discount on these). */
+  isDeal?: boolean;
+}
+
+/** An active BallylifeMORE membership's discounts (utils/plans.ts). */
+export interface MemberDiscount {
+  orderDiscountPct: number;
+  dealExtraDiscountPct: number;
 }
 
 export const LOCAL_DELIVERY_FEE = 99;
@@ -26,13 +34,14 @@ export interface Coupon {
 
 export interface CartTotals {
   subtotal: number;
+  memberDiscount: number;
   shipping: number;
   tax: number;
   total: number;
   couponDiscount: number;
 }
 
-export function recalcCartTotals(items: CartItem[], coupon: Coupon | null): CartTotals {
+export function recalcCartTotals(items: CartItem[], coupon: Coupon | null, member: MemberDiscount | null = null): CartTotals {
   const subtotal = +items.reduce((s, i) => s + i.unitPrice * i.quantity, 0).toFixed(2);
 
   let couponDiscount = 0;
@@ -52,7 +61,11 @@ export function recalcCartTotals(items: CartItem[], coupon: Coupon | null): Cart
   const localSubtotal = localItems.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
   const shipping = !localItems.length || localSubtotal > FREE_LOCAL_DELIVERY_OVER || coupon?.type === "free_shipping" ? 0 : LOCAL_DELIVERY_FEE;
   const tax = +(subtotal * 0.15).toFixed(2);
-  const total = +(subtotal + shipping + tax - couponDiscount).toFixed(2);
+  // Membership discount: a percentage off every item, plus the deal extra on deal items.
+  const memberDiscount = member
+    ? +items.reduce((s, i) => s + i.unitPrice * i.quantity * (member.orderDiscountPct + (i.isDeal ? member.dealExtraDiscountPct : 0)) / 100, 0).toFixed(2)
+    : 0;
+  const total = +Math.max(0, subtotal + shipping + tax - couponDiscount - memberDiscount).toFixed(2);
 
-  return { subtotal, shipping, tax, total, couponDiscount };
+  return { subtotal, shipping, tax, total, couponDiscount, memberDiscount };
 }

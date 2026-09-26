@@ -425,3 +425,58 @@ export const mktAuth = {
     } catch { return null; }
   },
 };
+
+// ─── Plans, BallylifeMORE, store credit, Ballylife for Business ─────────────
+export interface MorePlanInfo {
+  id: "standard" | "premium"; name: string; monthlyPriceZar: number; orderDiscountPct: number;
+  dealExtraDiscountPct: number; returnWindowDays: number; prioritySupport: boolean; benefits: string[];
+}
+export interface PlansInfo {
+  currency: "ZAR";
+  more: { plans: MorePlanInfo[]; trialDays: number; coolingOffDays: number };
+  business: { tiers: { minMonthlySpendZar: number; rebatePct: number }[]; creditExpiryYears: number };
+  creditRewards: { rewardPct: number; delayDays: number; payout: string; creditExpiryYears: number };
+  standardReturnWindowDays: number;
+}
+export interface SubscriptionInfo {
+  id: string; plan: "standard" | "premium"; planName: string; monthlyPriceZar: number;
+  status: "trialing" | "active" | "past_due" | "cancelled" | "expired"; pendingPlan: string | null;
+  trialEndsAt: string | null; currentPeriodEnd: string | null; nextBillingDate: string | null;
+  cancelAt: string | null; commencedAt: string | null; benefitsActive: boolean; missedPeriods: number;
+}
+type Ok<T> = { success: boolean; data: T; error?: string; meta?: Record<string, unknown> };
+
+export const mktProgrammes = {
+  plans: () => api<Ok<PlansInfo>>("/api/marketplace/plans"),
+  subscription: {
+    me: () => api<Ok<{ subscription: SubscriptionInfo | null; trialAvailable: boolean; payments: { amount: number; status: string; plan: string; periodStart: string; periodEnd: string; paidAt: string }[] }>>("/api/marketplace/subscriptions/me"),
+    start: (plan: string) => api<Ok<{ subscriptionId: string; trial: boolean; redirect: { url: string; fields: Record<string, string> } }>>("/api/marketplace/subscriptions", { method: "POST", body: JSON.stringify({ plan }) }),
+    change: (plan: string) => api<Ok<{ effective: string; plan: string; subscription: SubscriptionInfo }>>("/api/marketplace/subscriptions/change", { method: "POST", body: JSON.stringify({ plan }) }),
+    cancel: () => api<Ok<{ endsAt: string; refund: boolean }>>("/api/marketplace/subscriptions/cancel", { method: "POST" }),
+  },
+  storeCredit: () => api<Ok<{ balance: number; entries: { amount: number; source: string; description: string | null; availableAt: string; expiresAt: string | null; createdAt: string }[] }>>("/api/marketplace/store-credit/me"),
+  business: {
+    me: () => api<Ok<{ account: Record<string, unknown> | null; thisMonth: { netSpendZar: number; rebatePct: number; estimatedRebateZar: number; nextTier: { minMonthlySpendZar: number; rebatePct: number } | null } | null; rebates: { amount: number; description: string; creditedAt: string }[] }>>("/api/marketplace/business/me"),
+    apply: (body: { companyName: string; registrationNumber?: string; vatNumber?: string }) => api<Ok<Record<string, unknown>>>("/api/marketplace/business/apply", { method: "POST", body: JSON.stringify(body) }),
+    leave: () => api<Ok<Record<string, unknown>>>("/api/marketplace/business/leave", { method: "POST" }),
+  },
+  admin: {
+    subscriptions: () => api<Ok<(SubscriptionInfo & { userName?: string; userEmail?: string })[]>>("/api/marketplace/admin/subscriptions"),
+    businessAccounts: (status?: string) => api<Ok<Record<string, unknown>[]>>(`/api/marketplace/admin/business-accounts${status ? `?status=${status}` : ""}`),
+    decideBusiness: (id: string, decision: "approve" | "reject", note?: string) => api<Ok<Record<string, unknown>>>(`/api/marketplace/admin/business-accounts/${id}`, { method: "PATCH", body: JSON.stringify({ decision, note }) }),
+  },
+};
+
+/** PayFast is redirect-based: post the signed fields to its hosted page. */
+export function submitToPayfast(url: string, fields: Record<string, string>): void {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = url;
+  for (const [k, v] of Object.entries(fields)) {
+    const input = document.createElement("input");
+    input.type = "hidden"; input.name = k; input.value = v;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}

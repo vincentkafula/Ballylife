@@ -4,6 +4,7 @@ import {
   Shield, BarChart3, Plus, Trash2, Loader2, CheckCircle, Truck, Clock, XCircle,
   ChevronRight, Award, User, ExternalLink,
 } from "lucide-react";
+import { MembershipTab, StoreCreditTab, BusinessTab } from "./MembershipPanels";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import {
   mktCustomer, mktOrders, mktAddresses, mktAddAddress, mktDeleteAddress, mktAuth, type MktAuthUser,
@@ -11,7 +12,7 @@ import {
 import { formatZAR, useCurrency } from "../services/currencyStore";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "orders" | "addresses" | "payment" | "returns" | "notifications" | "security" | "analytics" | "profile";
+type Tab = "overview" | "orders" | "addresses" | "payment" | "returns" | "notifications" | "security" | "analytics" | "profile" | "membership" | "credit" | "business";
 
 const fmtZAR = formatZAR; // now converts + formats in the shopper's local currency
 const PIE_COLORS = ["#B8862E", "#D4A54A", "#10B981", "#34A853", "#EF4444", "#F59E0B"];
@@ -101,6 +102,9 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
   const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Overview", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "orders", label: "Orders", icon: <Package className="w-4 h-4" /> },
+    { id: "membership", label: "BallylifeMORE", icon: <Star className="w-4 h-4" /> },
+    { id: "credit", label: "Store Credit", icon: <CreditCard className="w-4 h-4" /> },
+    { id: "business", label: "For Business", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "profile", label: "Profile", icon: <User className="w-4 h-4" /> },
     { id: "addresses", label: "Address Book", icon: <MapPin className="w-4 h-4" /> },
     { id: "payment", label: "Payment Methods", icon: <CreditCard className="w-4 h-4" /> },
@@ -148,7 +152,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
                   {[
                     { label: "Orders", sub: "Track, return, or buy again", icon: <Package className="w-5 h-5" />, accent: "#B8862E", onClick: () => setTab("orders") },
                     { label: "Payments & Credit", sub: "Cards and payment methods", icon: <CreditCard className="w-5 h-5" />, accent: "#3B82F6", onClick: () => setTab("payment") },
-                    { label: "Ballylife+", sub: "Learn about membership perks", icon: <Star className="w-5 h-5" />, accent: "#D4A54A", onClick: onBallylifeMore, external: true },
+                    { label: "BallylifeMORE", sub: "Your membership & savings", icon: <Star className="w-5 h-5" />, accent: "#D4A54A", onClick: () => setTab("membership") },
                     { label: "Profile", sub: "Your personal details", icon: <User className="w-5 h-5" />, accent: "#8B5CF6", onClick: () => setTab("profile") },
                     { label: "My Lists", sub: "Saved items and wishlists", icon: <Heart className="w-5 h-5" />, accent: "#EF4444", onClick: onWishlist },
                     { label: "Support", sub: "Get help or contact us", icon: <MessageSquare className="w-5 h-5" />, accent: "#10B981", onClick: onContact },
@@ -160,7 +164,7 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
                         <p className="text-sm font-bold text-gray-900">{card.label}</p>
                         <p className="text-[11px] text-gray-500 truncate">{card.sub}</p>
                       </div>
-                      {card.external ? <ExternalLink className="w-4 h-4 text-gray-300 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />}
+                      <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
                     </button>
                   ))}
                 </div>
@@ -261,6 +265,9 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
             )}
 
             {tab === "security" && <SecurityPanel />}
+            {tab === "membership" && <MembershipTab onBrowsePlans={onBallylifeMore} />}
+            {tab === "credit" && <StoreCreditTab />}
+            {tab === "business" && <BusinessTab />}
             {tab === "analytics" && <SpendingAnalytics spending={spending} />}
           </>
         )}

@@ -18,7 +18,7 @@ export type MarketplaceView =
   | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account"
   | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage"
   | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage"
-  | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
+  | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage" | "morePlans";
 
 const VIEW_TO_PATH: Record<MarketplaceView, string> = {
   home: "/",
@@ -47,6 +47,7 @@ const VIEW_TO_PATH: Record<MarketplaceView, string> = {
   privacyPolicyPage: "/privacy-policy",
   returnsPolicyPage: "/returns-policy",
   ballylifeMorePage: "/ballylife-more",
+  morePlans: "/more",
   aboutUsPage: "/about-us",
 };
 
@@ -96,6 +97,7 @@ export const TITLE_FOR_VIEW: Partial<Record<MarketplaceView, string>> = {
   privacyPolicyPage: "Privacy Policy",
   returnsPolicyPage: "Returns Policy",
   ballylifeMorePage: "BallylifeMORE",
+  morePlans: "BallylifeMORE plans",
   aboutUsPage: "About Us",
 };
 

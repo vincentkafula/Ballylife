@@ -347,7 +347,7 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
         </ol>
       </li>
       <li><a href="#m08"><span class="code">M.08</span>Changes to these terms</a></li>
-      <li><a href="#m09"><span class="code">M.09</span>More Deals</a></li>
+      <li><a href="#m09"><span class="code">M.09</span>Member deals</a></li>
       <li><a href="#m10"><span class="code">M.10</span>Subscription fee discounts</a></li>
       <li><a href="#m11"><span class="code">M.11</span>Privacy and marketing</a></li>
       <li><a href="#m12"><span class="code">M.12</span>General terms</a></li>
@@ -369,10 +369,10 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
       <p>To subscribe to BallylifeMORE, you need to:</p>
       <ul class="checklist">
         <li>be 18 or older, if you're a natural person</li>
-        <li>have a Ballylife account linked to a verified mobile number</li>
-        <li>have an authenticated card linked to your account and selected for the subscription</li>
+        <li>have a verified Ballylife account</li>
+        <li>authorise a card for the subscription through our payment provider, PayFast, when you subscribe</li>
       </ul>
-      <p>If you meet those, you can register from the Subscriptions tab in My Account. You become a Subscriber once your registration is accepted.</p>
+      <p>If you meet those, you can subscribe from the BallylifeMORE page, or the BallylifeMORE tab in My Account. You become a Subscriber once your registration is accepted.</p>
 
       <h3 id="m02-2"><span class="code">02</span>Subscriber rules</h3>
       <p>You can't transfer your subscription or its benefits to someone else, or use subscriber benefits to buy items for resale. You can only hold one BallylifeMORE plan at a time -- to move between plans, see Upgrading or downgrading below.</p>
@@ -385,15 +385,26 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
       <div class="clause-head"><span class="code">M.03</span><h2>Plans and benefits</h2></div>
 
       <h3 id="m03-1"><span class="code">01</span>Two plans</h3>
-      <p>BallylifeMORE offers Standard and Premium plans. The monthly fee and benefits for each are set out in our current benefits table, which forms part of these terms.</p>
+      <p>BallylifeMORE offers Standard and Premium plans. The monthly fee and benefits for each are set out in the benefits table below, which forms part of these terms. Fees are charged in South African rand and include VAT.</p>
+      <table class="fee-table">
+        <thead><tr><th>Benefit</th><th>Standard</th><th>Premium</th></tr></thead>
+        <tbody>
+          <tr><td>Monthly fee</td><td>R49</td><td>R99</td></tr>
+          <tr><td>Discount on every order</td><td>5%</td><td>10%</td></tr>
+          <tr><td>Member deals (extra discount on items marked as deals)</td><td>—</td><td>extra 5%</td></tr>
+          <tr><td>Returns window</td><td>7 days</td><td>30 days</td></tr>
+          <tr><td>Priority support</td><td>—</td><td>Yes</td></tr>
+          <tr><td>Free trial for first-time Subscribers</td><td>30 days</td><td>30 days</td></tr>
+        </tbody>
+      </table>
 
       <h3 id="m03-2"><span class="code">02</span>Limits on benefits</h3>
-      <p>Subscription benefits don't apply to every product, every delivery area, or every time of day. In particular:</p>
+      <p>Subscription benefits apply only while your subscription is active. In particular:</p>
       <ul class="plain-list">
-        <li>Same-day or next-day delivery depends on stock at nearby distribution centres</li>
-        <li>Fast delivery cut-off times apply, and may be temporarily disabled during peak periods</li>
-        <li>Only certain delivery areas qualify for same-day or next-day service</li>
-        <li>If only some items in an order qualify, benefits apply only to those items -- the rest follow our standard Terms of our Platform</li>
+        <li>Order discounts apply to the price of the items in your order -- not to delivery charges, gift vouchers or subscription fees</li>
+        <li>Discounts are applied at checkout, to orders placed while your benefits are active</li>
+        <li>The longer returns window applies to orders placed while you're on the Premium plan</li>
+        <li>Delivery times are unchanged by a subscription -- they're shown on each product page</li>
       </ul>
 
       <h3 id="m03-3"><span class="code">03</span>Linked partner accounts</h3>
@@ -427,12 +438,12 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
       <p>If payment doesn't go through on the Billing Date, benefits are paused for that period. If we let benefits continue anyway, that's not a waiver of our right to remove them. If payment comes in after the Billing Date, the full fee is still owed for that period, without reduction, and benefits only apply for whatever's left of it.</p>
 
       <h3 id="m05-4"><span class="code">04</span>Invoices</h3>
-      <p>Invoices for successful subscription payments are available under Payment History in My Account.</p>
+      <p>Invoices for successful subscription payments are available in the BallylifeMORE tab in My Account.</p>
     </section>
 
     <section class="clause" id="m06">
       <div class="clause-head"><span class="code">M.06</span><h2>Upgrading or downgrading</h2></div>
-      <p>You can switch plans through your Subscription Dashboard. Switching during your free trial forfeits the trial if you're upgrading. After the trial:</p>
+      <p>You can switch plans from the BallylifeMORE tab in My Account. Switching during your free trial forfeits the trial if you're upgrading. After the trial:</p>
       <table class="fee-table">
         <tr><th>Direction</th><th>When it takes effect</th></tr>
         <tr><td>Upgrading</td><td>Immediately, once the new plan's fee is paid on the next Billing Date</td></tr>
@@ -451,7 +462,7 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
       <p>You can cancel within 7 calendar days of your Commencement Date at no cost, with a full refund, provided you haven't used any benefits yet. If you have used a benefit, the standard cancellation terms above apply instead.</p>
 
       <h3 id="m07-3"><span class="code">03</span>How to cancel</h3>
-      <p>Go to your Subscription Dashboard in My Account and follow the cancellation steps. To avoid the next month's charge, cancel before your next Billing Date.</p>
+      <p>Go to the BallylifeMORE tab in My Account and choose "Cancel membership". To avoid the next month's charge, cancel before your next Billing Date.</p>
 
       <h3 id="m07-4"><span class="code">04</span>Non-payment vs. cancellation</h3>
       <p>Missing a payment doesn't cancel your subscription -- it only pauses your benefits until payment is received. After three consecutive missed Subscription Periods, though, we may terminate the subscription outright.</p>
@@ -466,15 +477,12 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
     </section>
 
     <section class="clause" id="m09">
-      <div class="clause-head"><span class="code">M.09</span><h2>More Deals</h2></div>
-      <p>Subscribers get access to limited-time "More Deals" pricing on selected products.</p>
+      <div class="clause-head"><span class="code">M.09</span><h2>Member deals</h2></div>
+      <p>Premium Subscribers get an extra discount, shown in the benefits table, on items marked as deals -- on top of their order discount.</p>
       <ul class="plain-list">
-        <li>Once a More Deal sells out, the product may still be available at its normal price</li>
-        <li>Savings aren't guaranteed and are set at our discretion</li>
-        <li>Limited to 4 units of each More Deal product per Subscriber</li>
-        <li>Adding a More Deal to your cart doesn't reserve it -- payment must land within 25 hours of ordering, or the order is cancelled</li>
-        <li>Stock is reserved in the order payment is received, so slower payment methods like EFT carry more risk of missing out</li>
-        <li>More Deals are available during your free trial, and otherwise only while your subscription is paid up and benefits are active</li>
+        <li>Which items are deals, and for how long, is at our discretion; a deal can end or sell out at any time</li>
+        <li>Deal stock isn't reserved until your order is placed</li>
+        <li>Member deals apply during your free trial, and otherwise only while your subscription is paid up and benefits are active</li>
       </ul>
     </section>
 
@@ -482,7 +490,7 @@ const BALLYLIFEMORE_PAGE_HTML = String.raw`<!DOCTYPE html>
       <div class="clause-head"><span class="code">M.10</span><h2>Subscription fee discounts</h2></div>
       <p>We may offer discounted subscription pricing to selected Subscribers at our discretion.</p>
       <ul class="plain-list">
-        <li>Claim an offer manually from your Subscription Dashboard within its validity window</li>
+        <li>We'll tell you how to claim an offer, and by when, when we make it</li>
         <li>Discounts take effect from your next Billing Date, even if claimed during a free trial</li>
         <li>Claiming a new offer forfeits any existing active offer</li>
         <li>Only one discount can be active per account, and it can't be combined with other offers unless we say so</li>

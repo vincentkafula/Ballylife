@@ -93,6 +93,7 @@ function cartDeliveryWindow(items: R[]): string {
 }
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { DefaultPasswordBanner } from "./DefaultPasswordBanner";
+import { MorePlansPage } from "./MembershipPanels";
 import { OrderTracking } from "./OrderTracking";
 // These five are static content pages (legal/policy text with large
 // embedded HTML) reachable only from footer links most shoppers never
@@ -123,7 +124,7 @@ import { Footer } from "./Footer";
 import { formatZAR, useCurrency, useLiveLocation, setCountryManually, isShowingConvertedPrices } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
+type View = "morePlans" | "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
 type CheckoutStep = "address" | "shipping" | "payment" | "confirmation";
 type R = Record<string, unknown>;
 
@@ -1494,6 +1495,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
         <div className="space-y-2.5 mb-5">
           {[
             { label: "Subtotal",      value: fmtZAR(Number(cart?.subtotal ?? 0)) },
+            ...(Number(cart?.memberDiscount) > 0 ? [{ label: "BallylifeMORE saving", value: `-${fmtZAR(Number(cart?.memberDiscount))}` }] : []),
             { label: "Delivery",      value: Number(cart?.shipping) > 0 ? fmtZAR(Number(cart?.shipping)) : items.length && items.every(i => i.shippingIncluded) ? "Included" : "Free" },
             { label: "Estimated",     value: cartDeliveryWindow(items) },
             { label: "Tax (15% VAT)", value: fmtZAR(Number(cart?.tax ?? 0)) },
@@ -1501,7 +1503,7 @@ function CartView({ cart, onUpdateQty, onRemove, onApplyCoupon, onCheckout }: {
           ].map((r, i) => (
             <div key={i} className="flex justify-between text-sm">
               <span className="text-gray-500">{r.label}</span>
-              <span className={`font-semibold ${r.label === "Discount" ? "text-green-600" : "text-gray-900"}`}>{r.value}</span>
+              <span className={`font-semibold ${r.label === "Discount" || r.label === "BallylifeMORE saving" ? "text-green-700" : "text-gray-900"}`}>{r.value}</span>
             </div>
           ))}
           <div className="border-t border-gray-100 pt-3 flex justify-between">
@@ -1533,6 +1535,15 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
   const [paymentPending, setPaymentPending] = useState(false);
   const [selAddr, setSelAddr] = useState(0);
   const [shipping, setShipping] = useState("standard");
+  // Store credit (business rebates, Ballylife.credit rewards) can pay part or all of the order.
+  const [creditBalance, setCreditBalance] = useState(0);
+  const [useCredit, setUseCredit] = useState(true);
+  useEffect(() => {
+    import("../services/marketplaceApi").then(({ mktProgrammes }) => mktProgrammes.storeCredit())
+      .then(r => { if (r.success) setCreditBalance(r.data.balance); }).catch(() => undefined);
+  }, []);
+  const creditToApply = useCredit ? Math.min(creditBalance, Number(cart?.total ?? 0)) : 0;
+  const amountDue = Math.max(0, Number(cart?.total ?? 0) - creditToApply);
   // Keep the last non-empty item list: the cart is emptied once the order is
   // placed, but the confirmation screen still needs to describe delivery.
   const checkoutItemsRef = useRef<R[]>([]);
@@ -1590,7 +1601,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
     try {
       const { mktOrders: api } = await import("../services/marketplaceApi");
       const paymentMethod = payment === "bnpl" ? `bnpl_${bnplProvider}` : payment;
-      const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod });
+      const res = await api.place({ addressId: (addresses[selAddr] as R)?.id, shippingMethod: shipping, paymentMethod, useStoreCredit: creditToApply > 0 });
       if ((res as { success: boolean }).success) {
         // If PayFast (or any future redirect-based processor) is
         // configured, the order exists but payment isn't done yet — send
@@ -1834,13 +1845,19 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               {placeError}
             </div>
           )}
-          <ChargedInZarNote zarTotal={Number(cart?.total ?? 0)} />
+          {creditBalance > 0 && (
+            <label className="flex items-center gap-2.5 p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-sm cursor-pointer">
+              <input type="checkbox" checked={useCredit} onChange={e => setUseCredit(e.target.checked)} className="w-4 h-4" />
+              <span className="flex-1">Use store credit <b>{fmtZAR(Math.min(creditBalance, Number(cart?.total ?? 0)))}</b> <span className="text-gray-600">(balance {fmtZAR(creditBalance)})</span></span>
+            </label>
+          )}
+          <ChargedInZarNote zarTotal={amountDue} />
           <div className="flex gap-3">
             <button onClick={() => setStep("shipping")} className="flex-1 py-3.5 rounded-2xl text-sm font-semibold border border-gray-200">Back</button>
             <button onClick={handlePlace} disabled={placing}
               className="flex-[2] py-3.5 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-60"
               style={{ background: "linear-gradient(135deg,#D4A54A,#B8862E)" }}>
-              {placing ? <><Loader2 className="w-4 h-4 animate-spin" />Processing…</> : <>Place Order · {fmtZAR(Number(cart?.total ?? 0))}</>}
+              {placing ? <><Loader2 className="w-4 h-4 animate-spin" />Processing…</> : <>{amountDue === 0 && creditToApply > 0 ? "Pay with store credit" : "Place Order"} · {fmtZAR(amountDue)}</>}
             </button>
           </div>
         </div>
@@ -2114,6 +2131,16 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   }, [authUser]);
 
   useEffect(() => { loadInitial(); }, [loadInitial]);
+  // Back from PayFast's card authorisation for a BallylifeMORE subscription.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("subscription");
+    if (!result) return;
+    if (result === "success") { toast.success("Welcome to BallylifeMORE! Your membership activates as soon as PayFast confirms your card."); setView("account"); }
+    else toast("Subscription not completed — you haven't been charged.");
+    params.delete("subscription");
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+  }, []);
   useEffect(() => { setCartCount(((cart?.items as R[]) ?? []).length); }, [cart]);
 
   const handleAddToCart = async (p: R, variantId?: string) => {
@@ -2209,7 +2236,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     // Account
     if (label === "My Account" || label === "Invoices" || label === "Coupons" || label === "Personal Details") { gateOrPrompt("account"); return; }
     if (label === "Track Order") { setView("trackOrder"); return; }
-    if (label === "Ballylife") { setView("ballylifeMorePage"); return; }
+    if (label === "Ballylife") { setView("morePlans"); return; }
     if (label === "Returns") { setView("returnsPolicyPage"); return; }
 
     // Help
@@ -2463,9 +2490,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           </button>
         ))}
         {role !== "seller" && role !== "manager" && (
-          <button onClick={() => setView("catalog")} className="text-white/85 text-xs font-medium whitespace-nowrap hover:text-white transition-colors ml-auto">
-            Today's Deals
-          </button>
+          <>
+            <button onClick={() => setView("morePlans")} className="text-[#F5D48A] text-xs font-bold whitespace-nowrap hover:text-white transition-colors ml-auto">
+              BallylifeMORE
+            </button>
+            <button onClick={() => setView("catalog")} className="text-white/85 text-xs font-medium whitespace-nowrap hover:text-white transition-colors ml-3">
+              Today's Deals
+            </button>
+          </>
         )}
         {navItems.map(item => (
           <button key={item.id} onClick={() => setView(item.id)}
@@ -2537,7 +2569,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             <CustomerDashboard user={authUser} onProduct={id => { setSelProductId(id); setView("product"); }} onSignOut={handleSignOut}
               onWishlist={() => setView("wishlist")}
               onContact={() => handleFooterLink("Contact Us")}
-              onBallylifeMore={() => handleFooterLink("BallylifeMORE Terms")}
+              onBallylifeMore={() => setView("morePlans")}
             />
           )}
           {view === "seller" && authUser && authSeller && role === "seller" && (
@@ -2573,6 +2605,10 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
               {view === "ballylifeMorePage" && <BallylifeMorePage onBack={() => setView("home")} />}
               {view === "aboutUsPage" && <AboutUsPage onBack={() => setView("home")} onContact={() => setView("contactPage")} />}
             </Suspense>
+          )}
+          {view === "morePlans" && (
+            <MorePlansPage loggedIn={Boolean(authUser)} onSignIn={() => setShowAuthModal(true)}
+              onManage={() => setView("account")} onTerms={() => setView("ballylifeMorePage")} />
           )}
           {view === "admin" && authUser && role === "manager" && (
             <><DefaultPasswordBanner user={authUser} /><ManagerDashboard user={authUser} onSignOut={handleSignOut} /></>

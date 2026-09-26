@@ -851,3 +851,82 @@ ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS videos JSONB NOT NULL
 -- Cheapest CJ shipping line to the pricing country, captured at sync, so
 -- order placement can usually skip a (points-costing) freight quote.
 ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS est_logistic_name TEXT;
+
+-- ── BallylifeMORE subscriptions (services/subscriptions.ts) ──────────────
+-- One row per subscription; a user may have many over time, at most one
+-- not yet ended. Billing runs through a PayFast recurring subscription
+-- (payfast_token); plan prices live in utils/plans.ts.
+CREATE TABLE IF NOT EXISTS mkt_subscriptions (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               TEXT NOT NULL,
+  plan                  TEXT NOT NULL,            -- standard | premium
+  status                TEXT NOT NULL DEFAULT 'pending_payment',
+  -- pending_payment (card not yet authorised) | trialing | active | past_due | cancelled | expired
+  pending_plan          TEXT,                     -- a downgrade that starts next period
+  trial_ends_at         TIMESTAMPTZ,
+  current_period_start  TIMESTAMPTZ,
+  current_period_end    TIMESTAMPTZ,
+  cancel_at             TIMESTAMPTZ,              -- benefits end here after a cancellation
+  cancelled_at          TIMESTAMPTZ,
+  benefit_used          BOOLEAN NOT NULL DEFAULT false,   -- decides cooling-off refunds
+  missed_periods        INTEGER NOT NULL DEFAULT 0,
+  payfast_token         TEXT,
+  commenced_at          TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_mkt_subscriptions_user ON mkt_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_mkt_subscriptions_status ON mkt_subscriptions(status);
+
+-- Each subscription charge (and its refund), for payment history / invoices.
+CREATE TABLE IF NOT EXISTS mkt_subscription_payments (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id UUID NOT NULL REFERENCES mkt_subscriptions(id),
+  amount          NUMERIC(12,2) NOT NULL,
+  status          TEXT NOT NULL,                  -- paid | refunded | failed
+  plan            TEXT NOT NULL,
+  period_start    TIMESTAMPTZ,
+  period_end      TIMESTAMPTZ,
+  processor_ref   TEXT,                           -- PayFast pf_payment_id
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_payments_ref ON mkt_subscription_payments(processor_ref) WHERE processor_ref IS NOT NULL;
+
+-- Orders remember the membership they were placed under (discount applied,
+-- priority support, returns window).
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS member_plan TEXT;
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS member_discount NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS store_credit_applied NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE mkt_carts ADD COLUMN IF NOT EXISTS member_discount NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE mkt_carts ADD COLUMN IF NOT EXISTS member_plan TEXT;
+
+-- ── Store credit (business rebates, Ballylife.credit rewards) ────────────
+-- Append-only ledger: positive = credit earned, negative = spent at
+-- checkout. `reference` is unique so a rebate/reward/redemption can never
+-- be recorded twice. Earned credit counts once available_at has passed and
+-- until expires_at.
+CREATE TABLE IF NOT EXISTS mkt_store_credit_ledger (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       TEXT NOT NULL,
+  amount        NUMERIC(12,2) NOT NULL,
+  source        TEXT NOT NULL,       -- business_rebate | credit_reward | order_redemption | order_reversal
+  reference     TEXT NOT NULL UNIQUE,
+  description   TEXT,
+  available_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_store_credit_user ON mkt_store_credit_ledger(user_id);
+
+-- ── Ballylife for Business ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS mkt_business_accounts (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              TEXT NOT NULL UNIQUE,
+  company_name         TEXT NOT NULL,
+  registration_number  TEXT,
+  vat_number           TEXT,
+  status               TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | rejected | left
+  decided_at           TIMESTAMPTZ,
+  decision_note        TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
