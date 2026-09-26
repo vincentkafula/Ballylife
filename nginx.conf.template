@@ -11,7 +11,24 @@ server {
     gzip_min_length 1024;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
 
-    # Cache static assets aggressively
+    # Service-worker entry points have fixed names (no content hash), so
+    # they must always be revalidated -- caching them for a year kept
+    # returning visitors on an old build after a deploy. Exact-match
+    # locations win over the regex below.
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+    location = /registerSW.js {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # Cache static assets aggressively (Vite gives them content-hashed names)
     location ~* \.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
