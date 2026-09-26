@@ -1190,6 +1190,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
                 name={p.name as string}
                 discount={discount}
                 illustration={getProductIllustration(p)}
+                photos={productPhotos(imgs)}
               />
             </div>
           ) : (
