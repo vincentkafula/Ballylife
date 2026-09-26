@@ -495,6 +495,32 @@ export const mktJapanParts = {
     api<Ok<JapanPartsTask>>(`/api/marketplace/admin/japan-parts/fulfillments/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
 };
 
+// ── 1688 research (admin) ──────────────────────────────────────────────────
+export interface Sourcing1688Settings {
+  enabled: boolean; keywords: { keyword: string; productClass: string; enabled: boolean }[]; maxItemsPerKeyword: number; refreshHours: number;
+  filters: { sortType: "normal" | "va_sales360" | "price"; merchantType: "any" | "superFactory" | "certifiedMerchant"; supplierYears: "any" | "5" | "7" | "10"; fastShippingOnly: boolean; maxMoq: number | null; priceMinCny: number | null; priceMaxCny: number | null };
+  estimate: { markupPct: number; vatPct: number; vatUpliftPct: number; classes: Record<string, { dutyPct: number; freightZar: number }>; defaultClass: { dutyPct: number; freightZar: number } };
+}
+export interface Offer1688 {
+  id: string; offerId: string; title: string; url: string | null; priceCny: number; priceRangeCny: string | null; moq: number | null; unit: string | null;
+  stock: number | null; outOfStock: boolean; soldCount: number | null; repurchaseRate: number | null; starLevel: number | null;
+  supplierName: string | null; supplierType: string | null; supplierYears: number | null; location: string | null; images: string[];
+  keyword: string | null; productClass: string | null; estimate: { landedZar: number; resaleZar: number; unitZar: number; dutyZar: number; freightZar: number; importVatZar: number } | null;
+  status: string; cjSourcingStatus: string | null; cjFailReason: string | null; storeProductId: string | null; lastSeenAt: string;
+}
+export interface Run1688 { id: string; status: string; items: number; created: number; updated: number; skipped: number; excluded: number; error: string | null; startedAt: string; keywords: string[] }
+
+export const mkt1688 = {
+  settings: () => api<Ok<{ settings: Sourcing1688Settings; apifyConfigured: boolean; cjConfigured: boolean; running: boolean }>>("/api/marketplace/admin/sourcing-1688/settings"),
+  saveSettings: (settings: Sourcing1688Settings) => api<Ok<{ settings: Sourcing1688Settings; reestimated: number }>>("/api/marketplace/admin/sourcing-1688/settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+  run: () => api<Ok<{ started: boolean }>>("/api/marketplace/admin/sourcing-1688/run", { method: "POST" }),
+  runs: () => api<Ok<Run1688[]>>("/api/marketplace/admin/sourcing-1688/runs"),
+  offers: (q: Record<string, string> = {}) => api<Ok<Offer1688[]>>(`/api/marketplace/admin/sourcing-1688/offers?${new URLSearchParams(q)}`),
+  setStatus: (id: string, status: "new" | "shortlisted" | "dismissed") => api<Ok<Offer1688>>(`/api/marketplace/admin/sourcing-1688/offers/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  sendToCj: (id: string) => api<Ok<Offer1688>>(`/api/marketplace/admin/sourcing-1688/offers/${id}/send-to-cj`, { method: "POST" }),
+  syncCj: () => api<Ok<{ checked: number; sourced: number; failed: number; listed: number }>>("/api/marketplace/admin/sourcing-1688/sync-cj", { method: "POST" }),
+};
+
 /** PayFast is redirect-based: post the signed fields to its hosted page. */
 export function submitToPayfast(url: string, fields: Record<string, string>): void {
   const form = document.createElement("form");

@@ -185,77 +185,116 @@ export async function syncCjPage(opts: {
 
   const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0, skippedFresh: 0, excluded: 0, withVideo: 0 };
   const listedPricesZar: number[] = [];
-  for (const p of result.list ?? []) {
-    if (usdToZar === null) { counts.skippedNoRate++; continue; } // no USD rate on file -- flagged, never guessed
-    const costUsd = parseCjPrice(p.sellPrice);
-    if (costUsd === null) continue;
-    if (isExcludedFromStore(p.productNameEn, p.categoryName, ...(opts.categoryPath ?? []))) { counts.excluded++; continue; }
-
-    const { rows: existing } = await pool!.query(
-      `SELECT id, name, updated_at FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [CJ_SUPPLIER_ID, p.pid]
-    );
-    if (existing.length && freshSince && new Date(existing[0].updated_at) > freshSince) {
-      // Recently synced -- no CJ calls. Just make sure it's filed correctly.
-      const cat = categorizeProduct(existing[0].name, [...(opts.categoryPath ?? []), p.categoryName], knownCategories, DEFAULT_CATEGORY);
-      if (cat) await setCategory(existing[0].id, cat);
-      counts.skippedFresh++;
-      continue;
-    }
-
-    const w = await buildWhiteLabelledProduct(p);
-    if (!w.detailOk) counts.detailFailures++;
-    if (w.images.length) counts.withPhotos++;
-    if (w.videos.length) counts.withVideo++;
-
-    const shipping = w.detailOk ? await estimateShipping(w.variants[0]?.vid) : null;
-    const shippingUsd = shipping?.usd ?? null;
-    // What sellers see as the base price they mark up from: landed cost
-    // (goods + shipping) when CJ quoted shipping, goods only otherwise.
-    const baseZar = round2((costUsd + (shippingUsd ?? 0)) * usdToZar);
-    const categoryId = categorizeProduct(w.name, [...(opts.categoryPath ?? []), w.cjCategoryName], knownCategories, DEFAULT_CATEGORY);
-    const listable = categoryId !== null && w.detailOk && w.images.length > 0 && w.variants.length > 0 && shippingUsd !== null;
-
-    let supplierProductId: string;
-    if (existing.length) {
-      supplierProductId = existing[0].id;
-      // GREATEST: a cost increase raises the floor, but a re-sync never
-      // wipes out a price a manager has already marked up by hand.
-      await pool!.query(
-        `UPDATE mkt_supplier_products SET name = $1, description = $2, cost_price = $3, retail_price = GREATEST(retail_price, $4::numeric),
-           images = $5, category_id = COALESCE(category_id, $6), est_shipping_usd = COALESCE($7, est_shipping_usd), est_logistic_name = COALESCE($9, est_logistic_name), updated_at = now()
-         WHERE id = $8`,
-        [w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), categoryId, shippingUsd, supplierProductId, shipping?.logisticName ?? null]
-      );
-      if (categoryId) await setCategory(supplierProductId, categoryId);
-      // Only overwrite variants from a successful detail call -- a failed
-      // one must never wipe the vids that live orders depend on.
-      if (w.detailOk && w.variants.length) {
-        await pool!.query(`UPDATE mkt_supplier_products SET external_variants = $1, videos = $2 WHERE id = $3`, [JSON.stringify(w.variants), JSON.stringify(w.videos), supplierProductId]);
-      }
-      // Seller listings copied the catalogue photos at import time -- keep them on CJ's current set.
-      if (w.images.length) {
-        await pool!.query(`UPDATE mkt_products SET images = $1, updated_at = now() WHERE supplier_product_id = $2`, [JSON.stringify(w.images), supplierProductId]);
-      }
-      counts.updated++;
-    } else {
-      const { rows } = await pool!.query(
-        `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status,
-           external_source, external_id, external_variants, est_shipping_usd, videos, est_logistic_name)
-         VALUES ($1,$2,$3,$4,$5,'USD',$6,1,$7,'CN','pending_review','cjdropshipping',$8,$9,$10,$11,$12) RETURNING id`,
-        [CJ_SUPPLIER_ID, categoryId, w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), p.pid, JSON.stringify(w.variants), shippingUsd, JSON.stringify(w.videos), shipping?.logisticName ?? null]
-      );
-      supplierProductId = rows[0].id;
-      counts.imported++;
-    }
-
-    if (listable) {
-      listedPricesZar.push(await listInHouseStore(supplierProductId, { ...w, costUsd, shippingUsd: shippingUsd!, usdToZar, categoryId: categoryId! }));
-      counts.listed++;
-    }
-  }
+  const ctx: SyncContext = { usdToZar, knownCategories, categoryPath: opts.categoryPath, freshSince, counts, listedPricesZar };
+  for (const p of result.list ?? []) await syncCjSummary(p, ctx);
 
   logger.info("cj.sync_page", { pageNum: opts.pageNum, pageSize: opts.pageSize, cjCategoryId: opts.categoryId, keyword: opts.keyword, ...counts });
   return { ...counts, listedPricesZar, totalAvailable: Number(result.total ?? 0), pageNum: Number(result.pageNum ?? opts.pageNum), pageSize: Number(result.pageSize ?? opts.pageSize) };
+}
+
+
+interface SyncContext {
+  usdToZar: number | null; knownCategories: Set<string>; categoryPath?: string[]; freshSince: Date | null;
+  counts: Omit<PageResult, "listedPricesZar" | "totalAvailable" | "pageNum" | "pageSize">; listedPricesZar: number[];
+}
+
+/** Syncs one CJ product (list summary) into the catalogue and, when it's sellable, the Ballylife store. */
+async function syncCjSummary(p: CjProductSummary, ctx: SyncContext): Promise<void> {
+  const { usdToZar, knownCategories, freshSince, counts, listedPricesZar } = ctx;
+  const opts = { categoryPath: ctx.categoryPath };
+  if (usdToZar === null) { counts.skippedNoRate++; return; } // no USD rate on file -- flagged, never guessed
+  const costUsd = parseCjPrice(p.sellPrice);
+  if (costUsd === null) return;
+  if (isExcludedFromStore(p.productNameEn, p.categoryName, ...(opts.categoryPath ?? []))) { counts.excluded++; return; }
+
+  const { rows: existing } = await pool!.query(
+    `SELECT id, name, updated_at FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [CJ_SUPPLIER_ID, p.pid]
+  );
+  if (existing.length && freshSince && new Date(existing[0].updated_at) > freshSince) {
+    // Recently synced -- no CJ calls. Just make sure it's filed correctly.
+    const cat = categorizeProduct(existing[0].name, [...(opts.categoryPath ?? []), p.categoryName], knownCategories, DEFAULT_CATEGORY);
+    if (cat) await setCategory(existing[0].id, cat);
+    counts.skippedFresh++;
+    return;
+  }
+
+  const w = await buildWhiteLabelledProduct(p);
+  if (!w.detailOk) counts.detailFailures++;
+  if (w.images.length) counts.withPhotos++;
+  if (w.videos.length) counts.withVideo++;
+
+  const shipping = w.detailOk ? await estimateShipping(w.variants[0]?.vid) : null;
+  const shippingUsd = shipping?.usd ?? null;
+  // What sellers see as the base price they mark up from: landed cost
+  // (goods + shipping) when CJ quoted shipping, goods only otherwise.
+  const baseZar = round2((costUsd + (shippingUsd ?? 0)) * usdToZar);
+  const categoryId = categorizeProduct(w.name, [...(opts.categoryPath ?? []), w.cjCategoryName], knownCategories, DEFAULT_CATEGORY);
+  const listable = categoryId !== null && w.detailOk && w.images.length > 0 && w.variants.length > 0 && shippingUsd !== null;
+
+  let supplierProductId: string;
+  if (existing.length) {
+    supplierProductId = existing[0].id;
+    // GREATEST: a cost increase raises the floor, but a re-sync never
+    // wipes out a price a manager has already marked up by hand.
+    await pool!.query(
+      `UPDATE mkt_supplier_products SET name = $1, description = $2, cost_price = $3, retail_price = GREATEST(retail_price, $4::numeric),
+         images = $5, category_id = COALESCE(category_id, $6), est_shipping_usd = COALESCE($7, est_shipping_usd), est_logistic_name = COALESCE($9, est_logistic_name), updated_at = now()
+       WHERE id = $8`,
+      [w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), categoryId, shippingUsd, supplierProductId, shipping?.logisticName ?? null]
+    );
+    if (categoryId) await setCategory(supplierProductId, categoryId);
+    // Only overwrite variants from a successful detail call -- a failed
+    // one must never wipe the vids that live orders depend on.
+    if (w.detailOk && w.variants.length) {
+      await pool!.query(`UPDATE mkt_supplier_products SET external_variants = $1, videos = $2 WHERE id = $3`, [JSON.stringify(w.variants), JSON.stringify(w.videos), supplierProductId]);
+    }
+    // Seller listings copied the catalogue photos at import time -- keep them on CJ's current set.
+    if (w.images.length) {
+      await pool!.query(`UPDATE mkt_products SET images = $1, updated_at = now() WHERE supplier_product_id = $2`, [JSON.stringify(w.images), supplierProductId]);
+    }
+    counts.updated++;
+  } else {
+    const { rows } = await pool!.query(
+      `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status,
+         external_source, external_id, external_variants, est_shipping_usd, videos, est_logistic_name)
+       VALUES ($1,$2,$3,$4,$5,'USD',$6,1,$7,'CN','pending_review','cjdropshipping',$8,$9,$10,$11,$12) RETURNING id`,
+      [CJ_SUPPLIER_ID, categoryId, w.name, w.description, costUsd, baseZar, JSON.stringify(w.images), p.pid, JSON.stringify(w.variants), shippingUsd, JSON.stringify(w.videos), shipping?.logisticName ?? null]
+    );
+    supplierProductId = rows[0].id;
+    counts.imported++;
+  }
+
+  if (listable) {
+    listedPricesZar.push(await listInHouseStore(supplierProductId, { ...w, costUsd, shippingUsd: shippingUsd!, usdToZar, categoryId: categoryId! }));
+    counts.listed++;
+  }
+}
+
+/**
+ * Imports one CJ product by its pid -- e.g. one CJ just sourced for us from
+ * a 1688 research pick. Listed in the Ballylife store like any other CJ
+ * product when it has photos, variants and a shipping quote.
+ */
+export async function importCjProductByPid(pid: string): Promise<{ listed: boolean; productId: string | null }> {
+  const d = await getCjProductDetail(pid);
+  await ensureCjSupplierExists();
+  await ensureHouseStore();
+  const { rows: fxRows } = await pool!.query(`SELECT * FROM mkt_fx_rates`);
+  const usdToZar = convertToZar(1, "USD", new Map(fxRows.map((r: { currency: string; rate_to_zar: string }) => [r.currency, Number(r.rate_to_zar)])));
+  const { rows: catRows } = await pool!.query(`SELECT id FROM mkt_categories`);
+  const counts = { imported: 0, updated: 0, skippedNoRate: 0, withPhotos: 0, detailFailures: 0, listed: 0, skippedFresh: 0, excluded: 0, withVideo: 0 };
+  const summary = {
+    pid, productName: d.productName ?? d.productNameEn, productNameEn: d.productNameEn ?? d.productName,
+    productImage: Array.isArray(d.productImage) ? d.productImage[0] : d.productImage,
+    sellPrice: d.sellPrice ?? d.variants?.[0]?.variantSellPrice, categoryName: d.categoryName,
+  } as CjProductSummary;
+  await syncCjSummary(summary, { usdToZar, knownCategories: new Set(catRows.map((r: { id: string }) => r.id)), freshSince: null, counts, listedPricesZar: [] });
+  const { rows } = await pool!.query(
+    `SELECT p.id FROM mkt_products p JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
+     WHERE sp.supplier_id = $1 AND sp.external_id = $2 AND p.seller_id = $3`, [CJ_SUPPLIER_ID, pid, HOUSE_SELLER_ID]
+  );
+  logger.info("cj.product_imported", { pid, ...counts });
+  return { listed: counts.listed > 0, productId: rows[0]?.id ?? null };
 }
 
 /** Files a catalogue item (and the Ballylife listing of it) under a category. Sellers' own listings keep theirs. */

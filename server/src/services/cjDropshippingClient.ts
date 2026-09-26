@@ -363,3 +363,41 @@ export interface CjOrderDetail {
 export function getCjOrderDetail(orderId: string): Promise<CjOrderDetail> {
   return cjRequest<CjOrderDetail>("GET", "/shopping/order/getOrderDetail", { params: { orderId } });
 }
+
+// ── Sourcing (ask CJ to find and stock a product we found elsewhere) ────────
+// developers.cjdropshipping.com .../api2/api/product.html, section 5.
+
+export interface CjSourcingRequest {
+  productName: string;   // required, max 200
+  productImage: string;  // required, max 200
+  productUrl?: string;
+  thirdProductId?: string;
+  thirdVariantId?: string;
+  thirdProductSku?: string;
+  remark?: string;
+  /** Target price in USD. */
+  price?: number;
+}
+
+export function createCjSourcing(req: CjSourcingRequest): Promise<{ cjSourcingId: string; result?: string }> {
+  const clip = (s: string | undefined) => (s === undefined ? undefined : s.slice(0, 200));
+  return cjRequest("POST", "/product/sourcing/create", {
+    body: {
+      productName: clip(req.productName), productImage: clip(req.productImage), productUrl: clip(req.productUrl),
+      thirdProductId: clip(req.thirdProductId), thirdVariantId: clip(req.thirdVariantId), thirdProductSku: clip(req.thirdProductSku),
+      remark: clip(req.remark), price: req.price !== undefined ? Math.round(req.price * 100) / 100 : undefined,
+    },
+    purpose: "order",
+  });
+}
+
+export interface CjSourcingRecord {
+  sourceId: string; sourceNumber?: string; sourceStatus: string; sourceStatusStr?: string;
+  cjProductId?: string | null; cjVariantSku?: string | null; failReason?: number | null; failReasonStr?: string | null;
+}
+
+/** sourceStatus "3" = succeeded (cjProductId set), "5" = failed (failReasonStr set); anything else is in progress. */
+export function queryCjSourcing(sourceIds: string[]): Promise<CjSourcingRecord[]> {
+  const qs = sourceIds.slice(0, 100).map(id => `sourceIds=${encodeURIComponent(id)}`).join("&");
+  return cjRequest<CjSourcingRecord[]>("GET", `/product/sourcing/queryList?${qs}`, { purpose: "order" });
+}

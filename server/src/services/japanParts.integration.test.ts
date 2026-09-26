@@ -16,7 +16,7 @@ let customerToken: string;
 let jp: typeof import("./japanParts");
 let apifyItems: unknown = [];
 let apifyStatus = 200;
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: ReturnType<typeof vi.fn<any[], Promise<unknown>>>;
 
 const WHEEL = { id: "UG-1", name: "RAYS VOLK TE37 17インチ", priceTaxIncluded: "¥55,000", condition: "B", shopName: "UP-GARAGE 横浜店", prefecture: "神奈川県", maker: "Toyota", carModel: "86", images: ["https://img.upgarage.com/1.jpg"], url: "https://www.upgarage.com/goods/UG-1" };
 const SEAT = { id: "UG-2", name: "レカロ SR-7", priceTaxIncluded: "¥33,000", condition: "C", images: ["https://img.upgarage.com/2.jpg"], url: "https://www.upgarage.com/goods/UG-2" };
@@ -45,7 +45,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   apifyStatus = 200;
-  fetchMock = vi.fn(async (input: unknown) => {
+  fetchMock = vi.fn(async (input: unknown): Promise<unknown> => {
     const url = String(input);
     if (!url.startsWith("https://api.apify.com/")) throw new Error(`unexpected fetch ${url}`);
     const body = JSON.stringify(apifyItems);

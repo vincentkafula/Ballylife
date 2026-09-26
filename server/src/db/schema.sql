@@ -998,3 +998,69 @@ CREATE TABLE IF NOT EXISTS jp_parts_fulfillments (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (order_id, product_id)
 );
+
+-- ── 1688 product research (Apify: sourabhbgp/1688-scraper) ──────────────
+-- Research only: nothing here is shown to shoppers. An admin picks winners
+-- and sends them to CJ as sourcing requests; once CJ has sourced a product
+-- it's imported and sold like any other CJ product (CJ-only rule intact).
+CREATE TABLE IF NOT EXISTS sourcing_1688_settings (
+  id          TEXT PRIMARY KEY DEFAULT 'default',
+  settings    JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sourcing_1688_offers (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  offer_id            TEXT NOT NULL UNIQUE,
+  title               TEXT NOT NULL,
+  url                 TEXT,
+  price_cny           NUMERIC(12,2) NOT NULL,
+  price_range_cny     TEXT,
+  moq                 INTEGER,
+  unit                TEXT,
+  stock               INTEGER,
+  out_of_stock        BOOLEAN NOT NULL DEFAULT false,
+  sold_count          INTEGER,
+  repurchase_rate     NUMERIC(6,2),
+  star_level          NUMERIC(4,1),
+  supplier_name       TEXT,
+  supplier_type       TEXT,
+  supplier_years      INTEGER,
+  location            TEXT,
+  category_path       TEXT,
+  images              JSONB NOT NULL DEFAULT '[]',
+  video_url           TEXT,
+  total_variants      INTEGER,
+  supports_dropship   BOOLEAN,
+  delivery_limit_days INTEGER,
+  source_keyword      TEXT,
+  product_class       TEXT,
+  estimate            JSONB,
+  status              TEXT NOT NULL DEFAULT 'new', -- new | shortlisted | dismissed | sent_to_cj | sourcing_failed | sourced | listed
+  cj_sourcing_id      TEXT,
+  cj_sourcing_status  TEXT,       -- CJ's text for the current state
+  cj_fail_reason      TEXT,
+  cj_product_id       TEXT,
+  store_product_id    TEXT,       -- our mkt_products id once listed
+  sent_to_cj_at       TIMESTAMPTZ,
+  first_seen_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_1688_offers_status ON sourcing_1688_offers(status);
+
+CREATE TABLE IF NOT EXISTS sourcing_1688_runs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  apify_run_id TEXT,
+  keywords     JSONB NOT NULL DEFAULT '[]',
+  status       TEXT NOT NULL,      -- ok | failed | schema_changed | empty
+  items        INTEGER NOT NULL DEFAULT 0,
+  created      INTEGER NOT NULL DEFAULT 0,
+  updated      INTEGER NOT NULL DEFAULT 0,
+  skipped      INTEGER NOT NULL DEFAULT 0,
+  excluded     INTEGER NOT NULL DEFAULT 0,
+  error        TEXT,
+  started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at  TIMESTAMPTZ
+);
