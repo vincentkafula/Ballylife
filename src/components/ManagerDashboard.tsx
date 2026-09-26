@@ -11,9 +11,10 @@ import { mktSuperAdmin } from "../services/marketplaceApi";
 import { ProgrammesAdminPanel } from "./MembershipPanels";
 import { JapanPartsAdminPanel } from "./JapanParts";
 import { Sourcing1688AdminPanel } from "./Sourcing1688Admin";
+import { AliExpressAdminPanel } from "./AliExpressAdmin";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
+type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "aliexpress" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
 
 // Maps a specific granted Marketplace Management position (from the job
 // application flow) to which of the 8 real tabs this dashboard already
@@ -49,7 +50,7 @@ const TIER_TABS: Record<MarketTier, Tab[]> = {
   marketplace_ops: ["overview", "sellerApproval", "productApproval"],
   fulfillment: ["overview", "orders", "fulfilment", "supplyChain"],
   finance_security: ["overview", "financial", "programmes", "security", "reports"],
-  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "sourcing1688", "japanParts", "programmes", "supplyChain", "financial", "reports", "security"],
+  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "aliexpress", "sourcing1688", "japanParts", "programmes", "supplyChain", "financial", "reports", "security"],
 };
 
 function positionToMarketTier(position: string | null): MarketTier {
@@ -86,7 +87,11 @@ function SideNavButton({ active, onClick, icon, label, badge }: { active: boolea
 interface Props { user: MktAuthUser; onSignOut: () => void; }
 
 export function ManagerDashboard({ user, onSignOut }: Props) {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() => {
+    // Coming back from connecting AliExpress: open that tab once.
+    try { if (sessionStorage.getItem("mgr-tab") === "aliexpress") { sessionStorage.removeItem("mgr-tab"); return "aliexpress"; } } catch { /* storage unavailable */ }
+    return "overview";
+  });
   const [tier, setTier] = useState<MarketTier>("admin");
   const [tierPosition, setTierPosition] = useState<string | null>(null);
 
@@ -163,6 +168,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     { id: "supplyChain", label: "Supply Chain", icon: <Globe2 className="w-4 h-4" /> },
     { id: "financial", label: "Financial", icon: <DollarSign className="w-4 h-4" /> },
     { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
+    { id: "aliexpress", label: "AliExpress", icon: <ShoppingBag className="w-4 h-4" /> },
     { id: "sourcing1688", label: "1688 Research", icon: <Search className="w-4 h-4" /> },
     { id: "japanParts", label: "Japan Parts", icon: <Package className="w-4 h-4" /> },
     { id: "programmes", label: "Memberships & Business", icon: <Users className="w-4 h-4" /> },
@@ -303,6 +309,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               </div>
             )}
 
+            {tab === "aliexpress" && <AliExpressAdminPanel />}
             {tab === "sourcing1688" && <Sourcing1688AdminPanel />}
             {tab === "japanParts" && <JapanPartsAdminPanel />}
             {tab === "programmes" && <ProgrammesAdminPanel />}

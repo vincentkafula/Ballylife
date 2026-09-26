@@ -2184,6 +2184,18 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   }, [authUser]);
 
   useEffect(() => { loadInitial(); }, [loadInitial]);
+  // Back from connecting the AliExpress account (admin).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("aliexpress");
+    if (!result) return;
+    if (result === "connected") toast.success("AliExpress account connected.");
+    else toast.error(`AliExpress wasn't connected: ${params.get("reason") ?? "please try again"}`);
+    try { sessionStorage.setItem("mgr-tab", "aliexpress"); } catch { /* storage unavailable */ }
+    setView("admin");
+    params.delete("aliexpress"); params.delete("reason");
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+  }, []);
   // Back from PayFast's payment page for an order.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

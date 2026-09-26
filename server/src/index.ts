@@ -14,6 +14,8 @@ import programmesRouter from "./routes/programmesRouter";
 import japanPartsRouter from "./routes/japanPartsRouter";
 import sourcing1688Router from "./routes/sourcing1688Router";
 import superAdminRouter from "./routes/superAdminRouter";
+import aliexpressRouter from "./routes/aliexpressRouter";
+import { startAliExpressWorker } from "./services/aliexpressFulfillment";
 import { ensureSuperAdminFromEnv } from "./services/superAdmin";
 import { startCjFulfillmentWorker } from "./services/cjFulfillment";
 import { startCjCatalogWorker, enforceCjOnlyCatalog, tidyCatalogOnce, applyMarkupTiersOnce } from "./services/cjCatalog";
@@ -107,6 +109,7 @@ app.use("/api/marketplace", programmesRouter);
 app.use("/api/marketplace", japanPartsRouter);
 app.use("/api/marketplace", sourcing1688Router);
 app.use("/api/marketplace", superAdminRouter);
+app.use("/api/marketplace", aliexpressRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -148,6 +151,7 @@ async function start() {
   await ensureJapanPartsCategory().catch(err => logger.error("jp_parts.category_failed", { error: err instanceof Error ? err.message : String(err) }));
   startJapanPartsWorker();
   start1688Worker();
+  startAliExpressWorker();
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
     console.log(`  Health → http://localhost:${PORT}/health`);

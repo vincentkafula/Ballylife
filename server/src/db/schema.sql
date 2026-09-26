@@ -1097,3 +1097,41 @@ CREATE TABLE IF NOT EXISTS text_translations (
   english      TEXT NOT NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── AliExpress (Open Platform, Drop Shipping API) ───────────────────────
+-- The linked AliExpress buyer account's tokens, encrypted at rest.
+CREATE TABLE IF NOT EXISTS aliexpress_auth (
+  id                  TEXT PRIMARY KEY DEFAULT 'default',
+  access_token_enc    TEXT NOT NULL,
+  refresh_token_enc   TEXT,
+  expires_at          TIMESTAMPTZ,
+  refresh_expires_at  TIMESTAMPTZ,
+  account             TEXT,
+  connected_by        TEXT,
+  connected_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- One-time OAuth "state" values (CSRF protection for the connect flow).
+CREATE TABLE IF NOT EXISTS aliexpress_oauth_states (
+  state       TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Orders placed on AliExpress for paid Ballylife orders.
+CREATE TABLE IF NOT EXISTS aliexpress_fulfillments (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID NOT NULL UNIQUE REFERENCES mkt_orders(id),
+  status           TEXT NOT NULL DEFAULT 'queued', -- queued | placing | placed | shipped | delivered | needs_attention | failed | cancelled
+  attempts         INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_error       TEXT,
+  ae_order_ids     JSONB NOT NULL DEFAULT '[]',
+  ae_status        TEXT,
+  paid             BOOLEAN NOT NULL DEFAULT false,
+  tracking_number  TEXT,
+  logistics_service TEXT,
+  last_synced_at   TIMESTAMPTZ,
+  alerted_at       TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);

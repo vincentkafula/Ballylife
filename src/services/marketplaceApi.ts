@@ -522,6 +522,20 @@ export const mkt1688 = {
   syncCj: () => api<Ok<{ checked: number; sourced: number; failed: number; listed: number }>>("/api/marketplace/admin/sourcing-1688/sync-cj", { method: "POST" }),
 };
 
+// ── AliExpress (admin) ────────────────────────────────────────────────────
+type AeOk<T> = { success: boolean; data: T; error?: string };
+export const mktAliExpress = {
+  status: () => api<AeOk<Record<string, any>>>("/api/marketplace/admin/aliexpress/status"),
+  connect: () => api<AeOk<{ url: string }>>("/api/marketplace/admin/aliexpress/connect", { method: "POST" }),
+  disconnect: () => api<AeOk<unknown>>("/api/marketplace/admin/aliexpress/disconnect", { method: "POST" }),
+  test: (product?: string) => api<AeOk<Record<string, any>>>("/api/marketplace/admin/aliexpress/test", { method: "POST", body: JSON.stringify({ product }) }),
+  search: (q: string, page = 1) => api<AeOk<Record<string, any>[]>>(`/api/marketplace/admin/aliexpress/search?${new URLSearchParams({ q, page: String(page) })}`),
+  import: (items: string[]) => api<AeOk<Record<string, any>[]>>("/api/marketplace/admin/aliexpress/import", { method: "POST", body: JSON.stringify({ items }) }),
+  products: () => api<AeOk<Record<string, any>[]>>("/api/marketplace/admin/aliexpress/products"),
+  orders: () => api<AeOk<Record<string, any>[]>>("/api/marketplace/admin/aliexpress/fulfillments"),
+  retry: (id: string) => api<AeOk<Record<string, any>>>(`/api/marketplace/admin/aliexpress/fulfillments/${id}/retry`, { method: "POST" }),
+};
+
 // ── Super admin ───────────────────────────────────────────────────────────
 export const mktSuperAdmin = {
   managers: () => api<{ success: boolean; data: unknown[]; error?: string }>("/api/marketplace/admin/managers"),

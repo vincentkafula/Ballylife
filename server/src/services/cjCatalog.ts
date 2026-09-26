@@ -346,7 +346,7 @@ export async function repriceHouseListings(usdToZar: number): Promise<number> {
   return rows.length;
 }
 
-async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProduct & { costUsd: number; shippingUsd: number; usdToZar: number; categoryId: string }): Promise<number> {
+export async function listInHouseStore(supplierProductId: string, w: WhiteLabelledProduct & { costUsd: number; shippingUsd: number; usdToZar: number; categoryId: string }): Promise<number> {
   const stock = w.stock ?? 100;
   const price = houseListingPrice(w.costUsd, w.shippingUsd, w.usdToZar);
   const variants = houseListingVariants(w.variants, w.costUsd, w.usdToZar, stock, w.shippingUsd);
@@ -696,12 +696,12 @@ export async function enforceCjOnlyCatalog(): Promise<{ products: number; catalo
      WHERE status IN ('active', 'out_of_stock', 'pending_review')
        AND (source IS NULL OR source NOT IN ('upgarage', '1688')) -- Japan used parts and 1688 agent listings
        AND (supplier_product_id IS NULL
-            OR supplier_product_id NOT IN (SELECT id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping'))
+            OR supplier_product_id NOT IN (SELECT id FROM mkt_supplier_products WHERE external_source IN ('cjdropshipping', 'aliexpress')))
      RETURNING id`
   );
   const { rows: items } = await pool!.query(
     `UPDATE mkt_supplier_products SET status = 'inactive', updated_at = now()
-     WHERE status <> 'inactive' AND (external_source IS NULL OR external_source <> 'cjdropshipping')
+     WHERE status <> 'inactive' AND (external_source IS NULL OR external_source NOT IN ('cjdropshipping', 'aliexpress'))
      RETURNING id`
   );
   if (products.length || items.length) logger.info("catalog.cj_only_enforced", { products: products.length, catalogItems: items.length });
