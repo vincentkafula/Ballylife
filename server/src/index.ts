@@ -16,6 +16,8 @@ import japanPartsRouter from "./routes/japanPartsRouter";
 import sourcing1688Router from "./routes/sourcing1688Router";
 import superAdminRouter from "./routes/superAdminRouter";
 import aliexpressRouter from "./routes/aliexpressRouter";
+import socialRouter from "./routes/socialRouter";
+import { startSocialWorker } from "./services/social/socialPosting";
 import { startAliExpressWorker } from "./services/aliexpressFulfillment";
 import { ensureSuperAdminFromEnv } from "./services/superAdmin";
 import { archiveDemoDataOnce } from "./services/demoCleanup";
@@ -112,6 +114,7 @@ app.use("/api/marketplace", japanPartsRouter);
 app.use("/api/marketplace", sourcing1688Router);
 app.use("/api/marketplace", superAdminRouter);
 app.use("/api/marketplace", aliexpressRouter);
+app.use("/api/marketplace", socialRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -160,6 +163,7 @@ async function start() {
   startJapanPartsWorker();
   start1688Worker();
   startAliExpressWorker();
+  startSocialWorker();
   logger.info("http.async_errors_caught", { routes: wrappedRoutes });
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);

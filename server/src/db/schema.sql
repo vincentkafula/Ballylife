@@ -1152,3 +1152,37 @@ CREATE INDEX IF NOT EXISTS idx_seller_kyc_seller ON seller_kyc_verifications(sel
 
 -- Demo/test orders are flagged rather than deleted, and left out of every dashboard.
 ALTER TABLE mkt_orders ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false;
+
+-- Social media auto-posting. One row per (product, platform): it is both
+-- the queue (status queued -> posting -> posted | failed | skipped) and
+-- the log of every attempt (response ids, errors, attempts).
+CREATE TABLE IF NOT EXISTS social_posts (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id       UUID NOT NULL,
+  platform         TEXT NOT NULL,          -- facebook | instagram | threads | tiktok | linkedin
+  status           TEXT NOT NULL DEFAULT 'queued',
+  trigger          TEXT NOT NULL DEFAULT 'auto', -- auto | manual
+  caption          TEXT,
+  image_url        TEXT,
+  external_id      TEXT,                   -- post id returned by the platform
+  external_url     TEXT,
+  attempts         INTEGER NOT NULL DEFAULT 0,
+  last_error       TEXT,
+  scheduled_for    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  posted_at        TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (product_id, platform)
+);
+CREATE INDEX IF NOT EXISTS idx_social_posts_due ON social_posts(status, scheduled_for);
+
+-- Platform tokens that get refreshed at runtime (the first token comes
+-- from Railway variables; refreshed ones are stored here, encrypted).
+CREATE TABLE IF NOT EXISTS social_tokens (
+  platform         TEXT PRIMARY KEY,
+  access_token_enc TEXT NOT NULL,
+  refresh_token_enc TEXT,
+  expires_at       TIMESTAMPTZ,
+  meta             JSONB NOT NULL DEFAULT '{}', -- non-secret ids (page id, instagram id, names)
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
