@@ -77,10 +77,10 @@ export function CustomerDashboard({ user, onProduct, onSignOut, onWishlist, onCo
     const [statsRes, spendRes, ordersRes, addrRes] = await Promise.allSettled([
       mktCustomer.stats(user.id), mktCustomer.spending(user.id), mktOrders.list({ userId: user.id }), mktAddresses(user.id),
     ]);
-    if (statsRes.status === "fulfilled") setStats(statsRes.value.data as R);
+    if (statsRes.status === "fulfilled") setStats((statsRes.value.data ?? null) as R);
     if (spendRes.status === "fulfilled") setSpending(spendRes.value.data as R);
-    if (ordersRes.status === "fulfilled") setOrders(ordersRes.value.data as R[]);
-    if (addrRes.status === "fulfilled") setAddresses(addrRes.value.data as R[]);
+    if (ordersRes.status === "fulfilled") setOrders((ordersRes.value.data ?? []) as R[]);
+    if (addrRes.status === "fulfilled") setAddresses((addrRes.value.data ?? []) as R[]);
     setLoading(false);
   }, [user.id]);
 

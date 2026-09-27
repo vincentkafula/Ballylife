@@ -5,6 +5,25 @@ let _token: string | null = localStorage.getItem("mkt_token");
 export const setMktToken = (t: string | null) => { _token = t; if (t) localStorage.setItem("mkt_token", t); else localStorage.removeItem("mkt_token"); };
 export const getMktToken = () => _token;
 
+const SESSION_KEYS = ["mkt_user", "mkt_seller", "mkt_supplier", "mkt_authority", "mkt_shipping", "mkt_credit"];
+/** Forgets the signed-in account on this device. */
+export function clearMktSession(): void {
+  setMktToken(null);
+  for (const k of SESSION_KEYS) { try { localStorage.removeItem(k); } catch { /* storage unavailable */ } }
+}
+
+/** True when a saved sign-in token has passed its expiry (checked locally, no request needed). */
+export function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
+    return typeof payload.exp === "number" && payload.exp * 1000 <= Date.now();
+  } catch { return false; }
+}
+
+/** Fired when the server says the sign-in is no longer valid (expired, signed out elsewhere, account closed). */
+export const SESSION_EXPIRED_EVENT = "mkt:session-expired";
+
 // A real production storefront doesn't silently substitute fake catalog/
 // order data for real data when the backend is unreachable -- a shopper
 // seeing an "in stock" quantity, a price, or an order status that isn't
@@ -31,6 +50,13 @@ async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   try {
     const res = await fetch(`${BASE}${path}`, { ...opts, headers, signal: controller.signal });
     const j = await res.json();
+    // The saved sign-in stopped working (expired after 8 hours, password
+    // changed, account closed): sign out on this device and let the app ask
+    // the user to sign in again, rather than every screen failing on its own.
+    if (res.status === 401 && headers["Authorization"] && !path.startsWith("/api/auth/login") && /token|authoriz|authenticated/i.test(String(j?.error ?? ""))) {
+      clearMktSession();
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+    }
     // A well-formed error body (e.g. 401 "Invalid username or password",
     // 403, 409) is a normal, expected outcome — return it as-is so callers
     // handle it via their own r.success check, exactly like a 200. Only
@@ -395,7 +421,7 @@ export const mktAuth = {
     if (r.success && r.token) { setMktToken(r.token); localStorage.setItem("mkt_user", JSON.stringify(r.user)); localStorage.setItem("mkt_seller", JSON.stringify(r.seller)); }
     return r;
   },
-  logout: () => { setMktToken(null); localStorage.removeItem("mkt_user"); localStorage.removeItem("mkt_seller"); localStorage.removeItem("mkt_supplier"); localStorage.removeItem("mkt_authority"); localStorage.removeItem("mkt_shipping"); localStorage.removeItem("mkt_credit"); },
+  logout: () => clearMktSession(),
   // A password change signs out every other session (token_version bump) and
   // returns a fresh token for this one -- keep it, or this session is
   // signed out on its next request too.
@@ -410,6 +436,7 @@ export const mktAuth = {
     api<{ success: boolean; message?: string; error?: string }>("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
   restoreSession: (): { user: MktAuthUser; seller: { id: string; storeName: string; status: string } | null; supplier: Record<string, unknown> | null; authority: Record<string, unknown> | null; shipping: Record<string, unknown> | null; credit: Record<string, unknown> | null } | null => {
     if (!getMktToken()) return null;
+    if (isTokenExpired(getMktToken())) { clearMktSession(); return null; } // an expired sign-in isn't a session
     const raw = localStorage.getItem("mkt_user");
     if (!raw) return null;
     try {

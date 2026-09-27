@@ -64,8 +64,8 @@ export function SupplierDashboard({ user, supplier, onSignOut }: Props) {
       mktSuppliersSelf.get(String(supplier.id)), mktSuppliersSelf.products(String(supplier.id)), mktSuppliersSelf.orders(String(supplier.id)),
     ]);
     if (profileRes.status === "fulfilled" && profileRes.value.success) setProfile(profileRes.value.data as R);
-    if (productsRes.status === "fulfilled") setProducts(productsRes.value.data as R[]);
-    if (ordersRes.status === "fulfilled") setOrders(ordersRes.value.data as R[]);
+    if (productsRes.status === "fulfilled") setProducts((productsRes.value.data ?? []) as R[]);
+    if (ordersRes.status === "fulfilled") setOrders((ordersRes.value.data ?? []) as R[]);
     setLoading(false);
   }, [supplier.id]);
 

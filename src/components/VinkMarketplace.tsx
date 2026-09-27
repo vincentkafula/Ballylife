@@ -2158,6 +2158,19 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     if (initialAction === "sell" && !mktAuth.restoreSession()) setShowAuthModal(true);
   }, [initialAction]);
 
+  // The server rejected the saved sign-in (expired, or signed out elsewhere):
+  // drop back to signed-out and ask to sign in again.
+  useEffect(() => {
+    const onExpired = () => {
+      setAuthUser(null); setAuthSeller(null); setAuthSupplier(null); setAuthAuthority(null); setAuthShipping(null); setAuthCredit(null);
+      setView(v => (["admin", "seller", "supplier", "authority", "shipping", "credit", "account", "orders", "checkout"].includes(v) ? "home" : v));
+      setShowAuthModal(true);
+      toast("Your session has expired — please sign in again.");
+    };
+    window.addEventListener("mkt:session-expired", onExpired);
+    return () => window.removeEventListener("mkt:session-expired", onExpired);
+  }, []);
+
   useEffect(() => {
     if (initialProductId) { setSelProductId(initialProductId); setView("product"); }
     else if (initialAction === "shop") { setView("catalog"); }
@@ -2170,14 +2183,14 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     const [catRes, prodRes, cartRes, wishRes, addrRes] = results as PromiseSettledResult<{ data: unknown }>[];
     // Empty categories are hidden from shoppers -- a menu of empty aisles
     // makes the whole shop look empty.
-    if (catRes.status  === "fulfilled") setCategories((catRes.value.data as R[]).filter(c => Number(c.productCount ?? 0) > 0));
+    if (catRes.status  === "fulfilled") setCategories(((catRes.value.data ?? []) as R[]).filter(c => Number(c.productCount ?? 0) > 0));
     else showLoadError(catRes.reason);
-    if (prodRes.status === "fulfilled") setProducts(prodRes.value.data as R[]);
+    if (prodRes.status === "fulfilled") setProducts((prodRes.value.data ?? []) as R[]);
     else showLoadError(prodRes.reason);
     if (authUser) {
       if (cartRes?.status === "fulfilled" && cartRes.value.data) setCart(cartRes.value.data as R);
-      if (wishRes?.status === "fulfilled") setWishlistIds(new Set(((wishRes.value.data as R[]) ?? []).map(p => String(p.id))));
-      if (addrRes?.status === "fulfilled") setAddresses((addrRes.value.data as R[]) ?? []);
+      if (wishRes?.status === "fulfilled") setWishlistIds(new Set((((wishRes.value.data ?? []) as R[]) ?? []).map(p => String(p.id))));
+      if (addrRes?.status === "fulfilled") setAddresses(((addrRes.value.data ?? []) as R[]) ?? []);
     } else {
       setCart(null); setWishlistIds(new Set()); setAddresses([]);
     }

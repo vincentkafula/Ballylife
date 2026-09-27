@@ -147,12 +147,12 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     const [statsRes, psRes, ppRes, ordersRes, custRes, sellRes] = await Promise.allSettled([
       mktAdmin.stats(), mktAdmin.pendingSellers(), mktAdmin.pendingProducts(), mktAdmin.orders(), mktAdmin.customers(), mktSellers.list(),
     ]);
-    if (statsRes.status === "fulfilled") setStats(statsRes.value.data as R);
-    if (psRes.status === "fulfilled") setPendingSellers(psRes.value.data as R[]);
-    if (ppRes.status === "fulfilled") setPendingProducts(ppRes.value.data as R[]);
-    if (ordersRes.status === "fulfilled") setOrders(ordersRes.value.data as R[]);
-    if (custRes.status === "fulfilled") setCustomers(custRes.value.data as R[]);
-    if (sellRes.status === "fulfilled") setSellers(sellRes.value.data as R[]);
+    if (statsRes.status === "fulfilled") setStats((statsRes.value.data ?? null) as R);
+    if (psRes.status === "fulfilled") setPendingSellers((psRes.value.data ?? []) as R[]);
+    if (ppRes.status === "fulfilled") setPendingProducts((ppRes.value.data ?? []) as R[]);
+    if (ordersRes.status === "fulfilled") setOrders((ordersRes.value.data ?? []) as R[]);
+    if (custRes.status === "fulfilled") setCustomers((custRes.value.data ?? []) as R[]);
+    if (sellRes.status === "fulfilled") setSellers((sellRes.value.data ?? []) as R[]);
     setLoading(false);
   }, []);
 
@@ -596,16 +596,16 @@ function SupplyChainPanel() {
       mktAdmin.suppliers.list(), mktAdmin.warehouses.list(), mktAdmin.supplierOrders.list(), mktAdmin.shipments.list(),
       mktAdmin.supplierProducts.list(), mktCategories(), mktAdmin.taxRates.list(), mktAdmin.dutyRates.list(), mktAdmin.customsRecords.list(), mktAdmin.vehicleDutyZm.list(),
     ]);
-    if (supRes.status === "fulfilled") setSuppliers(supRes.value.data as R[]);
-    if (whRes.status === "fulfilled") setWarehouses(whRes.value.data as R[]);
-    if (soRes.status === "fulfilled") setSupplierOrders(soRes.value.data as R[]);
-    if (shRes.status === "fulfilled") setShipments(shRes.value.data as R[]);
-    if (catRes.status === "fulfilled") setCatalog(catRes.value.data as R[]);
-    if (catgRes.status === "fulfilled") setCategories(catgRes.value.data as R[]);
-    if (taxRes.status === "fulfilled") setTaxRates(taxRes.value.data as R[]);
-    if (dutyRes.status === "fulfilled") setDutyRates(dutyRes.value.data as R[]);
-    if (custRes.status === "fulfilled") setCustomsRecords(custRes.value.data as R[]);
-    if (vdzRes.status === "fulfilled") setVehicleDutyZm(vdzRes.value.data as R[]);
+    if (supRes.status === "fulfilled") setSuppliers((supRes.value.data ?? []) as R[]);
+    if (whRes.status === "fulfilled") setWarehouses((whRes.value.data ?? []) as R[]);
+    if (soRes.status === "fulfilled") setSupplierOrders((soRes.value.data ?? []) as R[]);
+    if (shRes.status === "fulfilled") setShipments((shRes.value.data ?? []) as R[]);
+    if (catRes.status === "fulfilled") setCatalog((catRes.value.data ?? []) as R[]);
+    if (catgRes.status === "fulfilled") setCategories((catgRes.value.data ?? []) as R[]);
+    if (taxRes.status === "fulfilled") setTaxRates((taxRes.value.data ?? []) as R[]);
+    if (dutyRes.status === "fulfilled") setDutyRates((dutyRes.value.data ?? []) as R[]);
+    if (custRes.status === "fulfilled") setCustomsRecords((custRes.value.data ?? []) as R[]);
+    if (vdzRes.status === "fulfilled") setVehicleDutyZm((vdzRes.value.data ?? []) as R[]);
     setLoading(false);
   }, []);
 
@@ -1810,8 +1810,8 @@ function RevenueAuthorityManagement() {
   const load = useCallback(async () => {
     setLoading(true);
     const [authRes, taxRes] = await Promise.allSettled([mktAdmin.revenueAuthorities.list(), mktAdmin.taxRates.list()]);
-    if (authRes.status === "fulfilled") setAuthorities(authRes.value.data as R[]);
-    if (taxRes.status === "fulfilled") setTaxRates(taxRes.value.data as R[]);
+    if (authRes.status === "fulfilled") setAuthorities((authRes.value.data ?? []) as R[]);
+    if (taxRes.status === "fulfilled") setTaxRates((taxRes.value.data ?? []) as R[]);
     setLoading(false);
   }, []);
 
@@ -2060,8 +2060,8 @@ function SettlementsPayouts() {
     if (filter.supplierPayoutStatus) params.supplierPayoutStatus = filter.supplierPayoutStatus;
     if (filter.sellerPayoutStatus) params.sellerPayoutStatus = filter.sellerPayoutStatus;
     const [setRes, fxRes] = await Promise.allSettled([mktAdmin.settlements.list(params), mktAdmin.fxRates.list()]);
-    if (setRes.status === "fulfilled") { setSettlements(setRes.value.data as R[]); setTotals(setRes.value.meta.totals); }
-    if (fxRes.status === "fulfilled") setFxRates(fxRes.value.data as R[]);
+    if (setRes.status === "fulfilled") { setSettlements((setRes.value.data ?? []) as R[]); setTotals(setRes.value.meta.totals); }
+    if (fxRes.status === "fulfilled") setFxRates((fxRes.value.data ?? []) as R[]);
     setLoading(false);
   }, [filter]);
 

@@ -58,8 +58,8 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
       setSellerData(d);
       setProducts((d.products as R[]) ?? []);
     }
-    if (ordersRes.status === "fulfilled") setOrders(ordersRes.value.data as R[]);
-    if (supplierOrdersRes.status === "fulfilled") setSupplierOrders(supplierOrdersRes.value.data as R[]);
+    if (ordersRes.status === "fulfilled") setOrders((ordersRes.value.data ?? []) as R[]);
+    if (supplierOrdersRes.status === "fulfilled") setSupplierOrders((supplierOrdersRes.value.data ?? []) as R[]);
     setLoading(false);
   }, [seller.id]);
 
