@@ -251,7 +251,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
               </div>
               <div>
                 <h4>Head Quarters</h4>
-                <p>Lusaka, Zambia</p>
+                <p>Cape Town, South Africa</p>
               </div>
             </div>
             <div class="bl-info-item">
@@ -260,7 +260,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
               </div>
               <div>
                 <h4>Phone</h4>
-                <p>+260 211 123 456&nbsp; |&nbsp; +260 977 123 456</p>
+                <p>+27 61 461 5035</p>
               </div>
             </div>
             <div class="bl-info-item">
@@ -413,24 +413,24 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-4 0-7 3-7 7 0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/></svg>
         </div>
         <h3>Find Us on the <span>Map</span></h3>
-        <p>Visit our headquarters in Lusaka, Zambia.</p>
-        <a class="bl-btn-outline" href="https://www.google.com/maps/place/Lusaka,+Zambia" target="_blank" rel="noopener">
+        <p>Visit our headquarters in Cape Town, South Africa.</p>
+        <a class="bl-btn-outline" href="https://www.google.com/maps/place/Cape+Town,+South+Africa" target="_blank" rel="noopener">
           Get Directions
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
       </div>
       <iframe class="bl-map-frame" loading="lazy" allowfullscreen
-        src="https://www.google.com/maps?q=Lusaka,Zambia&output=embed"></iframe>
-      <div class="bl-map-photo" role="img" aria-label="Aerial view of Lusaka city skyline"></div>
+        src="https://www.google.com/maps?q=Cape+Town,South+Africa&output=embed"></iframe>
+      <div class="bl-map-photo" role="img" aria-label="Aerial view of Cape Town city skyline"></div>
       <div class="bl-map-right">
         <div class="bl-loc-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-4 0-7 3-7 7 0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/></svg>
           <div>
             <h4>Ballylife Headquarters</h4>
-            <p>Lusaka, Zambia</p>
+            <p>Cape Town, South Africa</p>
           </div>
         </div>
-        <a class="bl-btn-ghost" href="https://www.google.com/maps/place/Lusaka,+Zambia" target="_blank" rel="noopener">
+        <a class="bl-btn-ghost" href="https://www.google.com/maps/place/Cape+Town,+South+Africa" target="_blank" rel="noopener">
           View Location
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
@@ -476,11 +476,12 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
   <script>
     (function(){
       var OFFICES = {
-        "Zambia": [
-          { label:"Head Office", address:"Plot 12, Cairo Road, Lusaka, Zambia", phone:"+260 211 123 456", email:"info@ballylife.com" }
-        ],
         "South Africa": [
+          { label:"Head Office", address:"Cape Town, South Africa", phone:"+27 61 461 5035", email:"info@ballylife.com" },
           { label:"Johannesburg Office", address:"14 Rivonia Road, Sandton, Johannesburg, South Africa", phone:"+27 11 234 5678", email:"southafrica@ballylife.com" }
+        ],
+        "Zambia": [
+          { label:"Zambia Office", address:"Lusaka, Zambia", phone:"+260 211 123 456", email:"zambia@ballylife.com" }
         ],
         "Kenya": [
           { label:"Nairobi Office", address:"Westlands Business Park, Nairobi, Kenya", phone:"+254 20 123 4567", email:"kenya@ballylife.com" }
@@ -598,13 +599,13 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
                   'but we work with partners across the region.' +
                 '</p>'
             ) +
-            '<p class="bl-office-empty" style="margin-top:2px;">In the meantime, reach our head office in Lusaka, Zambia, and our team will connect you with the right contact for ' + country + ':</p>' +
+            '<p class="bl-office-empty" style="margin-top:2px;">In the meantime, reach our head office in Cape Town, South Africa, and our team will connect you with the right contact for ' + country + ':</p>' +
             '<div class="bl-office" style="border-top:1px solid var(--bl-border); margin-top:14px;">' +
               '<div class="bl-icon-badge">' + iconSvg() + '</div>' +
               '<div>' +
-                '<h5>Head Office - Lusaka, Zambia</h5>' +
-                '<p>Plot 12, Cairo Road, Lusaka, Zambia</p>' +
-                '<p>+260 211 123 456</p>' +
+                '<h5>Head Office - Cape Town, South Africa</h5>' +
+                '<p>Cape Town, South Africa</p>' +
+                '<p>+27 61 461 5035</p>' +
                 '<p><a href="mailto:info@ballylife.com">info@ballylife.com</a></p>' +
               '</div>' +
             '</div>';

@@ -107,7 +107,7 @@ const ABOUT_PAGE_HTML = String.raw`<!DOCTYPE html>
   <header class="hero">
     <div class="hero-inner">
       <span class="kicker">Ballylife &middot; About Us</span>
-      <h1>Africa's next great marketplace, built from Lusaka outward.</h1>
+      <h1>Africa's next great marketplace, built from Cape Town outward.</h1>
       <p class="lede">Ballylife is a multi-vendor marketplace built for how Africa actually shops -- fast delivery, verified sellers, and a growing footprint across the continent. We're early, we're building in the open, and we have big plans.</p>
       <div class="hero-stats">
         <div class="hero-stat"><div class="num">2</div><div class="lbl">countries live today: Zambia &amp; South Africa</div></div>
@@ -130,14 +130,14 @@ const ABOUT_PAGE_HTML = String.raw`<!DOCTYPE html>
     <section>
       <span class="eyebrow">Where we are today</span>
       <h2>Early, honest about it, and moving fast</h2>
-      <p class="lead-para">Ballylife is genuinely still being built. Our head office is in Lusaka, Zambia, with an active storefront presence in South Africa, and we're expanding deliberately rather than trying to be everywhere at once.</p>
+      <p class="lead-para">Ballylife is genuinely still being built. Our head office is in Cape Town, South Africa, with an active storefront presence in Zambia, and we're expanding deliberately rather than trying to be everywhere at once.</p>
       <div class="timeline">
         <div class="tl-item">
-          <h4>Head office -- Lusaka, Zambia</h4>
+          <h4>Head office -- Cape Town, South Africa</h4>
           <p>Where Ballylife is run from day to day, and our first fully operational market.</p>
         </div>
         <div class="tl-item">
-          <h4>South Africa -- active storefronts</h4>
+          <h4>Zambia -- active storefronts</h4>
           <p>Verified sellers already trading, with logistics built around fast, local delivery.</p>
         </div>
         <div class="tl-item">
@@ -197,7 +197,7 @@ const ABOUT_PAGE_HTML = String.raw`<!DOCTYPE html>
           <a class="addr" href="#" onclick="window.parent.postMessage('ballylife:contact','*'); return false;">Get in touch</a>
         </div>
       </div>
-      <p class="note">Ballylife Online (Pty) Ltd is registered in South Africa, with its head office in Lusaka, Zambia. Full registration and legal entity details are published in our Platform Terms.</p>
+      <p class="note">Ballylife Online (Pty) Ltd is registered in South Africa, with its head office in Cape Town. Full registration and legal entity details are published in our Platform Terms.</p>
     </section>
 
   </div>
