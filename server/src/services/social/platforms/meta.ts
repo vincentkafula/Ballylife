@@ -103,6 +103,7 @@ async function connectFromUserToken(userToken: string): Promise<MetaConnection> 
 }
 
 let cached: MetaConnection | null = null;
+let lastIgCheck = 0;
 /** The current connection: stored one, or a fresh one when the Railway token is new. */
 export async function metaConnection(): Promise<MetaConnection> {
   const envToken = process.env.META_USER_ACCESS_TOKEN?.trim();
@@ -114,6 +115,21 @@ export async function metaConnection(): Promise<MetaConnection> {
   if (stored && stored.meta.sourceFingerprint === fingerprint(envToken) && (!process.env.META_PAGE_ID || stored.meta.pageId === process.env.META_PAGE_ID.trim())) {
     if (!cached || cached.pageToken !== stored.accessToken) {
       cached = { pageId: stored.meta.pageId, pageName: stored.meta.pageName, pageToken: stored.accessToken, igId: stored.meta.igId ?? null, igUsername: stored.meta.igUsername ?? null };
+    }
+    // Instagram linked to the Page after we connected: pick it up without needing a new token.
+    if (!cached.igId && Date.now() - lastIgCheck > 60_000) {
+      lastIgCheck = Date.now();
+      try {
+        const page = await graph("GET", `/${cached.pageId}`, { access_token: cached.pageToken, fields: "instagram_business_account{id,username}" });
+        const ig = page.instagram_business_account;
+        if (ig?.id) {
+          cached = { ...cached, igId: String(ig.id), igUsername: ig.username ?? null };
+          await saveToken(STORE_KEY, stored.accessToken, stored.expiresAt, null, { ...stored.meta, igId: cached.igId, igUsername: cached.igUsername });
+          logger.info("social.meta.instagram_linked", { igId: cached.igId, igUsername: cached.igUsername });
+        }
+      } catch (err) {
+        logger.warn("social.meta.instagram_check_failed", { error: err instanceof Error ? err.message : String(err) });
+      }
     }
     return cached;
   }
