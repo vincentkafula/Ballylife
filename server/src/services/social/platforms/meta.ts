@@ -69,8 +69,18 @@ async function connectFromUserToken(userToken: string): Promise<MetaConnection> 
     // Already long-lived, or a Page token was pasted: carry on with it as-is.
     logger.warn("social.meta.exchange_skipped", { error: err instanceof Error ? err.message : String(err) });
   }
-  const { data } = await graph("GET", "/me/accounts", { access_token: longLived, fields: "id,name,access_token,instagram_business_account{id,username}", limit: "100" });
-  const pages = (data ?? []) as any[];
+  let pages: any[];
+  try {
+    const { data } = await graph("GET", "/me/accounts", { access_token: longLived, fields: "id,name,access_token,instagram_business_account{id,username}", limit: "100" });
+    pages = (data ?? []) as any[];
+  } catch (err) {
+    // A Page token was pasted (Graph API Explorer with the Page picked under
+    // "User or Page"): it has no /accounts, but it can post as that Page.
+    if (!(err instanceof MetaError && err.code === 100)) throw err;
+    const me = await graph("GET", "/me", { access_token: longLived, fields: "id,name,instagram_business_account{id,username}" });
+    pages = [{ ...me, access_token: longLived }];
+    logger.warn("social.meta.page_token_given", { pageId: me.id, note: "a Page token from a short-lived user token expires; a user token is better" });
+  }
   if (!pages.length) throw new MetaError("The token doesn't manage any Facebook Page. Generate it with pages_show_list and pages_manage_posts, and select your Page when Meta asks.");
   const wanted = process.env.META_PAGE_ID?.trim();
   const page = wanted ? pages.find(p => String(p.id) === wanted) : pages[0];
