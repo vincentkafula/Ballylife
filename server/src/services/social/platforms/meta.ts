@@ -116,16 +116,18 @@ export async function metaConnection(): Promise<MetaConnection> {
     if (!cached || cached.pageToken !== stored.accessToken) {
       cached = { pageId: stored.meta.pageId, pageName: stored.meta.pageName, pageToken: stored.accessToken, igId: stored.meta.igId ?? null, igUsername: stored.meta.igUsername ?? null };
     }
-    // Instagram linked to the Page after we connected: pick it up without needing a new token.
-    if (!cached.igId && Date.now() - lastIgCheck > 60_000) {
+    // Pick up changes made on Facebook after we connected -- an Instagram
+    // account linked to the Page, or the Page renamed -- without a new token.
+    if (Date.now() - lastIgCheck > (cached.igId ? 3600_000 : 60_000)) {
       lastIgCheck = Date.now();
       try {
-        const page = await graph("GET", `/${cached.pageId}`, { access_token: cached.pageToken, fields: "instagram_business_account{id,username}" });
+        const page = await graph("GET", `/${cached.pageId}`, { access_token: cached.pageToken, fields: "name,instagram_business_account{id,username}" });
         const ig = page.instagram_business_account;
-        if (ig?.id) {
-          cached = { ...cached, igId: String(ig.id), igUsername: ig.username ?? null };
-          await saveToken(STORE_KEY, stored.accessToken, stored.expiresAt, null, { ...stored.meta, igId: cached.igId, igUsername: cached.igUsername });
-          logger.info("social.meta.instagram_linked", { igId: cached.igId, igUsername: cached.igUsername });
+        const next = { ...cached, pageName: String(page.name ?? cached.pageName), igId: ig?.id ? String(ig.id) : null, igUsername: ig?.username ?? null };
+        if (next.pageName !== cached.pageName || next.igId !== cached.igId || next.igUsername !== cached.igUsername) {
+          cached = next;
+          await saveToken(STORE_KEY, stored.accessToken, stored.expiresAt, null, { ...stored.meta, pageName: next.pageName, igId: next.igId, igUsername: next.igUsername });
+          logger.info("social.meta.page_updated", { pageName: next.pageName, igId: next.igId, igUsername: next.igUsername });
         }
       } catch (err) {
         logger.warn("social.meta.instagram_check_failed", { error: err instanceof Error ? err.message : String(err) });
