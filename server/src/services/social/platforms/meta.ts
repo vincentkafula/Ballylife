@@ -81,6 +81,16 @@ async function connectFromUserToken(userToken: string): Promise<MetaConnection> 
     pages = [{ ...me, access_token: longLived }];
     logger.warn("social.meta.page_token_given", { pageId: me.id, note: "a Page token from a short-lived user token expires; a user token is better" });
   }
+  // System-user tokens don't always list their Pages: ask for the configured Page directly.
+  const wantedId = process.env.META_PAGE_ID?.trim();
+  if (wantedId && !pages.some(p => String(p.id) === wantedId)) {
+    try {
+      const direct = await graph("GET", `/${wantedId}`, { access_token: longLived, fields: "id,name,access_token,instagram_business_account{id,username}" });
+      if (direct?.access_token) pages = [direct, ...pages];
+    } catch (err) {
+      logger.warn("social.meta.page_lookup_failed", { pageId: wantedId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
   if (!pages.length) throw new MetaError("The token doesn't manage any Facebook Page. Generate it with pages_show_list and pages_manage_posts, and select your Page when Meta asks.");
   const wanted = process.env.META_PAGE_ID?.trim();
   // Never guess which Page to post as: with several, META_PAGE_ID must say.
