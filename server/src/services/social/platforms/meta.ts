@@ -83,6 +83,10 @@ async function connectFromUserToken(userToken: string): Promise<MetaConnection> 
   }
   if (!pages.length) throw new MetaError("The token doesn't manage any Facebook Page. Generate it with pages_show_list and pages_manage_posts, and select your Page when Meta asks.");
   const wanted = process.env.META_PAGE_ID?.trim();
+  // Never guess which Page to post as: with several, META_PAGE_ID must say.
+  if (!wanted && pages.length > 1) {
+    throw new NonRetryable(`The token manages ${pages.length} Pages (${pages.map(p => `${p.name.trim()} ${p.id}`).join(", ")}). Set META_PAGE_ID on Railway to the one Ballylife should post as.`);
+  }
   const page = wanted ? pages.find(p => String(p.id) === wanted) : pages[0];
   if (!page) throw new MetaError(`META_PAGE_ID ${wanted} isn't one of the Pages this token manages (${pages.map(p => `${p.name} ${p.id}`).join(", ")}).`);
   const conn: MetaConnection = {
