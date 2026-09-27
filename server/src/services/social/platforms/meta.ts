@@ -69,6 +69,15 @@ async function connectFromUserToken(userToken: string): Promise<MetaConnection> 
     // Already long-lived, or a Page token was pasted: carry on with it as-is.
     logger.warn("social.meta.exchange_skipped", { error: err instanceof Error ? err.message : String(err) });
   }
+  // Log which permissions the token carries (names only) -- the usual reason a connection fails.
+  try {
+    const perms = await graph("GET", "/me/permissions", { access_token: longLived });
+    const granted = ((perms.data ?? []) as any[]).filter(p => p.status === "granted").map(p => String(p.permission));
+    const needed = ["pages_show_list", "pages_manage_posts", "pages_read_engagement", "instagram_basic", "instagram_content_publish"];
+    logger.info("social.meta.token_permissions", { granted, missing: needed.filter(n => !granted.includes(n)) });
+  } catch (err) {
+    logger.warn("social.meta.permissions_check_failed", { error: err instanceof Error ? err.message : String(err) });
+  }
   let pages: any[];
   try {
     const { data } = await graph("GET", "/me/accounts", { access_token: longLived, fields: "id,name,access_token,instagram_business_account{id,username}", limit: "100" });
