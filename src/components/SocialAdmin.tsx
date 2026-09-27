@@ -20,8 +20,7 @@ const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-ZA", { da
 
 export function SocialAdminPanel() {
   const [status, setStatus] = useState<R | null>(null);
-  const [meta, setMeta] = useState<R | null>(null);
-  const [metaError, setMetaError] = useState<string | null>(null);
+  const [conns, setConns] = useState<Record<string, { ok: boolean; detail: string }>>({});
   const [posts, setPosts] = useState<R[]>([]);
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<R[]>([]);
@@ -34,8 +33,8 @@ export function SocialAdminPanel() {
       const [s, p] = await Promise.all([mktSocial.status(), mktSocial.posts()]);
       if (s.success) setStatus(s.data);
       if (p.success) setPosts(p.data ?? []);
-      const m = await mktSocial.meta().catch(() => null);
-      if (m?.success) { setMeta(m.data); setMetaError(null); } else setMetaError(m?.error ?? null);
+      const c = await mktSocial.connections().catch(() => null);
+      if (c?.success) setConns(c.data ?? {});
     } catch (err) { toast.error(errMessage(err, "Couldn't load social media.")); }
   }, []);
   const findProducts = useCallback(async (q: string) => {
@@ -91,9 +90,8 @@ export function SocialAdminPanel() {
         </p>
         <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
           {(status.platforms as R[]).map(p => {
-            const fbIg = p.platform === "facebook" || p.platform === "instagram";
-            const igMissing = p.platform === "instagram" && meta && !meta.instagramId;
-            const ok = p.active && !(fbIg && metaError) && !igMissing;
+            const conn = conns[p.platform];
+            const ok = p.active && conn?.ok !== false;
             return (
               <div key={p.platform} className={`rounded-xl border p-3 text-sm ${ok ? "border-emerald-200 bg-emerald-50/50" : "border-gray-200"}`}>
                 <div className="font-semibold text-gray-900 flex items-center gap-1.5">
@@ -102,11 +100,7 @@ export function SocialAdminPanel() {
                 <div className="text-xs text-gray-600 mt-1">
                   {!p.built ? "Not built yet"
                     : !p.configured ? `Needs ${p.missing.join(", ")}`
-                    : fbIg && metaError ? metaError
-                    : p.platform === "facebook" && meta ? `Page: ${meta.pageName}`
-                    : igMissing ? "No Instagram Business account linked to the Page"
-                    : p.platform === "instagram" && meta ? `@${meta.instagramUsername}`
-                    : "Connected"}
+                    : conn?.detail ?? "Checking…"}
                 </div>
               </div>
             );
@@ -186,7 +180,7 @@ export function SocialAdminPanel() {
                   <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 mb-1.5">
                     <input type="checkbox" checked={chosen.includes(p)} onChange={e => setChosen(c => e.target.checked ? [...c, p] : c.filter(x => x !== p))} />
                     {LABEL[p]}
-                    {p === "instagram" && meta && !meta.instagramId && <span className="text-xs font-normal text-amber-600">not linked yet — will fail</span>}
+                    {conns[p]?.ok === false && <span className="text-xs font-normal text-amber-600">not working — will fail</span>}
                   </div>
                   <pre className="whitespace-pre-wrap text-xs text-gray-700 font-sans bg-gray-50 rounded-lg p-2.5">{preview.captions[p]}</pre>
                 </label>

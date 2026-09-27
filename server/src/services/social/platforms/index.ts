@@ -19,6 +19,8 @@ export interface Poster {
   post(input: PostInput): Promise<PostResult>;
   /** Renews the access token when it is close to expiring (optional). */
   refreshToken?(): Promise<void>;
+  /** Who it posts as ("Page: X", "@name"); throws with a readable reason when it can't. */
+  describe?(): Promise<string>;
 }
 
 export const POSTERS: Partial<Record<PlatformId, Poster>> = {};

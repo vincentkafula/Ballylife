@@ -21,9 +21,11 @@ import { logger } from "../../utils/logger";
 import { captionFor, PLATFORMS, type PlatformId, type SocialProduct } from "./socialCaptions";
 import { POSTERS, NonRetryable, type PostResult } from "./platforms";
 import { facebookPoster, instagramPoster } from "./platforms/meta";
+import { threadsPoster } from "./platforms/threads";
 
 POSTERS.facebook = facebookPoster;
 POSTERS.instagram = instagramPoster;
+POSTERS.threads = threadsPoster;
 export { NonRetryable };
 
 type Row = Record<string, any>;
@@ -259,6 +261,12 @@ export function startSocialWorker(): NodeJS.Timeout | null {
       .then(st => logger.info("social.meta.status", st))
       .catch(err => logger.error("social.meta.connect_failed", { error: err instanceof Error ? err.message : String(err) }));
   }
+  // Same for Threads: a freshly generated token should be made long-lived at once.
+  if (activePlatforms().includes("threads")) {
+    void POSTERS.threads!.describe!()
+      .then(who => logger.info("social.threads.status", { account: who }))
+      .catch(err => logger.error("social.threads.connect_failed", { error: err instanceof Error ? err.message : String(err) }));
+  }
   const timer = setInterval(() => void run(), 5 * 60_000);
   timer.unref();
   logger.info("social.worker_started", { platforms: activePlatforms(), dailyCap: dailyCap() });
@@ -283,4 +291,16 @@ export async function shareCandidates(q = "", limit = 30) {
     image: `${API}/api/marketplace/media/p/${r.id}/0`,
     posts: posts.filter(p => String(p.product_id) === String(r.id)).map(p => ({ platform: p.platform, status: p.status })),
   }));
+}
+
+/** For the admin panel: who each connected platform posts as, or why it can't. */
+export async function connectionDetails() {
+  const out: Record<string, { ok: boolean; detail: string }> = {};
+  for (const p of activePlatforms()) {
+    const poster = POSTERS[p]!;
+    if (!poster.describe) { out[p] = { ok: true, detail: "Connected" }; continue; }
+    try { out[p] = { ok: true, detail: await poster.describe() }; }
+    catch (err) { out[p] = { ok: false, detail: err instanceof Error ? err.message : String(err) }; }
+  }
+  return out;
 }

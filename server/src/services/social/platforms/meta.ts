@@ -221,10 +221,16 @@ export const facebookPoster: Poster = {
   missingVariables: () => missing(REQUIRED),
   post: postToFacebook,
   refreshToken: refreshMeta,
+  describe: async () => `Page: ${(await metaConnection()).pageName.trim()}`,
 };
 
 export const instagramPoster: Poster = {
   isConfigured: () => missing(REQUIRED).length === 0,
   missingVariables: () => missing(REQUIRED),
   post: postToInstagram,
+  describe: async () => {
+    const c = await metaConnection();
+    if (!c.igId) throw new Error(`No Instagram Business account is linked to the Page "${c.pageName.trim()}".`);
+    return `@${c.igUsername}`;
+  },
 };

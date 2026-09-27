@@ -570,6 +570,7 @@ type SocOk<T> = { success: boolean; data: T; error?: string };
 export const mktSocial = {
   status: () => api<SocOk<Record<string, any>>>("/api/marketplace/admin/social/status"),
   meta: () => api<SocOk<Record<string, any>>>("/api/marketplace/admin/social/meta"),
+  connections: () => api<SocOk<Record<string, { ok: boolean; detail: string }>>>("/api/marketplace/admin/social/connections"),
   posts: () => api<SocOk<Record<string, any>[]>>("/api/marketplace/admin/social/posts"),
   candidates: (q = "") => api<SocOk<Record<string, any>[]>>(`/api/marketplace/admin/social/candidates?${new URLSearchParams({ q })}`),
   preview: (productId: string) => api<SocOk<{ image: string; captions: Record<string, string> }>>(`/api/marketplace/admin/social/preview/${productId}`),
