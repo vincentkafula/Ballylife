@@ -46,7 +46,8 @@ async function graph(method: "GET" | "POST", path: string, params: Record<string
   return j;
 }
 
-const fingerprint = (t: string) => crypto.createHash("sha256").update(t).digest("hex").slice(0, 16);
+// Covers the app secret too, so fixing META_APP_SECRET redoes the long-lived exchange.
+const fingerprint = (t: string) => crypto.createHash("sha256").update(`${t}|${process.env.META_APP_SECRET?.trim() ?? ""}`).digest("hex").slice(0, 16);
 // Token problems (expired / revoked / missing permission) won't fix themselves on retry.
 const isAuthError = (e: unknown) => e instanceof MetaError && (e.code === 190 || e.code === 102 || e.code === 10 || e.code === 200);
 
