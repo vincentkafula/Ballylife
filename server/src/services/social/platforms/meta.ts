@@ -108,6 +108,9 @@ export async function metaConnection(): Promise<MetaConnection> {
   const envToken = process.env.META_USER_ACCESS_TOKEN?.trim();
   if (!envToken || !process.env.META_APP_SECRET?.trim()) throw new NonRetryable("Facebook/Instagram aren't set up (META_APP_SECRET, META_USER_ACCESS_TOKEN).");
   const stored = await storedToken(STORE_KEY);
+  if (stored && !process.env.META_PAGE_ID?.trim() && (stored.meta.otherPages ?? []).length) {
+    throw new NonRetryable(`The token manages several Pages (${[{ id: stored.meta.pageId, name: stored.meta.pageName }, ...stored.meta.otherPages].map((p: any) => `${String(p.name).trim()} ${p.id}`).join(", ")}). Set META_PAGE_ID on Railway to the one Ballylife should post as.`);
+  }
   if (stored && stored.meta.sourceFingerprint === fingerprint(envToken) && (!process.env.META_PAGE_ID || stored.meta.pageId === process.env.META_PAGE_ID.trim())) {
     if (!cached || cached.pageToken !== stored.accessToken) {
       cached = { pageId: stored.meta.pageId, pageName: stored.meta.pageName, pageToken: stored.accessToken, igId: stored.meta.igId ?? null, igUsername: stored.meta.igUsername ?? null };
