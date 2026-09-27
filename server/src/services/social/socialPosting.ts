@@ -249,6 +249,8 @@ export function startSocialWorker(): NodeJS.Timeout | null {
     try {
       const { refreshTokensIfDue } = await import("./platforms");
       await refreshTokensIfDue();
+      // Keeps connection details current (Page renamed, Instagram linked) even when nothing is posting.
+      await connectionDetails();
       await planAutoPosts();
       await processDuePosts();
     } catch (err) {
