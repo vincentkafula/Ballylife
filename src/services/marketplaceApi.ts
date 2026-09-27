@@ -565,6 +565,18 @@ export const mktAliExpress = {
   startAutosource: () => api<AeOk<Record<string, any>>>("/api/marketplace/admin/aliexpress/autosource", { method: "POST" }),
 };
 
+// ── Social media posting ──────────────────────────────────────────────────
+type SocOk<T> = { success: boolean; data: T; error?: string };
+export const mktSocial = {
+  status: () => api<SocOk<Record<string, any>>>("/api/marketplace/admin/social/status"),
+  meta: () => api<SocOk<Record<string, any>>>("/api/marketplace/admin/social/meta"),
+  posts: () => api<SocOk<Record<string, any>[]>>("/api/marketplace/admin/social/posts"),
+  candidates: (q = "") => api<SocOk<Record<string, any>[]>>(`/api/marketplace/admin/social/candidates?${new URLSearchParams({ q })}`),
+  preview: (productId: string) => api<SocOk<{ image: string; captions: Record<string, string> }>>(`/api/marketplace/admin/social/preview/${productId}`),
+  share: (productId: string, platforms?: string[]) => api<SocOk<Record<string, string>>>(`/api/marketplace/admin/social/share/${productId}`, { method: "POST", body: JSON.stringify({ platforms }) }),
+  retry: (id: string) => api<SocOk<unknown>>(`/api/marketplace/admin/social/posts/${id}/retry`, { method: "POST" }),
+};
+
 // ── Super admin ───────────────────────────────────────────────────────────
 export const mktSuperAdmin = {
   managers: () => api<{ success: boolean; data: unknown[]; error?: string }>("/api/marketplace/admin/managers"),

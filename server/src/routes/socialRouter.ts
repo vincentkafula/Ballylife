@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { logger } from "../utils/logger";
 import { PLATFORMS, captionFor, type PlatformId } from "../services/social/socialCaptions";
-import { platformStatus, recentPosts, shareNow, retryPost, loadSocialProduct, dailyCap, autopostOn } from "../services/social/socialPosting";
+import { platformStatus, recentPosts, shareNow, retryPost, loadSocialProduct, dailyCap, autopostOn, shareCandidates } from "../services/social/socialPosting";
 import { metaStatus } from "../services/social/platforms/meta";
 
 /** Social media auto-posting: status, post log, "Share now", caption preview. Admin-only. */
@@ -20,6 +20,10 @@ router.get("/admin/social/status", ...admin, async (_req: Request, res: Response
 router.get("/admin/social/meta", ...admin, async (_req: Request, res: Response): Promise<void> => {
   try { res.json({ success: true, data: await metaStatus() }); }
   catch (err) { res.status(502).json({ success: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+router.get("/admin/social/candidates", ...admin, async (req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, data: await shareCandidates(String(req.query.q ?? "").slice(0, 100)) });
 });
 
 router.get("/admin/social/posts", ...admin, async (req: Request, res: Response): Promise<void> => {

@@ -264,3 +264,23 @@ export function startSocialWorker(): NodeJS.Timeout | null {
   logger.info("social.worker_started", { platforms: activePlatforms(), dailyCap: dailyCap() });
   return timer;
 }
+
+/** Products the admin can share: newest first, or matching `q`, with where each is already posted. */
+export async function shareCandidates(q = "", limit = 30) {
+  const params: unknown[] = [];
+  let where = `p.status = 'active'`;
+  if (q.trim()) { params.push(`%${q.trim().toLowerCase()}%`); where += ` AND LOWER(p.name) LIKE $${params.length}`; }
+  params.push(limit * 3);
+  const { rows } = await pool!.query(
+    `SELECT p.id, p.name, p.price, p.images, p.total_sold, p.created_at FROM mkt_products p WHERE ${where} ORDER BY p.created_at DESC LIMIT $${params.length}`, params);
+  const withPhotos = (rows as Row[]).filter(r => (Array.isArray(r.images) ? r.images : []).some((i: unknown) => typeof i === "string" && /^https?:\/\//i.test(i))).slice(0, limit);
+  const ids = withPhotos.map(r => String(r.id));
+  const posts = ids.length
+    ? (await pool!.query(`SELECT product_id, platform, status FROM social_posts WHERE product_id::text = ANY($1)`, [ids])).rows as Row[]
+    : [];
+  return withPhotos.map(r => ({
+    id: r.id, name: r.name, priceZar: Number(r.price), totalSold: Number(r.total_sold) || 0, createdAt: r.created_at,
+    image: `${API}/api/marketplace/media/p/${r.id}/0`,
+    posts: posts.filter(p => String(p.product_id) === String(r.id)).map(p => ({ platform: p.platform, status: p.status })),
+  }));
+}
