@@ -251,7 +251,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
               </div>
               <div>
                 <h4>Head Quarters</h4>
-                <p>Cape Town, South Africa</p>
+                <p>8 Rose Street, State House Building, Cape Town, South Africa</p>
               </div>
             </div>
             <div class="bl-info-item">
@@ -427,7 +427,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-4 0-7 3-7 7 0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/></svg>
           <div>
             <h4>Ballylife Headquarters</h4>
-            <p>Cape Town, South Africa</p>
+            <p>8 Rose Street, State House Building, Cape Town, South Africa</p>
           </div>
         </div>
         <a class="bl-btn-ghost" href="https://www.google.com/maps/place/Cape+Town,+South+Africa" target="_blank" rel="noopener">
@@ -477,7 +477,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
     (function(){
       var OFFICES = {
         "South Africa": [
-          { label:"Head Office", address:"Cape Town, South Africa", phone:"+27 61 461 5035", email:"info@ballylife.com" },
+          { label:"Head Office", address:"8 Rose Street, State House Building, Cape Town, South Africa", phone:"+27 61 461 5035", email:"info@ballylife.com" },
           { label:"Johannesburg Office", address:"14 Rivonia Road, Sandton, Johannesburg, South Africa", phone:"+27 11 234 5678", email:"southafrica@ballylife.com" }
         ],
         "Zambia": [
@@ -604,7 +604,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
               '<div class="bl-icon-badge">' + iconSvg() + '</div>' +
               '<div>' +
                 '<h5>Head Office - Cape Town, South Africa</h5>' +
-                '<p>Cape Town, South Africa</p>' +
+                '<p>8 Rose Street, State House Building, Cape Town, South Africa</p>' +
                 '<p>+27 61 461 5035</p>' +
                 '<p><a href="mailto:info@ballylife.com">info@ballylife.com</a></p>' +
               '</div>' +

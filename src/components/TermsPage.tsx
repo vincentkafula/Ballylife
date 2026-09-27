@@ -682,7 +682,7 @@ const TERMS_PAGE_HTML = String.raw`<!DOCTYPE html>
       <div class="clause-head"><span class="code">T.08</span><h2>Sending legal notices</h2></div>
 
       <h3 id="t08-1"><span class="code">01</span>Addresses for notices</h3>
-      <p>Send legal notices in writing to our head office at <em>[registered office address]</em>, or by email to <a class="inline-link" href="mailto:legal@ballylife.com">legal@ballylife.com</a>. We may update these addresses on the platform. We'll send notices to you at the most recent email or delivery address saved on your account -- keep these up to date.</p>
+      <p>Send legal notices in writing to our head office at <em>8 Rose Street, State House Building, Cape Town, South Africa</em>, or by email to <a class="inline-link" href="mailto:legal@ballylife.com">legal@ballylife.com</a>. We may update these addresses on the platform. We'll send notices to you at the most recent email or delivery address saved on your account -- keep these up to date.</p>
 
       <h3 id="t08-2"><span class="code">02</span>Notices by hand or email</h3>
       <p>Notices delivered by hand count as received on the day of delivery. Notices sent by email count as received on the day they're sent.</p>
@@ -693,8 +693,8 @@ const TERMS_PAGE_HTML = String.raw`<!DOCTYPE html>
         Registration number: <em>[company registration number]</em><br>
         Main business: Online retail and marketplace<br>
         Email: legal@ballylife.com<br>
-        Phone: <em>[customer support number]</em><br>
-        Physical address: <em>[registered office address]</em>
+        Phone: +27 61 461 5035<br>
+        Physical address: 8 Rose Street, State House Building, Cape Town, South Africa
       </p>
 
       <h3 id="t08-4"><span class="code">04</span>Lodging complaints</h3>
