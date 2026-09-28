@@ -44,6 +44,8 @@ export interface SubmitResult {
   /** When the processor charges a different currency from the order (DPO: USD). */
   chargedAmount?: number;
   chargedCurrency?: string;
+  /** Which of the processor's merchant accounts took it (DPO: 'main' or a country code). */
+  processorAccount?: string;
 }
 
 export interface VerifyResult {
@@ -91,18 +93,18 @@ const PROCESSORS: Record<string, MktPayProcessor> = {
   // own lending decision (credit provider dashboard); nothing is charged here.
   credit: manualProcessor,
   payfast: payfastProcessor,
-  // Card / mobile money for delivery addresses outside South Africa (charged in USD).
+  // Card / mobile money for delivery addresses outside South Africa (Zambia in kwacha, elsewhere USD).
   dpo: dpoProcessor,
 };
 
 async function recordSubmission(req: ChargeRequest, processorName: string, result: SubmitResult): Promise<string | undefined> {
   if (!hasDb || !pool) return undefined;
   const { rows } = await pool.query(
-    `INSERT INTO mkt_pay_transactions (order_id, processor, payment_method, amount, currency, status, processor_ref, error_message, charged_amount, charged_currency)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    `INSERT INTO mkt_pay_transactions (order_id, processor, payment_method, amount, currency, status, processor_ref, error_message, charged_amount, charged_currency, processor_account)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
     [req.orderId, processorName, req.paymentMethod, req.amount, req.currency,
      result.success ? "submitted" : "failed", result.processorRef ?? null, result.error ?? null,
-     result.chargedAmount ?? null, result.chargedCurrency ?? null]
+     result.chargedAmount ?? null, result.chargedCurrency ?? null, result.processorAccount ?? null]
   );
   return rows[0]?.id;
 }

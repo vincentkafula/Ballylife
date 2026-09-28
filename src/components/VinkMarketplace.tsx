@@ -1570,7 +1570,8 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
   const [placing, setPlacing] = useState(false);
   // Delivery outside South Africa pays by card / mobile money through DPO Pay (USD); South Africa keeps PayFast.
   const deliveryCountry = String((addresses[selAddr] as R | undefined)?.country ?? "ZA").toUpperCase();
-  const viaDpo = Boolean(methods?.dpo?.available) && deliveryCountry !== "ZA";
+  const dpoLocal = methods?.dpo?.local?.[deliveryCountry];
+  const viaDpo = deliveryCountry !== "ZA" && Boolean(dpoLocal || methods?.dpo?.international);
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [addingAddress, setAddingAddress] = useState(addresses.length === 0);
   const [newAddr, setNewAddr] = useState({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "", country: "" });
@@ -1789,7 +1790,9 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           )}
           {amountDue > 0 && methods && (() => {
             const options = [
-              viaDpo ? { id: "card", label: "Card or mobile money", sub: "DPO Pay · charged in US dollars" }
+              viaDpo ? (dpoLocal
+                  ? { id: "card", label: "Mobile money or card", sub: `${dpoLocal.mobileMoney.join(" · ") || "DPO Pay"} · paid in ${dpoLocal.currency}` }
+                  : { id: "card", label: "Card or mobile money", sub: "DPO Pay · charged in US dollars" })
                 : methods.card.available && { id: "card", label: "Card", sub: "Visa · Mastercard" },
               methods.eft.available && { id: "bank_transfer", label: "Bank transfer", sub: "EFT" },
               methods.bnpl.available && { id: "bnpl", label: "Pay later", sub: methods.bnpl.providers.map(pr => pr.name).join(" · ") },
@@ -1814,7 +1817,11 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           {methodsError && (
             <div className="rounded-xl px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-100">We couldn't load payment options — please refresh the page.</div>
           )}
-          {amountDue > 0 && payment === "card" && viaDpo && <DpoPaymentPanel usdEstimate={methods?.dpo?.usdPer1000Zar ? Math.ceil(amountDue * methods.dpo.usdPer1000Zar / 10) / 100 : null} />}
+          {amountDue > 0 && payment === "card" && viaDpo && (() => {
+            const per1000 = dpoLocal ? dpoLocal.per1000Zar : methods?.dpo?.usdPer1000Zar ?? null;
+            return <DpoPaymentPanel currency={dpoLocal?.currency ?? "USD"} mobileMoney={dpoLocal?.mobileMoney ?? []}
+              estimate={per1000 ? Math.ceil(amountDue * per1000 / 10) / 100 : null} />;
+          })()}
           {amountDue > 0 && payment === "card" && !viaDpo && methods?.card.available && <CardPaymentPanel sandbox={methods.card.sandbox} />}
           {amountDue > 0 && payment === "bank_transfer" && methods?.eft.details && (
             <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">

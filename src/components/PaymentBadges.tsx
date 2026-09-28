@@ -36,7 +36,11 @@ export function CardSchemeMarks({ className = "" }: { className?: string }) {
 export interface PaymentMethodsInfo {
   card: { available: boolean; provider: string; sandbox: boolean };
   /** Delivery outside South Africa: card / mobile money through DPO Pay, charged in US dollars. */
-  dpo?: { available: boolean; provider: string; currency: string; usdPer1000Zar: number | null };
+  dpo?: {
+    available: boolean; provider: string; currency: string; international: boolean; usdPer1000Zar: number | null;
+    /** Countries charged in their own currency, with mobile money (e.g. ZM -> ZMW). */
+    local: Record<string, { currency: string; per1000Zar: number | null; mobileMoney: string[] }>;
+  };
   eft: { available: boolean; details: EftDetails | null };
   bnpl: { available: boolean; providers: { key: string; name: string }[] };
 }
@@ -75,17 +79,29 @@ export function CardPaymentPanel({ sandbox }: { sandbox: boolean }) {
 }
 
 /** Paying through DPO Pay (delivery outside South Africa). */
-export function DpoPaymentPanel({ usdEstimate }: { usdEstimate: number | null }) {
+const CURRENCY_LABEL: Record<string, { name: string; symbol: string }> = {
+  USD: { name: "US dollars", symbol: "US$" }, ZMW: { name: "Zambian kwacha", symbol: "K" }, KES: { name: "Kenyan shillings", symbol: "KSh " },
+  TZS: { name: "Tanzanian shillings", symbol: "TSh " }, UGX: { name: "Ugandan shillings", symbol: "USh " }, GHS: { name: "Ghanaian cedi", symbol: "GH₵" },
+  RWF: { name: "Rwandan francs", symbol: "FRw " }, MWK: { name: "Malawian kwacha", symbol: "MK" },
+};
+
+export function DpoPaymentPanel({ estimate, currency, mobileMoney }: { estimate: number | null; currency: string; mobileMoney: string[] }) {
+  const cur = CURRENCY_LABEL[currency] ?? { name: currency, symbol: `${currency} ` };
   return (
     <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-gray-900">Card or mobile money</p>
+        <p className="text-sm font-semibold text-gray-900">{mobileMoney.length ? "Mobile money or card" : "Card or mobile money"}</p>
         <CardSchemeMarks />
       </div>
+      {mobileMoney.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {mobileMoney.map(m => <span key={m} className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-100">{m}</span>)}
+        </div>
+      )}
       <ol className="space-y-2 text-xs text-gray-600">
         {[
-          `Place your order — you'll go to DPO Pay's secure payment page.${usdEstimate ? ` You'll be charged about US$${usdEstimate.toFixed(2)}.` : " You'll be charged in US dollars."}`,
-          "Pay by card, or by mobile money where DPO offers it in your country.",
+          `Place your order — you'll go to DPO Pay's secure payment page. You'll pay in ${cur.name}${estimate ? `: about ${cur.symbol}${estimate.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ""}.`,
+          mobileMoney.length ? `Choose ${mobileMoney.join(", ")} and approve the payment on your phone — or pay by card.` : "Pay by card, or by mobile money where DPO offers it in your country.",
           "You'll come back here, and we'll confirm your order as soon as DPO confirms the payment.",
         ].map((t, i) => (
           <li key={i} className="flex gap-2.5">
@@ -96,7 +112,7 @@ export function DpoPaymentPanel({ usdEstimate }: { usdEstimate: number | null })
       </ol>
       <div className="flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2.5 text-[11px] text-gray-600">
         <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-700" />
-        <span>Payments are processed by DPO Pay by Network International, a PCI DSS certified payment gateway. Ballylife never sees or stores your card number. Your bank may add its own currency conversion fee.</span>
+        <span>Payments are processed by DPO Pay by Network International, a PCI DSS certified payment gateway. Ballylife never sees or stores your card number or mobile money PIN.{currency === "USD" ? " Your bank may add its own currency conversion fee." : ""}</span>
       </div>
     </div>
   );

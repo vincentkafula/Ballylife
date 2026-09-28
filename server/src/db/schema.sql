@@ -1411,3 +1411,7 @@ ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS added_via TEXT;
 -- charged_amount/charged_currency record what the processor actually charged.
 ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS charged_amount NUMERIC(12,2);
 ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS charged_currency TEXT;
+
+-- Which DPO merchant account took the payment ('main', or a country code
+-- such as 'ZM' for the DPO Zambia account that settles kwacha locally).
+ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS processor_account TEXT;

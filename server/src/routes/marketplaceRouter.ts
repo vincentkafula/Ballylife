@@ -22,7 +22,7 @@ import { prefectureInEnglish } from "../utils/japaneseParts";
 import { cleanDescriptionText } from "../utils/productNaming";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 import { cjOnlyCatalog, CJ_ONLY_MESSAGE, isSourcedSource, SOURCED_SOURCES } from "../utils/catalogPolicy";
-import { isDpoConfigured, usesDpo, zarToUsd, DPO_CURRENCY } from "../services/dpoProcessor";
+import { usesDpo, dpoCheckoutInfo } from "../services/dpoProcessor";
 import { hashPassword, passwordProblem, demoModeEnabled } from "../utils/authSecurity";
 import { activeMembership, markBenefitUsed, handleSubscriptionItn } from "../services/subscriptions";
 import { storeCreditBalance, addLedgerEntry } from "../services/programmes";
@@ -917,8 +917,8 @@ router.get("/payments/methods", async (_req: Request, res: Response): Promise<vo
     success: true,
     data: {
       card: { available: isPayfastConfigured(), provider: "PayFast", sandbox: isPayfastConfigured() && payfastIsSandbox() },
-      // Outside South Africa: card / mobile money through DPO Pay, charged in US dollars.
-      dpo: { available: isDpoConfigured(), provider: "DPO Pay", currency: DPO_CURRENCY, usdPer1000Zar: isDpoConfigured() ? await zarToUsd(1000) : null },
+      // Outside South Africa: card / mobile money through DPO Pay (Zambia in kwacha, elsewhere US dollars).
+      dpo: await dpoCheckoutInfo(),
       eft: { available: Boolean(eft), details: eft },
       bnpl: { available: providers.length > 0, providers: providers.map((r: any) => ({ key: r.provider_key, name: r.name })) },
     },
