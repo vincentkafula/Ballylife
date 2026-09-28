@@ -660,8 +660,9 @@ export const mktSuperAdmin = {
   restoreUser: (id: string) => api<{ success: boolean; data?: unknown; error?: string }>(`/api/marketplace/admin/users/${id}/restore`, { method: "POST" }),
 };
 
-/** PayFast is redirect-based: post the signed fields to its hosted page. */
+/** Sends the browser to the payment provider: PayFast (signed fields, POST) or a plain link (DPO Pay). */
 export function submitToPayfast(url: string, fields: Record<string, string>): void {
+  if (!Object.keys(fields).length) { window.location.assign(url); return; }
   const form = document.createElement("form");
   form.method = "POST";
   form.action = url;

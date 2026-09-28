@@ -35,6 +35,8 @@ export function CardSchemeMarks({ className = "" }: { className?: string }) {
 
 export interface PaymentMethodsInfo {
   card: { available: boolean; provider: string; sandbox: boolean };
+  /** Delivery outside South Africa: card / mobile money through DPO Pay, charged in US dollars. */
+  dpo?: { available: boolean; provider: string; currency: string; usdPer1000Zar: number | null };
   eft: { available: boolean; details: EftDetails | null };
   bnpl: { available: boolean; providers: { key: string; name: string }[] };
 }
@@ -68,6 +70,34 @@ export function CardPaymentPanel({ sandbox }: { sandbox: boolean }) {
       {sandbox && (
         <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 rounded-lg px-3 py-2">Test mode: payments go to PayFast's sandbox — no real money is charged.</p>
       )}
+    </div>
+  );
+}
+
+/** Paying through DPO Pay (delivery outside South Africa). */
+export function DpoPaymentPanel({ usdEstimate }: { usdEstimate: number | null }) {
+  return (
+    <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-gray-900">Card or mobile money</p>
+        <CardSchemeMarks />
+      </div>
+      <ol className="space-y-2 text-xs text-gray-600">
+        {[
+          `Place your order — you'll go to DPO Pay's secure payment page.${usdEstimate ? ` You'll be charged about US$${usdEstimate.toFixed(2)}.` : " You'll be charged in US dollars."}`,
+          "Pay by card, or by mobile money where DPO offers it in your country.",
+          "You'll come back here, and we'll confirm your order as soon as DPO confirms the payment.",
+        ].map((t, i) => (
+          <li key={i} className="flex gap-2.5">
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: "#1E7B4D" }}>{i + 1}</span>
+            <span className="pt-0.5">{t}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2.5 text-[11px] text-gray-600">
+        <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-700" />
+        <span>Payments are processed by DPO Pay by Network International, a PCI DSS certified payment gateway. Ballylife never sees or stores your card number. Your bank may add its own currency conversion fee.</span>
+      </div>
     </div>
   );
 }

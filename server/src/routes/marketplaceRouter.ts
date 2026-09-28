@@ -22,6 +22,7 @@ import { prefectureInEnglish } from "../utils/japaneseParts";
 import { cleanDescriptionText } from "../utils/productNaming";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
 import { cjOnlyCatalog, CJ_ONLY_MESSAGE, isSourcedSource, SOURCED_SOURCES } from "../utils/catalogPolicy";
+import { isDpoConfigured, usesDpo, zarToUsd, DPO_CURRENCY } from "../services/dpoProcessor";
 import { hashPassword, passwordProblem, demoModeEnabled } from "../utils/authSecurity";
 import { activeMembership, markBenefitUsed, handleSubscriptionItn } from "../services/subscriptions";
 import { storeCreditBalance, addLedgerEntry } from "../services/programmes";
@@ -916,6 +917,8 @@ router.get("/payments/methods", async (_req: Request, res: Response): Promise<vo
     success: true,
     data: {
       card: { available: isPayfastConfigured(), provider: "PayFast", sandbox: isPayfastConfigured() && payfastIsSandbox() },
+      // Outside South Africa: card / mobile money through DPO Pay, charged in US dollars.
+      dpo: { available: isDpoConfigured(), provider: "DPO Pay", currency: DPO_CURRENCY, usdPer1000Zar: isDpoConfigured() ? await zarToUsd(1000) : null },
       eft: { available: Boolean(eft), details: eft },
       bnpl: { available: providers.length > 0, providers: providers.map((r: any) => ({ key: r.provider_key, name: r.name })) },
     },
@@ -931,11 +934,14 @@ router.post("/orders/:id/pay", requireAuth, async (req: Request, res: Response):
   if (order.payment_status !== "pending_payment" || order.status !== "pending") {
     res.status(409).json({ success: false, error: "This order doesn't need paying." }); return;
   }
-  if (!isPayfastConfigured()) { res.status(503).json({ success: false, error: "Card payments aren't available right now." }); return; }
+  const ship = (typeof order.shipping_address === "string" ? JSON.parse(order.shipping_address) : order.shipping_address) ?? {};
+  const viaDpo = usesDpo(ship.country);
+  if (!viaDpo && !isPayfastConfigured()) { res.status(503).json({ success: false, error: "Card payments aren't available right now." }); return; }
   const { rows: userRows } = await pool!.query(`SELECT email FROM users WHERE id = $1`, [req.user!.userId]);
   const submission = await submitOrderPayment({
     orderId: order.id, orderNumber: order.order_number, amount: Number(order.total_amount), currency: order.currency,
-    paymentMethod: "card", customerEmail: userRows[0]?.email ?? order.customer_email ?? "",
+    paymentMethod: viaDpo ? "dpo" : "card", customerEmail: userRows[0]?.email ?? order.customer_email ?? "",
+    paymentDetails: { firstName: ship.firstName, lastName: ship.lastName, country: ship.country, phone: ship.phone },
   });
   if (!submission.accepted || !submission.redirect) { res.status(502).json({ success: false, error: submission.error ?? "Couldn't start the payment — please try again." }); return; }
   await pool!.query(`UPDATE mkt_orders SET payment_method = 'card' WHERE id = $1`, [order.id]);
@@ -1288,8 +1294,9 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
       orderNumber: order.order_number,
       amount: Number(order.total_amount),
       currency: order.currency,
-      paymentMethod: creditProviderId ? "credit" : paymentMethod === "bank_transfer" ? "bank_transfer" : "card",
+      paymentMethod: creditProviderId ? "credit" : paymentMethod === "bank_transfer" ? "bank_transfer" : usesDpo(shippingAddress.country) ? "dpo" : "card",
       customerEmail,
+      paymentDetails: { firstName: shippingAddress.firstName, lastName: shippingAddress.lastName, country: shippingAddress.country, phone: shippingAddress.phone },
     });
 
     if (submission.accepted) {

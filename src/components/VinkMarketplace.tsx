@@ -95,7 +95,7 @@ function cartDeliveryWindow(items: R[]): string {
 import { MarketplaceAuthModal } from "./MarketplaceAuthModal";
 import { DefaultPasswordBanner } from "./DefaultPasswordBanner";
 import { MorePlansPage } from "./MembershipPanels";
-import { CardPaymentPanel, CardSchemeMarks, EftDetailsTable, SecureCheckoutNote, type PaymentMethodsInfo } from "./PaymentBadges";
+import { CardPaymentPanel, CardSchemeMarks, DpoPaymentPanel, EftDetailsTable, SecureCheckoutNote, type PaymentMethodsInfo } from "./PaymentBadges";
 import { OrderTracking } from "./OrderTracking";
 import { JapanPartBadge, JapanPartDisclosure } from "./JapanParts";
 // These five are static content pages (legal/policy text with large
@@ -1562,15 +1562,20 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
       .then(r => {
         if (!r.success) { setMethodsError(true); return; }
         setMethods(r.data);
-        setPayment(r.data.card.available ? "card" : r.data.eft.available ? "bank_transfer" : r.data.bnpl.available ? "bnpl" : "");
+        setPayment(r.data.card.available || r.data.dpo?.available ? "card" : r.data.eft.available ? "bank_transfer" : r.data.bnpl.available ? "bnpl" : "");
         setBnplProvider(r.data.bnpl.providers[0]?.key ?? "");
       })
       .catch(() => setMethodsError(true));
   }, []);
   const [placing, setPlacing] = useState(false);
+  // Delivery outside South Africa pays by card / mobile money through DPO Pay (USD); South Africa keeps PayFast.
+  const deliveryCountry = String((addresses[selAddr] as R | undefined)?.country ?? "ZA").toUpperCase();
+  const viaDpo = Boolean(methods?.dpo?.available) && deliveryCountry !== "ZA";
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [addingAddress, setAddingAddress] = useState(addresses.length === 0);
-  const [newAddr, setNewAddr] = useState({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "" });
+  const [newAddr, setNewAddr] = useState({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "", country: "" });
+  const geo = useCurrency(); // detected country + the list of countries Ballylife delivers to
+  const addrCountry = newAddr.country || geo.country.countryCode || "ZA";
   const [savingAddr, setSavingAddr] = useState(false);
   const [addrError, setAddrError] = useState<string | null>(null);
 
@@ -1599,11 +1604,11 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
     }
     setSavingAddr(true);
     try {
-      const res = await mktAddAddress(userId, newAddr) as { success: boolean; error?: string };
+      const res = await mktAddAddress(userId, { ...newAddr, country: addrCountry }) as { success: boolean; error?: string };
       if (!res.success) { setAddrError(res.error ?? "Couldn't save that address — please check the details and try again."); return; }
       await onAddressAdded();
       setAddingAddress(false);
-      setNewAddr({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "" });
+      setNewAddr({ label: "Home", firstName: "", lastName: "", line1: "", city: "", postalCode: "", phone: "", country: "" });
     } catch (err) {
       setAddrError(err instanceof ApiConnectionError ? err.message : "Couldn't save that address — please try again.");
     } finally {
@@ -1683,7 +1688,7 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
                 <div>
                   <p className="text-sm font-semibold text-gray-900">{a.label as string}</p>
                   <p className="text-xs text-gray-600">{a.firstName as string} {a.lastName as string}</p>
-                  <p className="text-xs text-gray-500">{a.line1 as string}, {a.city as string} {a.postalCode as string}</p>
+                  <p className="text-xs text-gray-500">{a.line1 as string}, {a.city as string} {a.postalCode as string}{a.country && a.country !== "ZA" ? ` · ${geo.countries.find(c => c.countryCode === a.country)?.country ?? a.country}` : ""}</p>
                 </div>
               </div>
             </button>
@@ -1715,6 +1720,15 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
               </div>
               <input placeholder="Phone number" value={newAddr.phone} onChange={e => setNewAddr(p => ({ ...p, phone: e.target.value }))}
                 className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
+              <label className="block">
+                <span className="text-[11px] text-gray-500">Country</span>
+                <select value={addrCountry} onChange={e => setNewAddr(p => ({ ...p, country: e.target.value }))} aria-label="Country"
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm outline-none focus:border-[#1E7B4D] bg-white mt-0.5">
+                  {[...geo.countries].sort((a, b) => (a.country ?? a.countryCode).localeCompare(b.country ?? b.countryCode)).map(c => (
+                    <option key={c.countryCode} value={c.countryCode}>{c.country ?? c.countryCode}</option>
+                  ))}
+                </select>
+              </label>
               <div className="flex gap-2 pt-1">
                 {addresses.length > 0 && (
                   <button onClick={() => { setAddingAddress(false); setAddrError(null); }} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200">
@@ -1775,7 +1789,8 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           )}
           {amountDue > 0 && methods && (() => {
             const options = [
-              methods.card.available && { id: "card", label: "Card", sub: "Visa · Mastercard" },
+              viaDpo ? { id: "card", label: "Card or mobile money", sub: "DPO Pay · charged in US dollars" }
+                : methods.card.available && { id: "card", label: "Card", sub: "Visa · Mastercard" },
               methods.eft.available && { id: "bank_transfer", label: "Bank transfer", sub: "EFT" },
               methods.bnpl.available && { id: "bnpl", label: "Pay later", sub: methods.bnpl.providers.map(pr => pr.name).join(" · ") },
             ].filter(Boolean) as { id: string; label: string; sub: string }[];
@@ -1799,7 +1814,8 @@ function CheckoutView({ cart, addresses, userId, onBack, onComplete, onAddressAd
           {methodsError && (
             <div className="rounded-xl px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-100">We couldn't load payment options — please refresh the page.</div>
           )}
-          {amountDue > 0 && payment === "card" && methods?.card.available && <CardPaymentPanel sandbox={methods.card.sandbox} />}
+          {amountDue > 0 && payment === "card" && viaDpo && <DpoPaymentPanel usdEstimate={methods?.dpo?.usdPer1000Zar ? Math.ceil(amountDue * methods.dpo.usdPer1000Zar / 10) / 100 : null} />}
+          {amountDue > 0 && payment === "card" && !viaDpo && methods?.card.available && <CardPaymentPanel sandbox={methods.card.sandbox} />}
           {amountDue > 0 && payment === "bank_transfer" && methods?.eft.details && (
             <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
               <p className="text-sm font-semibold text-gray-900">Pay by bank transfer (EFT)</p>
@@ -2263,6 +2279,23 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     else toast(`Payment cancelled — ${order} is saved and you haven't been charged. You can pay any time from My Orders.`);
     setView("orders");
     params.delete("payfast"); params.delete("order");
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+  }, []);
+  // Back from DPO Pay's payment page for an order.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("dpo");
+    if (!result) return;
+    const order = params.get("order") ?? "your order";
+    if (result === "paid") {
+      toast.success(`Payment received for ${order}. Thank you! We'll email you as your order moves.`);
+      track("CompletePayment", { content_type: "product", description: order });
+    }
+    else if (result === "pending") toast(`We're waiting for DPO to confirm the payment for ${order}. This usually takes a minute — we'll email you when it's confirmed.`);
+    else if (result === "failed") toast.error(`The payment for ${order} didn't go through. You haven't been charged — you can try again from My Orders.`);
+    else toast(`Payment cancelled — ${order} is saved and you haven't been charged. You can pay any time from My Orders.`);
+    setView("orders");
+    params.delete("dpo"); params.delete("order");
     window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
   }, []);
   // Back from PayFast's card authorisation for a BallylifeMORE subscription.

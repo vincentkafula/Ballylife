@@ -1406,3 +1406,8 @@ CREATE TABLE IF NOT EXISTS seller_sourcing_payments (
 -- How a catalogue item arrived. 'seller_sourcing' = a seller added it through
 -- Find products; Ballylife's own automatic catalogue jobs leave those alone.
 ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS added_via TEXT;
+
+-- DPO Pay charges in US dollars: amount/currency stay the order's (rand),
+-- charged_amount/charged_currency record what the processor actually charged.
+ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS charged_amount NUMERIC(12,2);
+ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS charged_currency TEXT;

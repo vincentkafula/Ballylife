@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { pool, hasDb } from "../db/pool";
 import { payfastProcessor, getPayfastRedirectFields, payfastRedirectUrl } from "./payfastProcessor";
+import { dpoProcessor, dpoPaymentPageUrl } from "./dpoProcessor";
 
 /**
  * Marketplace's own payment engine — independent of VINK-GRUP-LIMITED's
@@ -40,6 +41,9 @@ export interface SubmitResult {
   success: boolean;
   processorRef?: string;
   error?: string;
+  /** When the processor charges a different currency from the order (DPO: USD). */
+  chargedAmount?: number;
+  chargedCurrency?: string;
 }
 
 export interface VerifyResult {
@@ -87,15 +91,18 @@ const PROCESSORS: Record<string, MktPayProcessor> = {
   // own lending decision (credit provider dashboard); nothing is charged here.
   credit: manualProcessor,
   payfast: payfastProcessor,
+  // Card / mobile money for delivery addresses outside South Africa (charged in USD).
+  dpo: dpoProcessor,
 };
 
 async function recordSubmission(req: ChargeRequest, processorName: string, result: SubmitResult): Promise<string | undefined> {
   if (!hasDb || !pool) return undefined;
   const { rows } = await pool.query(
-    `INSERT INTO mkt_pay_transactions (order_id, processor, payment_method, amount, currency, status, processor_ref, error_message)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    `INSERT INTO mkt_pay_transactions (order_id, processor, payment_method, amount, currency, status, processor_ref, error_message, charged_amount, charged_currency)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
     [req.orderId, processorName, req.paymentMethod, req.amount, req.currency,
-     result.success ? "submitted" : "failed", result.processorRef ?? null, result.error ?? null]
+     result.success ? "submitted" : "failed", result.processorRef ?? null, result.error ?? null,
+     result.chargedAmount ?? null, result.chargedCurrency ?? null]
   );
   return rows[0]?.id;
 }
@@ -138,6 +145,7 @@ export async function getOrderTransactions(orderId: string) {
 // to the frontend so it can send the browser there. Returns undefined for
 // processors like "manual" that need no redirect.
 export function getRedirectInfo(processorName: string, processorRef: string): { url: string; fields: Record<string, string> } | undefined {
+  if (processorName === "dpo") return { url: dpoPaymentPageUrl(processorRef), fields: {} }; // a plain link: no fields to post
   if (processorName !== "payfast") return undefined;
   const fields = getPayfastRedirectFields(processorRef);
   if (!fields) return undefined;
