@@ -123,7 +123,7 @@ export async function cheapestShipping(productId: string, skuId: string | undefi
   return priced[0] ?? null;
 }
 
-async function ensureAeSupplier(): Promise<void> {
+export async function ensureAeSupplier(): Promise<void> {
   await pool!.query(
     `INSERT INTO mkt_suppliers (id, name, country, platform, dropship_supported, verified, status) VALUES ($1, 'AliExpress', 'CN', 'AliExpress', true, true, 'active') ON CONFLICT (id) DO NOTHING`,
     [AE_SUPPLIER_ID]

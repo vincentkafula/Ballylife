@@ -1359,3 +1359,13 @@ CREATE TABLE IF NOT EXISTS sourcing_settings (
   value       JSONB NOT NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Seller sourcing plans (starter | standard | pro) and what each seller has used.
+ALTER TABLE mkt_sellers ADD COLUMN IF NOT EXISTS sourcing_plan TEXT NOT NULL DEFAULT 'starter';
+CREATE TABLE IF NOT EXISTS sourcing_usage (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_id   TEXT NOT NULL,
+  action      TEXT NOT NULL,                       -- search | view | import
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sourcing_usage_seller ON sourcing_usage(seller_id, action, created_at);

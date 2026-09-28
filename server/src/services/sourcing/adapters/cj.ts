@@ -10,6 +10,7 @@ import { isCjConfigured, listCjProducts, getCjProductDetail, calculateCjFreight 
 import { parseSupplierImageList, splitSupplierDescription, dedupeImages, isPhotoUrl } from "../../../utils/supplierWhiteLabel";
 import { cleanProductName } from "../../../utils/productNaming";
 import { englishLines } from "../../../utils/englishOnly";
+import { CJ_SUPPLIER_ID, ensureCjSupplierExists } from "../../cjCatalog";
 import { AdapterUnsupportedError, type SupplierAdapter } from "../types";
 
 function dayRange(aging: string | undefined): [number | null, number | null] {
@@ -19,6 +20,7 @@ function dayRange(aging: string | undefined): [number | null, number | null] {
 
 export const cjAdapter: SupplierAdapter = {
   key: "cj",
+  catalogue: { supplierId: CJ_SUPPLIER_ID, source: "cjdropshipping", ensureSupplier: ensureCjSupplierExists },
   // CJ points: roughly 1 per list/detail call; recorded so spend can be compared with revenue.
   costPerCall: { search: 0, getProduct: 0, getShipping: 0 },
   isConfigured: () => isCjConfigured(),

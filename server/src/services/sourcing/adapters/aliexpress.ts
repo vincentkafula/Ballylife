@@ -7,7 +7,7 @@
  * aliexpressFulfillment worker until Phase 4 routes them via adapters.
  */
 import { isAliExpressConfigured, connectionStatus } from "../../aliexpressClient";
-import { searchAe, fetchAeProduct, cheapestShipping } from "../../aliexpressCatalog";
+import { searchAe, fetchAeProduct, cheapestShipping, ensureAeSupplier, AE_SUPPLIER_ID, AE_SOURCE } from "../../aliexpressCatalog";
 import { AdapterUnsupportedError, type SupplierAdapter } from "../types";
 import { loadFxRates } from "../fx";
 
@@ -19,6 +19,7 @@ function dayRange(days: string | null): [number | null, number | null] {
 
 export const aliexpressAdapter: SupplierAdapter = {
   key: "aliexpress",
+  catalogue: { supplierId: AE_SUPPLIER_ID, source: AE_SOURCE, ensureSupplier: ensureAeSupplier },
   costPerCall: { search: 0, getProduct: 0, getShipping: 0 }, // the DS API is free; calls are rate-limited, so they're still counted
   async isConfigured() {
     if (!isAliExpressConfigured()) return false;
@@ -38,7 +39,7 @@ export const aliexpressAdapter: SupplierAdapter = {
     const p = await fetchAeProduct(externalId);
     return {
       externalId, title: p.title, description: p.description, images: p.images, currency: "USD",
-      variants: p.variants.map(v => ({ externalSku: v.skuId, label: v.label, cost: v.priceUsd, stock: v.stock, ...(v.image ? { image: v.image } : {}) })),
+      variants: p.variants.map(v => ({ externalSku: v.skuId, orderRef: v.skuAttr, label: v.label, cost: v.priceUsd, stock: v.stock, ...(v.image ? { image: v.image } : {}) })),
       category: p.categoryId, available: p.available,
     };
   },

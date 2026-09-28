@@ -14,6 +14,10 @@ export function cjOnlyCatalog(): boolean {
 export const CJ_ONLY_MESSAGE =
   "All Ballylife products come from our supplier catalogue. Add products to your store by importing them from the catalogue.";
 
+/** Catalogue sources whose items may be listed (fulfilled through their official APIs). */
+export const SOURCED_SOURCES = ["cjdropshipping", "aliexpress"] as const;
+export const isSourcedSource = (source: unknown): boolean => (SOURCED_SOURCES as readonly string[]).includes(String(source ?? ""));
+
 /** SQL condition: the product's catalogue item came from CJ. `p` = mkt_products alias. */
 export const IS_CJ_PRODUCT_SQL =
   `p.supplier_product_id IN (SELECT id FROM mkt_supplier_products WHERE external_source = 'cjdropshipping')`;

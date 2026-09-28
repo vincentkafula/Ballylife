@@ -18,7 +18,10 @@ import { logger } from "../../utils/logger";
 import { unseal } from "../../utils/sealed";
 import { ADAPTERS, adapterFor } from "./adapters";
 import { loadFxRates } from "./fx";
-import { normalizeHit, normalizeProduct, type SourcedHit, type SourcedProduct, type PriceOptions } from "./normalize";
+import { normalizeHit, normalizeProduct, cleanTitle, cleanDescription, type SourcedHit, type SourcedProduct, type PriceOptions } from "./normalize";
+import { categorizeProduct } from "../../utils/productCategorizer";
+import { isSupplierImageUrl } from "../../utils/supplierWhiteLabel";
+import type { ExternalVariant } from "../../utils/cjVariants";
 import type { SourcingEndpoint, SourcingQuery, SupplierAdapter, SupplierHit, SupplierProduct, SupplierShipping } from "./types";
 
 export interface Caller { userId: string | null; sellerId: string | null }
@@ -149,7 +152,9 @@ export function openRef(ref: string): { adapter: SupplierAdapter; externalId: st
   return { adapter, externalId: v.id, ...(v.sku ? { externalSku: v.sku } : {}) };
 }
 
-export async function getSourcedProduct(ref: string, who: Caller): Promise<SourcedProduct | null> {
+interface RawProduct { a: SupplierAdapter; externalId: string; product: SupplierProduct; shipping: SupplierShipping | null }
+
+async function loadRaw(ref: string, who: Caller): Promise<RawProduct | null> {
   const opened = openRef(ref);
   if (!opened) return null;
   const { adapter: a, externalId } = opened;
@@ -164,7 +169,60 @@ export async function getSourcedProduct(ref: string, who: Caller): Promise<Sourc
     shipping = await cached<SupplierShipping | null>(a, "getShipping", "shipping", { id: externalId, sku: cheapest?.externalSku ?? null }, who,
       () => a.getShipping(externalId, cheapest?.externalSku));
   } catch (err) { logger.warn("sourcing: shipping quote failed", { adapter: a.key, error: String((err as Error)?.message ?? err) }); }
-  return normalizeProduct(a.key, product, shipping, await priceOptions());
+  return { a, externalId, product, shipping };
+}
+
+export async function getSourcedProduct(ref: string, who: Caller): Promise<SourcedProduct | null> {
+  const raw = await loadRaw(ref, who);
+  return raw ? normalizeProduct(raw.a.key, raw.product, raw.shipping, await priceOptions()) : null;
+}
+
+const MAX_LISTING_STOCK = 100;
+const FALLBACK_CATEGORY = process.env.CJ_DEFAULT_CATEGORY_ID || "cat-03";
+
+/**
+ * Files a sourced product in Ballylife's supplier catalogue (once; later
+ * imports reuse the row) so a seller can list it and the existing CJ /
+ * AliExpress fulfilment workers can order it. Returns the catalogue id and
+ * the rand base cost the seller's price must cover.
+ */
+export async function fileInCatalogue(ref: string, who: Caller): Promise<{ supplierProductId: string; product: SourcedProduct; stock: number }> {
+  const raw = await loadRaw(ref, who);
+  if (!raw) throw new SourcingUnavailableError("This product couldn't be found. Search again and pick it from the results.");
+  const { a, externalId, product: p, shipping } = raw;
+  const sourced = normalizeProduct(a.key, p, shipping, await priceOptions());
+  const inStock = p.variants.filter(v => v.stock > 0);
+  if (!sourced.available || !inStock.length) throw new SourcingUnavailableError("This product is out of stock right now.");
+  if (!shipping) throw new SourcingUnavailableError("This product can't be delivered to South Africa right now.");
+  const images = p.images.filter(isSupplierImageUrl);
+  if (!images.length || !sourced.title) throw new SourcingUnavailableError("This product can't be listed (no usable photos or name).");
+
+  const { supplierId, source, ensureSupplier } = a.catalogue;
+  const { rows: existing } = await pool!.query(
+    `SELECT id, status FROM mkt_supplier_products WHERE supplier_id = $1 AND external_id = $2`, [supplierId, externalId]);
+  const stock = Math.min(MAX_LISTING_STOCK, inStock.reduce((n, v) => n + v.stock, 0));
+  if (existing.length) {
+    if (existing[0].status === "inactive") throw new SourcingUnavailableError("This product isn't available on Ballylife.");
+    if (existing[0].status !== "active") await pool!.query(`UPDATE mkt_supplier_products SET status = 'active', updated_at = now() WHERE id = $1`, [existing[0].id]);
+    return { supplierProductId: existing[0].id, product: sourced, stock };
+  }
+
+  await ensureSupplier();
+  const { rows: catRows } = await pool!.query(`SELECT id FROM mkt_categories`);
+  const known = new Set(catRows.map((r: { id: string }) => r.id));
+  const categoryId = categorizeProduct(sourced.title, [p.category], known, FALLBACK_CATEGORY) ?? (known.has(FALLBACK_CATEGORY) ? FALLBACK_CATEGORY : null);
+  const cheapest = [...inStock].sort((x, y) => x.cost - y.cost)[0];
+  const variants: ExternalVariant[] = inStock.map(v => ({
+    vid: v.orderRef ?? v.externalSku, key: cleanTitle(v.label) || "Default", priceUsd: v.cost, ...(v.image && isSupplierImageUrl(v.image) ? { image: v.image } : {}),
+  }));
+  const { rows } = await pool!.query(
+    `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status,
+       external_source, external_id, external_variants, est_shipping_usd)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,'CN','active',$9,$10,$11,$12) RETURNING id`,
+    [supplierId, categoryId, sourced.title, cleanDescription(p.description), cheapest.cost, p.currency, sourced.baseCostZar, JSON.stringify(images),
+     source, externalId, JSON.stringify(variants), shipping.currency === "USD" ? shipping.cost : null]);
+  logger.info("sourcing.catalogue_item_created", { adapter: a.key, supplierProductId: rows[0].id });
+  return { supplierProductId: rows[0].id, product: sourced, stock };
 }
 
 /** Manager dashboard: calls and cache use over the last N days. */

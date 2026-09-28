@@ -12,6 +12,10 @@ vi.mock("../db/pool", () => ({ pool, hasDb: true }));
 const calls = { ae: 0, cj: 0 };
 const fakeAe: SupplierAdapter = {
   key: "aliexpress", isConfigured: () => true, costPerCall: { search: 0.01 },
+  catalogue: {
+    supplierId: "sup-aliexpress", source: "aliexpress",
+    async ensureSupplier() { await pool.query(`INSERT INTO mkt_suppliers (id, name, country, status) VALUES ('sup-aliexpress','AliExpress','CN','active') ON CONFLICT (id) DO NOTHING`); },
+  },
   async search() {
     calls.ae++;
     return [{ externalId: "1005001234567890", title: "AliExpress Wireless Earbuds", cost: 10, currency: "USD", image: "https://ae01.alicdn.com/kf/earbuds.jpg", orders: 500, rating: 4.8 }];
@@ -20,7 +24,10 @@ const fakeAe: SupplierAdapter = {
     return {
       externalId: id, title: "Wireless Earbuds", description: "Great sound. Visit https://www.aliexpress.com/item/1005001234567890.html for more. Sold on AliExpress.",
       images: ["https://ae01.alicdn.com/kf/earbuds.jpg", "https://evil.example.com/x.jpg"], currency: "USD", category: "Audio", available: true,
-      variants: [{ externalSku: "12000012345", label: "Black", cost: 10, stock: 40, image: "https://ae01.alicdn.com/kf/black.jpg" }],
+      variants: [
+        { externalSku: "12000012345", orderRef: "14:193#Black", label: "Black", cost: 10, stock: 40, image: "https://ae01.alicdn.com/kf/black.jpg" },
+        { externalSku: "12000012346", orderRef: "14:175#White", label: "White", cost: 12, stock: 0 },
+      ],
     };
   },
   async getShipping() { return { cost: 2, currency: "USD", minDays: 7, maxDays: 15 }; },
@@ -28,6 +35,7 @@ const fakeAe: SupplierAdapter = {
 };
 const fakeCj: SupplierAdapter = {
   key: "cj", isConfigured: () => true, costPerCall: {},
+  catalogue: { supplierId: "sup-cjdropshipping", source: "cjdropshipping", async ensureSupplier() { /* not used */ } },
   async search() {
     calls.cj++;
     return [{ externalId: "CJ-PID-777", title: "Phone Stand", cost: 3, currency: "USD", image: "https://cf.cjdropshipping.com/stand.jpg", orders: null, rating: null }];
@@ -44,6 +52,7 @@ let app: Express;
 let adminToken: string;
 let sellerToken: string;
 let buyerToken: string;
+let sellerId: string;
 
 beforeAll(async () => {
   (await import("../services/sourcing/adapters"))._setAdaptersForTests([fakeAe, fakeCj]);
@@ -65,7 +74,8 @@ beforeAll(async () => {
   const reg = await request(app).post("/api/marketplace/sellers/register").send({
     username: "srcseller", password: "SellerPass123", name: "S", email: "srcseller@example.com", storeName: "Src Store",
   });
-  sellerToken = reg.body.token;
+  sellerToken = reg.body.token; sellerId = reg.body.seller.id;
+  await pool.query(`INSERT INTO mkt_categories (id, name, slug, icon) VALUES ('cat-03','Electronics','electronics','📱')`);
   await pool.query(`INSERT INTO users (username, password_hash, role, name, email) VALUES ('srcbuyer','${await bcrypt.hash("BuyerPass123", 10)}','customer','B','srcbuyer@example.com')`);
   buyerToken = (await request(app).post("/api/auth/login").send({ username: "srcbuyer", password: "BuyerPass123" })).body.data.token;
 });
@@ -132,5 +142,98 @@ describe("Supplier sourcing (adapter layer)", () => {
     expect(catalog.status).toBe(403);
     const sellerCatalog = await request(app).get("/api/marketplace/supplier-catalog").set("Authorization", `Bearer ${sellerToken}`);
     expect(sellerCatalog.status).toBe(200);
+  });
+});
+
+describe("Seller sourcing (search, profit, import, plan limits)", () => {
+  const auth = () => ({ Authorization: `Bearer ${sellerToken}` });
+  const setPlans = (value: unknown) => pool.query(
+    `INSERT INTO sourcing_settings (key, value) VALUES ('plans', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [JSON.stringify(value)]);
+
+  it("needs an approved store", async () => {
+    const res = await request(app).get("/api/marketplace/sourcing/search?q=earbuds").set(auth());
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("SELLER_NOT_ACTIVE");
+    await pool.query(`UPDATE mkt_sellers SET status = 'active' WHERE id = $1`, [sellerId]);
+  });
+
+  it("shows the seller's plan (Starter by default)", async () => {
+    const res = await request(app).get("/api/marketplace/sourcing/quota").set(auth());
+    expect(res.status).toBe(200);
+    expect(res.body.data.plan).toBe("starter");
+    expect(res.body.data.limits).toEqual({ searchesPerDay: 20, viewsPerDay: 60, activeImports: 25, importsPerMonth: 50 });
+    expect(res.body.data.commissionPct).toBe(8);
+  });
+
+  it("searches without leaking the supplier and counts each search", async () => {
+    const res = await request(app).get("/api/marketplace/sourcing/search?q=earbuds").set(auth());
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expectNoLeaks(res.body);
+    const q = await request(app).get("/api/marketplace/sourcing/quota").set(auth());
+    expect(q.body.data.used.searchesToday).toBe(1);
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM supplier_api_calls WHERE seller_id = $1`, [sellerId]);
+    expect(rows[0].n).toBeGreaterThan(0);
+  });
+
+  it("stops searches at the plan's daily limit", async () => {
+    await setPlans({ starter: { searchesPerDay: 2 } });
+    const second = await request(app).get("/api/marketplace/sourcing/search?q=earbuds").set(auth());
+    expect(second.status).toBe(200);
+    const third = await request(app).get("/api/marketplace/sourcing/search?q=earbuds").set(auth());
+    expect(third.status).toBe(429);
+    expect(third.body.code).toBe("SOURCING_QUOTA");
+    await setPlans({});
+  });
+
+  let ref: string;
+  it("opens a product with the lowest price that still makes a profit", async () => {
+    const search = await request(app).get("/api/marketplace/sourcing/search?q=earbuds").set(auth());
+    ref = search.body.data.find((h: { title: string }) => h.title === "Wireless Earbuds").ref;
+    const res = await request(app).get(`/api/marketplace/sourcing/product/${ref}`).set(auth());
+    expect(res.status).toBe(200);
+    const base = Math.ceil(10 * 18 * 1.03) + Math.ceil(2 * 18 * 1.03);
+    expect(res.body.data.baseCostZar).toBe(base);
+    expect(res.body.data.minPriceZar).toBe(Math.ceil(base / 0.92));
+    expectNoLeaks(res.body);
+  });
+
+  it("won't import below the break-even price", async () => {
+    const res = await request(app).post("/api/marketplace/sourcing/import").set(auth()).send({ ref, retailPrice: 100 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("PRICE_TOO_LOW");
+  });
+
+  it("imports into the seller's store for review, ready for the fulfilment worker", async () => {
+    const res = await request(app).post("/api/marketplace/sourcing/import").set(auth()).send({ ref, retailPrice: 399 });
+    expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe("pending_review");
+    expect(Number(res.body.data.price)).toBe(399);
+    expectNoLeaks(res.body);
+    const { rows } = await pool.query(`SELECT * FROM mkt_supplier_products WHERE external_source = 'aliexpress'`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].external_id).toBe("1005001234567890");
+    expect(rows[0].name).toBe("Wireless Earbuds");
+    expect(rows[0].external_variants).toEqual([{ vid: "14:193#Black", key: "Black", priceUsd: 10, image: "https://ae01.alicdn.com/kf/black.jpg" }]);
+    expect(rows[0].images).toEqual(["https://ae01.alicdn.com/kf/earbuds.jpg"]);
+  });
+
+  it("won't import the same product twice, and a manager can approve it", async () => {
+    const again = await request(app).post("/api/marketplace/sourcing/import").set(auth()).send({ ref, retailPrice: 399 });
+    expect(again.status).toBe(409);
+    const { rows } = await pool.query(`SELECT id FROM mkt_products WHERE seller_id = $1`, [sellerId]);
+    const approve = await request(app).patch(`/api/marketplace/admin/products/${rows[0].id}/approve`).set("Authorization", `Bearer ${adminToken}`);
+    expect(approve.status).toBe(200);
+  });
+
+  it("enforces the active-imports limit, and a manager can move the seller to a bigger plan", async () => {
+    await setPlans({ starter: { activeImports: 1 } });
+    const blocked = await request(app).post("/api/marketplace/sourcing/import").set(auth()).send({ ref, retailPrice: 399 });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.limit).toBe("activeImports");
+    const up = await request(app).patch(`/api/marketplace/admin/sourcing/sellers/${sellerId}/plan`).set("Authorization", `Bearer ${adminToken}`).send({ plan: "pro" });
+    expect(up.status).toBe(200);
+    expect(up.body.data.limits.activeImports).toBe(500);
+    await setPlans({});
   });
 });

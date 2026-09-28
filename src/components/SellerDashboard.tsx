@@ -6,9 +6,10 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { mktSellers, mktAdmin, mktSupplierCatalog, type MktAuthUser } from "../services/marketplaceApi";
 import { productPhotos } from "../services/productMedia";
+import { SellerSourcing } from "./SellerSourcing";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "orders" | "products" | "import" | "inventory" | "reviews" | "settings";
+type Tab = "overview" | "orders" | "products" | "find" | "import" | "inventory" | "reviews" | "settings";
 
 const fmtZAR = (n: number) => `R${Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -75,6 +76,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
     { id: "overview", label: "Overview", icon: <BarChart3 className="w-4 h-4" /> },
     { id: "orders", label: "Orders", icon: <ShoppingBag className="w-4 h-4" /> },
     { id: "products", label: "Products", icon: <Package className="w-4 h-4" /> },
+    { id: "find", label: "Find products", icon: <Search className="w-4 h-4" /> },
     { id: "import", label: "Import from Suppliers", icon: <Globe2 className="w-4 h-4" /> },
     { id: "inventory", label: "Inventory", icon: <AlertTriangle className="w-4 h-4" /> },
     { id: "reviews", label: "Reviews", icon: <Star className="w-4 h-4" /> },
@@ -165,6 +167,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
 
             {tab === "products" && <ProductManagement sellerId={seller.id} products={products} onChanged={load} />}
 
+            {tab === "find" && <SellerSourcing onImported={load} />}
             {tab === "import" && <SupplierImport sellerId={seller.id} onImported={load} />}
 
             {tab === "inventory" && (

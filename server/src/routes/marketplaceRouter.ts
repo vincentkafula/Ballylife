@@ -21,7 +21,7 @@ import { englishOnly } from "../utils/englishOnly";
 import { prefectureInEnglish } from "../utils/japaneseParts";
 import { cleanDescriptionText } from "../utils/productNaming";
 import { deliveryInfo, calendarDaysForBusinessDays, INTERNATIONAL_DELIVERY_DAYS } from "../utils/delivery";
-import { cjOnlyCatalog, CJ_ONLY_MESSAGE } from "../utils/catalogPolicy";
+import { cjOnlyCatalog, CJ_ONLY_MESSAGE, isSourcedSource, SOURCED_SOURCES } from "../utils/catalogPolicy";
 import { hashPassword, passwordProblem, demoModeEnabled } from "../utils/authSecurity";
 import { activeMembership, markBenefitUsed, handleSubscriptionItn } from "../services/subscriptions";
 import { storeCreditBalance, addLedgerEntry } from "../services/programmes";
@@ -482,7 +482,7 @@ router.get("/supplier-catalog", requireAuth, requireRole("seller", ...MANAGER_RO
   const page = Math.max(1, Number(pg) || 1);
   const limit = Math.min(60, Number(lim) || 20);
   const where: string[] = [`sp.status = 'active'`];
-  if (cjOnlyCatalog()) where.push(`sp.external_source = 'cjdropshipping'`);
+  if (cjOnlyCatalog()) where.push(`sp.external_source IN (${SOURCED_SOURCES.map(s => `'${s}'`).join(",")})`);
   const params: unknown[] = [];
   const p = (val: unknown) => { params.push(val); return `${params.length}`; };
   if (country)  where.push(`sp.origin_country = ${p(country)}`);
@@ -1517,7 +1517,7 @@ router.patch("/admin/products/:id/approve", requireAuth, requireRole(...MANAGER_
     const { rows: src } = await pool!.query(
       `SELECT sp.external_source FROM mkt_products p LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id WHERE p.id::text = $1`, [req.params.id]
     );
-    if (src.length && src[0].external_source !== "cjdropshipping") {
+    if (src.length && !isSourcedSource(src[0].external_source)) {
       res.status(409).json({ success: false, error: "Only products sourced from the supplier catalogue can go live.", code: "CJ_ONLY_CATALOG" }); return;
     }
   }
@@ -1779,21 +1779,28 @@ router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req
 router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
   const { supplierProductId, stock, retailPrice, compareAtPrice } = req.body;
   if (!supplierProductId) { res.status(400).json({ success: false, error: "supplierProductId is required" }); return; }
+  const r = await createImportedListing(req.params.id, String(supplierProductId), { stock, retailPrice, compareAtPrice });
+  res.status(r.status).json(r.body);
+});
 
+export interface ImportListingResult { status: number; body: { success: boolean; data?: unknown; error?: string; code?: string; message?: string } }
+
+/** Lists a supplier-catalogue item in a seller's store (pending review). Shared by catalogue imports and seller sourcing. */
+export async function createImportedListing(sellerId: string, supplierProductId: string,
+  { stock, retailPrice, compareAtPrice }: { stock?: number; retailPrice?: unknown; compareAtPrice?: unknown }): Promise<ImportListingResult> {
+  const fail = (status: number, error: string, code?: string): ImportListingResult => ({ status, body: { success: false, error, ...(code ? { code } : {}) } });
   const { rows: spRows } = await pool!.query(
     `SELECT * FROM mkt_supplier_products WHERE id::text = $1 AND status = 'active'`, [supplierProductId]
   );
-  if (!spRows.length) { res.status(404).json({ success: false, error: "Supplier catalog item not found or no longer available" }); return; }
+  if (!spRows.length) return fail(404, "Supplier catalog item not found or no longer available");
   const sp = spRows[0];
-  if (cjOnlyCatalog() && sp.external_source !== "cjdropshipping") {
-    res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return;
-  }
+  if (cjOnlyCatalog() && !isSourcedSource(sp.external_source)) return fail(403, CJ_ONLY_MESSAGE, "CJ_ONLY_CATALOG");
 
-  if (!sp.category_id) { res.status(400).json({ success: false, error: "This catalog item has no category set — ask the marketplace team to assign one before importing." }); return; }
+  if (!sp.category_id) return fail(400, "This catalog item has no category set — ask the marketplace team to assign one before importing.");
   // Seller's own price if they gave one; otherwise fall back to the
   // manager's suggested price on the catalog item, if any was set.
   const finalRetailPrice = retailPrice !== undefined && retailPrice !== null && retailPrice !== "" ? Number(retailPrice) : Number(sp.retail_price);
-  if (!finalRetailPrice || finalRetailPrice <= 0) { res.status(400).json({ success: false, error: "Set a retail price for this listing (your price on top of the supplier's cost)." }); return; }
+  if (!finalRetailPrice || finalRetailPrice <= 0) return fail(400, "Set a retail price for this listing (your price on top of the supplier's cost).");
   const finalCompareAtPrice = compareAtPrice !== undefined && compareAtPrice !== null && compareAtPrice !== "" ? Number(compareAtPrice) : (sp.compare_at_price ?? null);
   // Note: a used vehicle can still be listed here even though it can never
   // be delivered to a South African address — Zambia allows used-vehicle
@@ -1826,22 +1833,22 @@ router.post("/sellers/:id/import-listing", requireAuth, requireSellerOwner, asyn
       `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
          currency, images, emoji, status, stock, brand, fulfillment_type, supplier_product_id, vehicle_details, condition, nrcs_approved, nrcs_reference, variants, delivery_profile)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,'imported',$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
-      [req.params.id, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", finalRetailPrice, finalCompareAtPrice,
+      [sellerId, sp.category_id, sp.name, slug, sp.description ?? "", sp.description ?? "", finalRetailPrice, finalCompareAtPrice,
        JSON.stringify(sp.images ?? []), sp.emoji ?? "📦", stock ?? 0, "Imported", supplierProductId,
        sp.vehicle_details ? JSON.stringify(sp.vehicle_details) : null, sp.condition ?? null, sp.nrcs_approved ?? false, sp.nrcs_reference ?? null,
        JSON.stringify(listingVariants), sp.external_source === "cjdropshipping" ? "international" : null]
     );
     await client.query(`UPDATE mkt_supplier_products SET import_count = import_count + 1 WHERE id = $1`, [supplierProductId]);
     await client.query("COMMIT");
-    res.status(201).json({ success: true, data: mapProduct(rows[0]), message: "Imported to your store — it will appear once approved by the marketplace team." });
+    return { status: 201, body: { success: true, data: mapProduct(rows[0]), message: "Imported to your store — it will appear once approved by the marketplace team." } };
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("[marketplace] Import listing failed:", err);
-    res.status(500).json({ success: false, error: "Could not import this item, please try again." });
+    return fail(500, "Could not import this item, please try again.");
   } finally {
     client.release();
   }
-});
+}
 
 router.patch("/sellers/:id/products/:productId", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
   const { rows: existing } = await pool!.query(`SELECT * FROM mkt_products WHERE id::text = $1 AND seller_id = $2`, [req.params.productId, req.params.id]);
@@ -2612,7 +2619,7 @@ router.post("/admin/supplier-products", requireAuth, requireRole(...MANAGER_ROLE
 router.patch("/admin/supplier-products/:id", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   if (cjOnlyCatalog() && req.body?.status === "active") {
     const { rows: src } = await pool!.query(`SELECT external_source FROM mkt_supplier_products WHERE id::text = $1`, [req.params.id]);
-    if (src.length && src[0].external_source !== "cjdropshipping") {
+    if (src.length && !isSourcedSource(src[0].external_source)) {
       res.status(409).json({ success: false, error: "Only supplier-catalogue items can be active.", code: "CJ_ONLY_CATALOG" }); return;
     }
   }

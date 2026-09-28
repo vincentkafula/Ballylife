@@ -294,6 +294,14 @@ export const mktSupplierCatalog = {
   get:  (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/supplier-catalog/${id}`),
 };
 
+// ── Seller sourcing (search suppliers, add products; white-labelled server-side) ──
+export const mktSourcing = {
+  quota:         () => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/sourcing/quota`),
+  search:        (p: Record<string, string>) => api<{ success: boolean; data: unknown[]; error?: string }>(`/api/marketplace/sourcing/search?${new URLSearchParams(p)}`),
+  product:       (ref: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/sourcing/product/${encodeURIComponent(ref)}`),
+  importProduct: (body: { ref: string; retailPrice: number; compareAtPrice?: number }) => api<{ success: boolean; data?: unknown; error?: string; message?: string }>(`/api/marketplace/sourcing/import`, { method: "POST", body: JSON.stringify(body) }),
+};
+
 export const mktCustomer = {
   stats:    (userId: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/customers/${userId}/stats`),
   spending: (userId: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/customers/${userId}/spending`),
