@@ -169,19 +169,21 @@ export function isPayfastConfigured(): boolean {
 export function buildSubscriptionRedirect(req: {
   subscriptionId: string; email: string; planName: string;
   initialAmount: number; recurringAmount: number; billingDate: Date;
+  /** Defaults (BallylifeMORE): m_payment_id sub_<id>, item "BallylifeMORE <plan>", return ?subscription=... */
+  mPaymentId?: string; itemName?: string; returnQuery?: string;
 }): { url: string; fields: Record<string, string> } {
   if (!isPayfastConfigured()) throw new Error("PayFast is not configured");
   const ymd = req.billingDate.toISOString().slice(0, 10);
   const fields: Record<string, string> = {
     merchant_id: MERCHANT_ID!,
     merchant_key: MERCHANT_KEY!,
-    return_url: `${PUBLIC_APP_URL}/?subscription=success`,
-    cancel_url: `${PUBLIC_APP_URL}/?subscription=cancelled`,
+    return_url: `${PUBLIC_APP_URL}/?${req.returnQuery ?? "subscription"}=success`,
+    cancel_url: `${PUBLIC_APP_URL}/?${req.returnQuery ?? "subscription"}=cancelled`,
     notify_url: `${API_PUBLIC_URL}/api/marketplace/payfast/notify`,
     email_address: req.email,
-    m_payment_id: `sub_${req.subscriptionId}`,
+    m_payment_id: req.mPaymentId ?? `sub_${req.subscriptionId}`,
     amount: req.initialAmount.toFixed(2),
-    item_name: `BallylifeMORE ${req.planName}`.slice(0, 100),
+    item_name: (req.itemName ?? `BallylifeMORE ${req.planName}`).slice(0, 100),
     subscription_type: "1",
     billing_date: ymd,
     recurring_amount: req.recurringAmount.toFixed(2),

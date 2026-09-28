@@ -187,6 +187,8 @@ export function SourcingAdminPanel() {
         </Card>
       )}
 
+      <BillingCard billing={data.billing} onChanged={load} />
+
       <SellerPlans planNames={data.planNames} />
       <TestSearch />
     </div>
@@ -241,6 +243,50 @@ function AwaitingOrders({ onChanged }: { onChanged: () => void }) {
   );
 }
 
+function BillingCard({ billing, onChanged }: { billing: R; onChanged: () => void }) {
+  const [price, setPrice] = useState(String(billing.priceZar));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setPrice(String(billing.priceZar)); }, [billing.priceZar]);
+  const save = async (body: { enabled?: boolean; priceZar?: number }, done: string) => {
+    setBusy(true);
+    try { const r = await mktSourcingAdmin.saveBilling(body); if (r.success) { toast.success(done); onChanged(); } else toast.error(r.error ?? "Couldn't save."); }
+    catch (err) { toast.error(errMessage(err, "Couldn't save.")); }
+    finally { setBusy(false); }
+  };
+  const toggle = () => {
+    const turningOn = !billing.enabled;
+    const msg = turningOn
+      ? `Start charging sellers R${Number(billing.priceZar).toLocaleString("en-ZA")}/month for product sourcing? From now on, sellers without a subscription (or free access) can't search or add new products. Products already in their stores keep selling.`
+      : "Stop requiring a subscription? Every approved seller can use sourcing for free. Existing subscriptions keep billing until cancelled on PayFast or by the seller.";
+    if (confirm(msg)) void save({ enabled: turningOn }, turningOn ? "Sourcing billing is on" : "Sourcing billing is off");
+  };
+  return (
+    <Card title="Seller billing" action={
+      <button disabled={busy} onClick={toggle} className="px-3 py-1 rounded-full text-[11px] font-semibold disabled:opacity-40"
+        style={{ background: billing.enabled ? "#0B5C2E" : "#E5E7EB", color: billing.enabled ? "white" : "#374151" }}>
+        {billing.enabled ? "On — sellers pay" : "Off — sourcing is free"}
+      </button>
+    }>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        <Stat label="Paying sellers" value={String(billing.active)} />
+        <Stat label="Payment overdue" value={String(billing.pastDue)} />
+        <Stat label="Free access" value={String(billing.exempt)} />
+        <Stat label="Monthly revenue" value={rand(billing.monthlyRevenueZar)} />
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-gray-600">Monthly price for new subscriptions (R)
+          <input type="number" min={10} value={price} onChange={e => setPrice(e.target.value)} className="block w-36 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm mt-1" />
+        </label>
+        <button disabled={busy || Number(price) === Number(billing.priceZar)} onClick={() => void save({ priceZar: Number(price) }, "Price saved")}
+          className="px-4 py-2 rounded-lg text-white text-xs font-semibold disabled:opacity-40" style={{ background: "#B8862E" }}>Save price</button>
+      </div>
+      <p className="text-[11px] text-gray-500 mt-2">Billed monthly by card through PayFast. A new price applies to new subscriptions; existing ones keep their price. Give a store free access from the Sellers list below.</p>
+    </Card>
+  );
+}
+
+const BILLING_LABEL: Record<string, string> = { exempt: "Free access", active: "Paying", past_due: "Overdue", cancelling: "Cancelling", none: "—" };
+
 function SellerPlans({ planNames }: { planNames: Record<string, string> }) {
   const [rows, setRows] = useState<R[] | null>(null);
   const [search, setSearch] = useState("");
@@ -251,6 +297,15 @@ function SellerPlans({ planNames }: { planNames: Record<string, string> }) {
     catch (err) { toast.error(errMessage(err, "Couldn't load sellers.")); }
   }, []);
   useEffect(() => { const t = setTimeout(() => void load(search), 300); return () => clearTimeout(t); }, [search, load]);
+
+  const setExempt = async (sellerId: string, exempt: boolean) => {
+    setSaving(sellerId);
+    try {
+      const r = await mktSourcingAdmin.setExempt(sellerId, exempt);
+      if (r.success) { toast.success(exempt ? "Free access given" : "Free access removed"); await load(search); } else toast.error(r.error ?? "Couldn't update.");
+    } catch (err) { toast.error(errMessage(err, "Couldn't update.")); }
+    finally { setSaving(null); }
+  };
 
   const setPlan = async (sellerId: string, plan: string) => {
     setSaving(sellerId);
@@ -271,7 +326,7 @@ function SellerPlans({ planNames }: { planNames: Record<string, string> }) {
       {!rows ? <Loader2 className="w-5 h-5 animate-spin text-gray-400" /> : rows.length === 0 ? <p className="text-xs text-gray-500">No sellers found.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead><tr className="text-left text-gray-500"><th className="py-1.5">Store</th><th>Searches today</th><th>Opened today</th><th>In store</th><th>This month</th><th>Plan</th></tr></thead>
+            <thead><tr className="text-left text-gray-500"><th className="py-1.5">Store</th><th>Searches today</th><th>Opened today</th><th>In store</th><th>This month</th><th>Plan</th><th>Billing</th></tr></thead>
             <tbody>
               {rows.map(r => (
                 <tr key={r.sellerId} className="border-t border-gray-100">
@@ -281,6 +336,12 @@ function SellerPlans({ planNames }: { planNames: Record<string, string> }) {
                     <select value={r.plan} disabled={saving === r.sellerId} onChange={e => void setPlan(r.sellerId, e.target.value)} className="border border-gray-200 rounded-md px-1.5 py-1 text-xs bg-white">
                       {PLAN_IDS.map(p => <option key={p} value={p}>{planNames[p]}</option>)}
                     </select>
+                  </td>
+                  <td>
+                    <span className="mr-2">{BILLING_LABEL[r.billing] ?? r.billing}</span>
+                    <button disabled={saving === r.sellerId} onClick={() => void setExempt(r.sellerId, r.billing !== "exempt")} className="text-[11px] underline text-gray-600 disabled:opacity-40">
+                      {r.billing === "exempt" ? "Remove free access" : "Give free access"}
+                    </button>
                   </td>
                 </tr>
               ))}

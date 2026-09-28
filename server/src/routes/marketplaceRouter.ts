@@ -484,7 +484,7 @@ router.get("/supplier-catalog", requireAuth, requireRole("seller", ...MANAGER_RO
   const where: string[] = [`sp.status = 'active'`];
   if (cjOnlyCatalog()) where.push(`sp.external_source IN (${SOURCED_SOURCES.map(s => `'${s}'`).join(",")})`);
   const params: unknown[] = [];
-  const p = (val: unknown) => { params.push(val); return `${params.length}`; };
+  const p = (val: unknown) => { params.push(val); return `$${params.length}`; };
   if (country)  where.push(`sp.origin_country = ${p(country)}`);
   if (category) where.push(`sp.category_id = ${p(category)}`);
   if (search)   where.push(`LOWER(sp.name) LIKE ${p(`%${search.toLowerCase()}%`)}`);
@@ -647,6 +647,12 @@ router.post("/payfast/notify", async (req: Request, res: Response): Promise<void
     if (!rawBody || !(await confirmWithPayfast(rawBody))) {
       logger.warn("payfast.itn_not_confirmed_by_payfast", { paymentId: body?.m_payment_id });
       res.status(400).send("not confirmed by payfast");
+      return;
+    }
+    if (String(body.m_payment_id ?? "").startsWith("ssub_")) {
+      const { handleSellerSubscriptionItn } = await import("../services/sourcing/billing");
+      await handleSellerSubscriptionItn(body);
+      res.status(200).send("OK");
       return;
     }
     if (String(body.m_payment_id ?? "").startsWith("sub_")) {

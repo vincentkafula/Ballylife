@@ -64,6 +64,12 @@ describe("CJ-only catalogue policy", () => {
   it("sellers only see and can only import CJ items", async () => {
     const list = await request(app).get("/api/marketplace/supplier-catalog").set("Authorization", `Bearer ${sellerToken}`);
     expect(list.body.data.map((i: { name: string }) => i.name)).toEqual(["CJ Earbuds"]);
+    // Filters are real query parameters, not literal numbers.
+    const hit = await request(app).get("/api/marketplace/supplier-catalog?search=earbuds&country=CN&category=cat-01").set("Authorization", `Bearer ${sellerToken}`);
+    expect(hit.status).toBe(200);
+    expect(hit.body.data.map((i: { name: string }) => i.name)).toEqual(["CJ Earbuds"]);
+    const miss = await request(app).get("/api/marketplace/supplier-catalog?search=kettle").set("Authorization", `Bearer ${sellerToken}`);
+    expect(miss.body.data).toEqual([]);
 
     const bad = await request(app).post(`/api/marketplace/sellers/${sellerId}/import-listing`).set("Authorization", `Bearer ${sellerToken}`)
       .send({ supplierProductId: manualItemId, retailPrice: 200 });

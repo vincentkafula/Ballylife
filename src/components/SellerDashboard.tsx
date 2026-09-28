@@ -42,7 +42,10 @@ interface Props {
 }
 
 export function SellerDashboard({ user, seller, onSignOut }: Props) {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() => {
+    try { const t = sessionStorage.getItem("seller-tab"); if (t === "find") { sessionStorage.removeItem("seller-tab"); return "find"; } } catch { /* storage unavailable */ }
+    return "overview";
+  });
   const [sellerData, setSellerData] = useState<R | null>(null);
   const [products, setProducts] = useState<R[]>([]);
   const [orders, setOrders] = useState<R[]>([]);

@@ -145,6 +145,7 @@ export async function runProgrammesCycle(): Promise<void> {
   running = true;
   try {
     await runSubscriptionMaintenance();
+    await (await import("./sourcing/billing")).runSellerBillingMaintenance();
     await runBusinessRebates();
     await runCreditRewards();
   } catch (err) {

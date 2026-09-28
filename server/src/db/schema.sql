@@ -1374,3 +1374,31 @@ CREATE INDEX IF NOT EXISTS idx_sourcing_usage_seller ON sourcing_usage(seller_id
 -- chooses "approval". Rows saved before order routing existed (whose
 -- 'approval' was only the old column default) go back to automatic.
 UPDATE sourcing_suppliers SET order_mode = 'auto' WHERE order_mode = 'approval' AND updated_at < '2026-09-28T20:20:00Z';
+
+-- Seller sourcing subscription (PayFast recurring), off until a manager switches it on.
+ALTER TABLE mkt_sellers ADD COLUMN IF NOT EXISTS sourcing_billing_exempt BOOLEAN NOT NULL DEFAULT false; -- free pass from a manager
+CREATE TABLE IF NOT EXISTS seller_sourcing_subscriptions (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_id             TEXT NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'pending_payment', -- pending_payment | active | past_due | cancelled | expired
+  price_zar             NUMERIC(12,2) NOT NULL,                  -- fixed at sign-up (it's the PayFast recurring amount)
+  payfast_token         TEXT,
+  commenced_at          TIMESTAMPTZ,
+  current_period_start  TIMESTAMPTZ,
+  current_period_end    TIMESTAMPTZ,
+  missed_periods        INTEGER NOT NULL DEFAULT 0,
+  cancelled_at          TIMESTAMPTZ,
+  cancel_at             TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_seller_sourcing_subs_seller ON seller_sourcing_subscriptions(seller_id, status);
+CREATE TABLE IF NOT EXISTS seller_sourcing_payments (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subscription_id  UUID NOT NULL REFERENCES seller_sourcing_subscriptions(id),
+  amount           NUMERIC(12,2) NOT NULL,
+  period_start     TIMESTAMPTZ NOT NULL,
+  period_end       TIMESTAMPTZ NOT NULL,
+  processor_ref    TEXT UNIQUE,                                   -- PayFast pf_payment_id (duplicate ITNs are ignored)
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -9,6 +9,9 @@ import {
 import { quotaStatus, checkQuota, recordUsage, setSellerPlan, planLimits, QuotaError, PLAN_IDS, PLAN_NAMES, type PlanId } from "../services/sourcing/quotas";
 import { sourcingOverview, sellerSourcingList, savePlanLimits, clearSourcingCache } from "../services/sourcing/analytics";
 import { awaitingOrders, approveOrder, rejectOrder, setOrderMode, ORDER_MODES, type OrderMode } from "../services/sourcing/orderRouting";
+import {
+  billingStatus, billingSettings, saveBillingSettings, startSellerSubscription, cancelSellerSubscription, setBillingExempt, billingSummary, BillingError,
+} from "../services/sourcing/billing";
 import { createImportedListing } from "./marketplaceRouter";
 
 /**
@@ -23,6 +26,7 @@ const manager = [requireAuth, requireRole("marketplace_admin", "super_admin")];
 const seller = [requireAuth, requireRole("seller")];
 
 const fail = (res: Response, err: unknown, fallback: string) => {
+  if (err instanceof BillingError) { res.status(err.status).json({ success: false, error: err.message }); return; }
   if (err instanceof QuotaError) { res.status(429).json({ success: false, error: err.message, code: "SOURCING_QUOTA", limit: err.limit }); return; }
   if (err instanceof SourcingUnavailableError) { res.status(503).json({ success: false, error: err.message }); return; }
   logger.error("sourcing.request_failed", { error: err instanceof Error ? err.message : String(err) });
@@ -99,15 +103,24 @@ router.get("/admin/sourcing/product/:ref", ...manager, async (req: Request, res:
 });
 
 // ── Sellers ────────────────────────────────────────────────────────────────
-interface SellerRow { id: string; status: string; commission_pct: string | number }
+interface SellerRow { id: string; status: string; commission_pct: string | number; store_name: string }
 
 /** The signed-in seller's store, if it's approved to trade. */
 async function activeSeller(req: Request, res: Response): Promise<SellerRow | null> {
-  const { rows } = await pool!.query(`SELECT id, status, commission_pct FROM mkt_sellers WHERE user_id = $1`, [req.user!.userId]);
+  const { rows } = await pool!.query(`SELECT id, status, commission_pct, store_name FROM mkt_sellers WHERE user_id = $1`, [req.user!.userId]);
   const s = rows[0] as SellerRow | undefined;
   if (!s) { res.status(404).json({ success: false, error: "No store found for this account." }); return null; }
   if (s.status !== "active") { res.status(403).json({ success: false, error: "Your store needs to be approved before you can add products.", code: "SELLER_NOT_ACTIVE" }); return null; }
   return s;
+}
+
+/** When sourcing billing is on, searching/opening/importing needs a paid subscription (or a free pass). */
+async function requireSourcingAccess(s: SellerRow, res: Response): Promise<boolean> {
+  const b = await billingStatus(s.id);
+  if (b.hasAccess) return true;
+  res.status(402).json({ success: false, code: "SOURCING_SUBSCRIPTION_REQUIRED", priceZar: b.priceZar,
+    error: `Product sourcing needs a subscription (R${b.priceZar.toLocaleString("en-ZA")} a month). Products you've already added keep selling.` });
+  return false;
 }
 
 const commissionOf = (s: SellerRow) => { const n = Number(s.commission_pct); return Number.isFinite(n) ? n : 8; };
@@ -116,7 +129,7 @@ export const breakEvenPrice = (baseCostZar: number, commissionPct: number) => Ma
 
 router.get("/sourcing/quota", ...seller, async (req: Request, res: Response): Promise<void> => {
   const s = await activeSeller(req, res); if (!s) return;
-  try { res.json({ success: true, data: { ...(await quotaStatus(s.id)), commissionPct: commissionOf(s) } }); }
+  try { res.json({ success: true, data: { ...(await quotaStatus(s.id)), commissionPct: commissionOf(s), billing: await billingStatus(s.id) } }); }
   catch (err) { fail(res, err, "Couldn't load your plan."); }
 });
 
@@ -125,6 +138,7 @@ router.get("/sourcing/search", ...seller, async (req: Request, res: Response): P
   const q = req.query as Record<string, string>;
   const keyword = String(q.q ?? "").trim();
   if (keyword.length < 2) { res.status(400).json({ success: false, error: "Type at least 2 letters to search." }); return; }
+  if (!(await requireSourcingAccess(s, res))) return;
   try {
     await checkQuota(s.id, "search");
     const data = await searchSourcing({
@@ -138,6 +152,7 @@ router.get("/sourcing/search", ...seller, async (req: Request, res: Response): P
 
 router.get("/sourcing/product/:ref", ...seller, async (req: Request, res: Response): Promise<void> => {
   const s = await activeSeller(req, res); if (!s) return;
+  if (!(await requireSourcingAccess(s, res))) return;
   try {
     await checkQuota(s.id, "view");
     const data = await getSourcedProduct(req.params.ref, { userId: req.user!.userId, sellerId: s.id });
@@ -154,6 +169,7 @@ router.post("/sourcing/import", ...seller, async (req: Request, res: Response): 
   const price = Number(retailPrice);
   if (typeof ref !== "string" || !ref) { res.status(400).json({ success: false, error: "Pick a product to import." }); return; }
   if (!Number.isFinite(price) || price <= 0) { res.status(400).json({ success: false, error: "Set your selling price." }); return; }
+  if (!(await requireSourcingAccess(s, res))) return;
   const compare = compareAtPrice === undefined || compareAtPrice === null || compareAtPrice === "" ? null : Number(compareAtPrice);
   if (compare !== null && (!Number.isFinite(compare) || compare <= price)) { res.status(400).json({ success: false, error: "The \"was\" price must be higher than your selling price." }); return; }
   try {
@@ -170,14 +186,30 @@ router.post("/sourcing/import", ...seller, async (req: Request, res: Response): 
   } catch (err) { fail(res, err, "Couldn't import the product. Please try again."); }
 });
 
+// ── Sellers: sourcing subscription ─────────────────────────────────────────
+router.post("/sourcing/billing/subscribe", ...seller, async (req: Request, res: Response): Promise<void> => {
+  const s = await activeSeller(req, res); if (!s) return;
+  try {
+    const { rows } = await pool!.query(`SELECT email FROM users WHERE id::text = $1`, [req.user!.userId]);
+    if (!rows[0]?.email) { res.status(400).json({ success: false, error: "Add an email address to your account first." }); return; }
+    res.json({ success: true, data: await startSellerSubscription({ sellerId: s.id, storeName: s.store_name }, rows[0].email) });
+  } catch (err) { fail(res, err, "Couldn't start the subscription. Please try again."); }
+});
+
+router.post("/sourcing/billing/cancel", ...seller, async (req: Request, res: Response): Promise<void> => {
+  const s = await activeSeller(req, res); if (!s) return;
+  try { res.json({ success: true, data: await cancelSellerSubscription(s.id) }); }
+  catch (err) { fail(res, err, "Couldn't cancel. Please try again."); }
+});
+
 // ── Managers: dashboard, plans, cache ──────────────────────────────────────
 router.get("/admin/sourcing/overview", ...manager, async (req: Request, res: Response): Promise<void> => {
   try {
     const days = Math.min(90, Math.max(1, Number(req.query.days) || 14));
-    const [overview, suppliers, plans, cacheHours, fxBufferPct] = await Promise.all([
-      sourcingOverview(days), supplierStates(), planLimits(), getSetting("cacheHours"), getSetting("fxBufferPct"),
+    const [overview, suppliers, plans, cacheHours, fxBufferPct, billing, billingTotals] = await Promise.all([
+      sourcingOverview(days), supplierStates(), planLimits(), getSetting("cacheHours"), getSetting("fxBufferPct"), billingSettings(), billingSummary(),
     ]);
-    res.json({ success: true, data: { ...overview, suppliers, plans, planNames: PLAN_NAMES, settings: { cacheHours, fxBufferPct } } });
+    res.json({ success: true, data: { ...overview, suppliers, plans, planNames: PLAN_NAMES, settings: { cacheHours, fxBufferPct }, billing: { ...billing, ...billingTotals } } });
   } catch (err) { fail(res, err, "Couldn't load sourcing."); }
 });
 
@@ -220,6 +252,23 @@ router.post("/admin/sourcing/orders/:supplier/:id/reject", ...manager, async (re
     if (!(await rejectOrder(req.params.supplier, req.params.id, req.user!.userId, String(req.body?.reason ?? "")))) { res.status(409).json({ success: false, error: "This order isn't waiting for approval any more." }); return; }
     res.json({ success: true, message: "Not approved. Refund the customer or fulfil it another way." });
   } catch (err) { fail(res, err, "Couldn't update the order."); }
+});
+
+// ── Managers: seller billing ───────────────────────────────────────────────
+router.patch("/admin/sourcing/billing", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const next = await saveBillingSettings({ enabled: req.body?.enabled, priceZar: req.body?.priceZar });
+    logger.info("sourcing_billing.settings_changed", { by: req.user!.userId, ...next });
+    res.json({ success: true, data: next });
+  } catch (err) { fail(res, err, "Couldn't save billing settings."); }
+});
+
+router.patch("/admin/sourcing/sellers/:id/billing-exempt", ...manager, async (req: Request, res: Response): Promise<void> => {
+  if (typeof req.body?.exempt !== "boolean") { res.status(400).json({ success: false, error: "exempt must be true or false" }); return; }
+  try {
+    if (!(await setBillingExempt(req.params.id, req.body.exempt))) { res.status(404).json({ success: false, error: "Seller not found" }); return; }
+    res.json({ success: true, data: await billingStatus(req.params.id) });
+  } catch (err) { fail(res, err, "Couldn't update the seller."); }
 });
 
 // ── Managers: seller plans ─────────────────────────────────────────────────

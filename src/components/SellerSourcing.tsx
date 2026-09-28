@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Search, Loader2, X, Star, Truck, PackageCheck } from "lucide-react";
-import { mktSourcing } from "../services/marketplaceApi";
+import { mktSourcing, submitToPayfast } from "../services/marketplaceApi";
 
 // Sellers search Ballylife's supplier network, check their profit and add
 // products to their store. Everything here is white-labelled by the server:
@@ -13,8 +13,12 @@ interface Product {
   baseCostZar: number; deliveryZar: number | null; delivery: { minDays: number | null; maxDays: number | null };
   available: boolean; commissionPct: number; minPriceZar: number;
 }
+interface Billing {
+  required: boolean; hasAccess: boolean; exempt: boolean; priceZar: number;
+  subscription: null | { status: string; priceZar: number; currentPeriodEnd: string | null; cancelAt: string | null };
+}
 interface Quota {
-  plan: string; planName: string; commissionPct: number;
+  plan: string; planName: string; commissionPct: number; billing: Billing;
   limits: { searchesPerDay: number; viewsPerDay: number; activeImports: number; importsPerMonth: number };
   used: { searchesToday: number; viewsToday: number; activeImports: number; importsThisMonth: number };
 }
@@ -52,6 +56,8 @@ export function SellerSourcing({ onImported }: { onImported: () => void }) {
       else setBlocked(r.error ?? "Product sourcing isn't available for your store yet.");
     } catch { setBlocked("We couldn't load product sourcing. Please try again."); }
   }, []);
+  // A search/open/import refused because the subscription lapsed: refresh to show the subscribe card.
+  const onAccessLost = (r: { success: boolean; code?: string }) => { if (!r.success && r.code === "SOURCING_SUBSCRIPTION_REQUIRED") void loadQuota(); };
   useEffect(() => { loadQuota(); }, [loadQuota]);
 
   const search = async (e?: React.FormEvent) => {
@@ -63,13 +69,14 @@ export function SellerSourcing({ onImported }: { onImported: () => void }) {
       if (minPrice) p.minPrice = minPrice;
       if (maxPrice) p.maxPrice = maxPrice;
       const r = await mktSourcing.search(p);
-      if (r.success) setHits(r.data as Hit[]); else setError(r.error ?? "Search failed. Please try again.");
+      if (r.success) setHits(r.data as Hit[]); else { setError(r.error ?? "Search failed. Please try again."); onAccessLost(r as { success: boolean; code?: string }); }
     } catch { setError("Search failed. Please check your connection and try again."); }
     setSearching(false);
     loadQuota();
   };
 
   if (blocked) return <p className="text-sm text-gray-600 p-6 text-center bg-white rounded-xl border border-gray-100">{blocked}</p>;
+  if (quota && !quota.billing.hasAccess) return <SubscribeCard billing={quota.billing} planName={quota.planName} />;
 
   const searchesLeft = quota ? quota.limits.searchesPerDay - quota.used.searchesToday : 1;
   return (
@@ -85,6 +92,7 @@ export function SellerSourcing({ onImported }: { onImported: () => void }) {
             <span className="text-xs font-bold text-gray-900">{quota.planName} plan</span>
             <span className="text-[11px] text-gray-500">Resets daily at midnight</span>
           </div>
+          {quota.billing.required && <SubscriptionLine billing={quota.billing} onChanged={loadQuota} />}
           <div className="flex flex-wrap gap-4">
             <Meter label="Searches today" used={quota.used.searchesToday} limit={quota.limits.searchesPerDay} />
             <Meter label="Products opened today" used={quota.used.viewsToday} limit={quota.limits.viewsPerDay} />
@@ -136,6 +144,67 @@ export function SellerSourcing({ onImported }: { onImported: () => void }) {
 
       {openRef && <ProductPanel refId={openRef} onClose={() => { setOpenRef(null); loadQuota(); }} onImported={() => { onImported(); loadQuota(); }} />}
     </div>
+  );
+}
+
+const dateZA = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" }) : "");
+
+function SubscribeCard({ billing, planName }: { billing: Billing; planName: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pastDue = billing.subscription?.status === "past_due";
+  const start = async () => {
+    setBusy(true); setError(null);
+    try {
+      const r = await mktSourcing.subscribe();
+      if (r.success && r.data) { submitToPayfast(r.data.redirect.url, r.data.redirect.fields); return; }
+      setError(r.error ?? "Couldn't start the subscription.");
+    } catch { setError("Couldn't start the subscription. Please check your connection and try again."); }
+    setBusy(false);
+  };
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-6 max-w-lg">
+      <p className="text-base font-bold text-gray-900 mb-1">{pastDue ? "Your sourcing payment didn't go through" : "Find products to sell"}</p>
+      <p className="text-sm text-gray-600 mb-4">
+        {pastDue
+          ? "We couldn't charge your card for this month, so searching and adding products is paused. Update your card on PayFast, or subscribe again below."
+          : "Search our supplier network, check your profit and add products to your store. Ballylife buys, ships and tracks every order for you."}
+      </p>
+      <ul className="text-sm text-gray-700 space-y-1 mb-4">
+        <li>• <b>R{billing.priceZar.toLocaleString("en-ZA")}</b> a month, charged to your card by PayFast</li>
+        <li>• Your {planName} plan limits apply</li>
+        <li>• Cancel any time — you keep access until the end of the month you've paid for</li>
+        <li>• Products you've already added keep selling, subscribed or not</li>
+      </ul>
+      {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+      {!pastDue && (
+        <button onClick={start} disabled={busy} className="px-5 py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-40" style={{ background: GOLD }}>
+          {busy ? "Opening PayFast..." : `Subscribe for R${billing.priceZar.toLocaleString("en-ZA")}/month`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SubscriptionLine({ billing, onChanged }: { billing: Billing; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  if (billing.exempt) return <p className="text-[11px] text-gray-500 mt-2">Product sourcing is free for your store.</p>;
+  const s = billing.subscription;
+  if (!s) return null;
+  const cancel = async () => {
+    if (!confirm("Cancel your sourcing subscription? You keep access until the end of the month you've paid for.")) return;
+    setBusy(true);
+    try {
+      const r = await mktSourcing.cancelSubscription();
+      if (r.success) onChanged(); else alert(r.error ?? "Couldn't cancel. Please try again.");
+    } catch { alert("Couldn't cancel. Please check your connection and try again."); }
+    setBusy(false);
+  };
+  return (
+    <p className="text-[11px] text-gray-500 mt-2">
+      Subscription: R{s.priceZar.toLocaleString("en-ZA")}/month ·{" "}
+      {s.cancelAt ? <>ends {dateZA(s.cancelAt)}</> : <>renews {dateZA(s.currentPeriodEnd)} · <button onClick={cancel} disabled={busy} className="underline disabled:opacity-40">Cancel</button></>}
+    </p>
   );
 }
 

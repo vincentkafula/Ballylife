@@ -297,9 +297,11 @@ export const mktSupplierCatalog = {
 // ── Seller sourcing (search suppliers, add products; white-labelled server-side) ──
 export const mktSourcing = {
   quota:         () => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/sourcing/quota`),
-  search:        (p: Record<string, string>) => api<{ success: boolean; data: unknown[]; error?: string }>(`/api/marketplace/sourcing/search?${new URLSearchParams(p)}`),
+  search:        (p: Record<string, string>) => api<{ success: boolean; data: unknown[]; error?: string; code?: string }>(`/api/marketplace/sourcing/search?${new URLSearchParams(p)}`),
   product:       (ref: string) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/sourcing/product/${encodeURIComponent(ref)}`),
   importProduct: (body: { ref: string; retailPrice: number; compareAtPrice?: number }) => api<{ success: boolean; data?: unknown; error?: string; message?: string }>(`/api/marketplace/sourcing/import`, { method: "POST", body: JSON.stringify(body) }),
+  subscribe:     () => api<{ success: boolean; data?: { redirect: { url: string; fields: Record<string, string> } }; error?: string }>(`/api/marketplace/sourcing/billing/subscribe`, { method: "POST" }),
+  cancelSubscription: () => api<{ success: boolean; data?: { endsAt: string }; error?: string }>(`/api/marketplace/sourcing/billing/cancel`, { method: "POST" }),
 };
 
 // ── Seller sourcing: manager controls ──
@@ -316,6 +318,8 @@ export const mktSourcingAdmin = {
   setOrderMode:  (key: string, orderMode: "auto" | "approval") => api<SrcRes>(`/api/marketplace/admin/sourcing/suppliers/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ orderMode }) }),
   awaiting:      () => api<SrcRes>(`/api/marketplace/admin/sourcing/orders/awaiting`),
   approve:       (supplier: string, id: string) => api<SrcRes & { message?: string }>(`/api/marketplace/admin/sourcing/orders/${encodeURIComponent(supplier)}/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+  saveBilling:   (body: { enabled?: boolean; priceZar?: number }) => api<SrcRes>(`/api/marketplace/admin/sourcing/billing`, { method: "PATCH", body: JSON.stringify(body) }),
+  setExempt:     (sellerId: string, exempt: boolean) => api<SrcRes>(`/api/marketplace/admin/sourcing/sellers/${encodeURIComponent(sellerId)}/billing-exempt`, { method: "PATCH", body: JSON.stringify({ exempt }) }),
   reject:        (supplier: string, id: string, reason: string) => api<SrcRes & { message?: string }>(`/api/marketplace/admin/sourcing/orders/${encodeURIComponent(supplier)}/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
 };
 

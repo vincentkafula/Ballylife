@@ -63,6 +63,7 @@ function saDay(d: Date): string { return new Date(d.getTime() + 2 * 3600_000).to
 export interface SellerSourcingRow {
   sellerId: string; storeName: string; status: string; plan: PlanId; planName: string;
   searchesToday: number; viewsToday: number; importsThisMonth: number; activeImports: number;
+  billing: "exempt" | "active" | "past_due" | "cancelling" | "none";
 }
 
 /** Sellers with their plan and usage; most active first. */
@@ -71,7 +72,7 @@ export async function sellerSourcingList(search = "", limit = 50): Promise<Selle
   let where = `s.id <> $1`;
   if (search.trim()) { params.push(`%${search.trim().toLowerCase()}%`); where += ` AND LOWER(s.store_name) LIKE $${params.length}`; }
   const { rows: sellers } = await pool!.query(
-    `SELECT s.id, s.store_name, s.status, s.sourcing_plan FROM mkt_sellers s WHERE ${where} ORDER BY s.store_name LIMIT 500`, params);
+    `SELECT s.id, s.store_name, s.status, s.sourcing_plan, s.sourcing_billing_exempt FROM mkt_sellers s WHERE ${where} ORDER BY s.store_name LIMIT 500`, params);
   if (!sellers.length) return [];
 
   const ids = sellers.map((s: { id: string }) => s.id);
@@ -84,8 +85,15 @@ export async function sellerSourcingList(search = "", limit = 50): Promise<Selle
     `SELECT seller_id, COUNT(*)::int AS n FROM mkt_products WHERE fulfillment_type = 'imported' AND status IN ('active','pending_review','out_of_stock')
        AND seller_id IN (${ids.map((_: string, i: number) => `$${i + 1}`).join(",")}) GROUP BY seller_id`, ids);
   const activeBy = new Map(active.map((r: { seller_id: string; n: number }) => [r.seller_id, Number(r.n)]));
+  const { rows: subs } = await pool!.query(
+    `SELECT seller_id, status, cancel_at FROM seller_sourcing_subscriptions WHERE status IN ('active','past_due')
+       AND seller_id IN (${ids.map((_: string, i: number) => `$${i + 1}`).join(",")})`, ids);
+  const subBy = new Map(subs.map((r: { seller_id: string; status: string; cancel_at: Date | null }) => [r.seller_id, r]));
 
-  const out = sellers.map((s: { id: string; store_name: string; status: string; sourcing_plan: string }) => {
+  const out = sellers.map((s: { id: string; store_name: string; status: string; sourcing_plan: string; sourcing_billing_exempt: boolean }) => {
+    const sub = subBy.get(s.id) as { status: string; cancel_at: Date | null } | undefined;
+    const billing: SellerSourcingRow["billing"] = s.sourcing_billing_exempt ? "exempt" : !sub ? "none"
+      : sub.status === "past_due" ? "past_due" : sub.cancel_at ? "cancelling" : "active";
     const mine = usage.filter((u: { seller_id: string }) => u.seller_id === s.id) as { action: string; created_at: Date }[];
     const today = mine.filter(u => new Date(u.created_at) >= day);
     const plan = (PLAN_IDS.includes(s.sourcing_plan as PlanId) ? s.sourcing_plan : "starter") as PlanId;
@@ -95,6 +103,7 @@ export async function sellerSourcingList(search = "", limit = 50): Promise<Selle
       viewsToday: today.filter(u => u.action === "view").length,
       importsThisMonth: mine.filter(u => u.action === "import" && new Date(u.created_at) >= month).length,
       activeImports: Number(activeBy.get(s.id) ?? 0),
+      billing,
     };
   });
   out.sort((a: SellerSourcingRow, b: SellerSourcingRow) =>

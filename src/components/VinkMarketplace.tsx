@@ -2275,6 +2275,18 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     params.delete("subscription");
     window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
   }, []);
+  // Back from PayFast for a seller's product-sourcing subscription.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("sourcing");
+    if (!result) return;
+    if (result === "success") toast.success("Thanks! Product sourcing unlocks as soon as PayFast confirms your card — usually within a minute.");
+    else toast("Subscription not completed — you haven't been charged.");
+    try { sessionStorage.setItem("seller-tab", "find"); } catch { /* storage unavailable */ }
+    setView("seller");
+    params.delete("sourcing");
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+  }, []);
   useEffect(() => { setCartCount(((cart?.items as R[]) ?? []).length); }, [cart]);
   // Checkout opened: tell the ad pixel (only sends with advertising consent).
   useEffect(() => {
