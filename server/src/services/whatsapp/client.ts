@@ -144,11 +144,13 @@ export async function checkWhatsAppSetup(): Promise<void> {
   const waba = process.env.WHATSAPP_WABA_ID?.trim();
   if (!waba) return;
   try {
+    // Subscribing is idempotent and always subscribes the token's own app
+    // (Ballylife). Other apps on the list (e.g. Meta's dashboard test app)
+    // don't count -- they receive the messages instead of us.
+    await graph(`/${waba}/subscribed_apps`, {});
     const subs = await get(`/${waba}/subscribed_apps`);
     const apps = ((subs.data ?? []) as any[]).map(a => a.whatsapp_business_api_data?.name ?? a.whatsapp_business_api_data?.id ?? "?");
-    if (apps.length) { logger.info("whatsapp.waba_subscribed", { apps }); return; }
-    await graph(`/${waba}/subscribed_apps`, {});
-    logger.info("whatsapp.waba_subscribed_now");
+    logger.info("whatsapp.waba_subscribed", { apps });
   } catch (err) {
     logger.error("whatsapp.waba_subscription_failed", { error: err instanceof Error ? err.message : String(err) });
   }
