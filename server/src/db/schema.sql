@@ -1312,3 +1312,50 @@ CREATE TABLE IF NOT EXISTS social_oauth_states (
 -- Phone codes can now also sign someone in ("Sign in with a WhatsApp code").
 ALTER TABLE phone_verification_codes ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'verify'; -- verify | login
 ALTER TABLE phone_verification_codes ADD COLUMN IF NOT EXISTS channel TEXT;                         -- whatsapp | sms
+
+-- ── Seller sourcing (supplier adapter layer) ─────────────────────────────
+-- Which suppliers the sourcing network uses. Keys/secrets stay in Railway
+-- variables; this is only on/off and how orders are placed.
+CREATE TABLE IF NOT EXISTS sourcing_suppliers (
+  key         TEXT PRIMARY KEY,                    -- adapter key, e.g. aliexpress, cj
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  order_mode  TEXT NOT NULL DEFAULT 'approval',    -- auto | approval (Phase 4)
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Supplier search / product results, so repeated look-ups don't call the
+-- supplier again until they expire.
+CREATE TABLE IF NOT EXISTS sourcing_cache (
+  key         TEXT PRIMARY KEY,                    -- sha256 of adapter + request
+  adapter     TEXT NOT NULL,
+  kind        TEXT NOT NULL,                       -- search | product
+  payload     JSONB NOT NULL,
+  hits        INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sourcing_cache_expiry ON sourcing_cache(expires_at);
+
+-- Every supplier API request (and every cache answer), for auditing spend.
+CREATE TABLE IF NOT EXISTS supplier_api_calls (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  adapter        TEXT NOT NULL,
+  endpoint       TEXT NOT NULL,                    -- search | getProduct | getShipping | placeOrder | trackOrder
+  user_id        TEXT,
+  seller_id      TEXT,
+  cached         BOOLEAN NOT NULL DEFAULT false,
+  ok             BOOLEAN NOT NULL DEFAULT true,
+  error          TEXT,
+  cost_estimate  NUMERIC(10,4) NOT NULL DEFAULT 0, -- USD
+  duration_ms    INTEGER,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_supplier_api_calls_time ON supplier_api_calls(created_at);
+CREATE INDEX IF NOT EXISTS idx_supplier_api_calls_seller ON supplier_api_calls(seller_id, created_at);
+
+-- Sourcing settings (cache time, fees, billing flag...), editable from the dashboard.
+CREATE TABLE IF NOT EXISTS sourcing_settings (
+  key         TEXT PRIMARY KEY,
+  value       JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

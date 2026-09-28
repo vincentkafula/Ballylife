@@ -14,6 +14,7 @@ import mediaRouter from "./routes/mediaRouter";
 import programmesRouter from "./routes/programmesRouter";
 import japanPartsRouter from "./routes/japanPartsRouter";
 import sourcing1688Router from "./routes/sourcing1688Router";
+import sourcingRouter from "./routes/sourcingRouter";
 import superAdminRouter from "./routes/superAdminRouter";
 import aliexpressRouter from "./routes/aliexpressRouter";
 import socialRouter from "./routes/socialRouter";
@@ -119,6 +120,7 @@ app.use("/api/marketplace", cjDropshippingRouter);
 app.use("/api/marketplace", programmesRouter);
 app.use("/api/marketplace", japanPartsRouter);
 app.use("/api/marketplace", sourcing1688Router);
+app.use("/api/marketplace", sourcingRouter);
 app.use("/api/marketplace", superAdminRouter);
 app.use("/api/marketplace", aliexpressRouter);
 app.use("/api/marketplace", socialRouter);
@@ -173,6 +175,7 @@ async function start() {
   startAliExpressWorker();
   startSocialWorker();
   startWhatsAppHousekeeping();
+  setInterval(() => { void import("./services/sourcing/sourcingService").then(m => m.pruneSourcingCache()).catch(() => undefined); }, 6 * 3600_000).unref();
   void import("./services/otpDelivery").then(m => m.startOtpReadinessCheck()).catch(() => undefined);
   logger.info("http.async_errors_caught", { routes: wrappedRoutes });
   app.listen(PORT, () => {

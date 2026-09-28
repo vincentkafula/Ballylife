@@ -474,10 +474,10 @@ router.get("/products/:id", async (req: Request, res: Response): Promise<void> =
 });
 
 // ── SUPPLIER CATALOG (sellers browse/import; never exposed to customers) ────
-// Requires auth (any signed-in seller account) but not requireSellerOwner —
+// Sellers and managers only (customers never see it), but not requireSellerOwner —
 // every seller may browse the same shared catalog, they just each decide
 // independently whether to import a given item into their own store.
-router.get("/supplier-catalog", requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.get("/supplier-catalog", requireAuth, requireRole("seller", ...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { country, category, search, page: pg, limit: lim } = req.query as Record<string, string>;
   const page = Math.max(1, Number(pg) || 1);
   const limit = Math.min(60, Number(lim) || 20);
@@ -499,7 +499,7 @@ router.get("/supplier-catalog", requireAuth, async (req: Request, res: Response)
   res.json({ success: true, data: rows.map(supplierProductMapperFor(req)), meta: { page, limit, total: countRows[0].total, pages: Math.ceil(countRows[0].total / limit) } });
 });
 
-router.get("/supplier-catalog/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.get("/supplier-catalog/:id", requireAuth, requireRole("seller", ...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { rows } = await pool!.query(
     `SELECT sp.*, s.name AS supplier_name, s.country AS supplier_country
      FROM mkt_supplier_products sp JOIN mkt_suppliers s ON s.id = sp.supplier_id WHERE sp.id::text = $1`, [req.params.id]

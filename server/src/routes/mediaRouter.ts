@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { pool } from "../db/pool";
 import { isSupplierImageUrl, MAX_PRODUCT_IMAGES } from "../utils/supplierWhiteLabel";
 import { logger } from "../utils/logger";
+import { unseal } from "../utils/sealed";
 
 /**
  * Serves supplier product photos from our own domain so the storefront,
@@ -45,6 +46,16 @@ function cachePut(key: string, entry: { body: Buffer; contentType: string }) {
 
 export function _clearMediaCacheForTests() { cache.clear(); cacheBytes = 0; }
 
+/**
+ * A photo from a seller's sourcing search (not imported yet): the supplier
+ * URL travels sealed (utils/sealed.ts), so the browser never sees it.
+ */
+router.get("/media/s/:token", async (req: Request, res: Response): Promise<void> => {
+  const sealed = unseal<{ u: string }>(req.params.token);
+  if (!sealed || !isSupplierImageUrl(sealed.u)) { res.status(404).end(); return; }
+  await serve(res, sealed.u, { kind: "s" });
+});
+
 router.get("/media/:kind/:id/:index", async (req: Request, res: Response): Promise<void> => {
   const { kind, id } = req.params;
   const index = Number(req.params.index);
@@ -58,6 +69,11 @@ router.get("/media/:kind/:id/:index", async (req: Request, res: Response): Promi
   const url = Array.isArray(images) ? images[index] : undefined;
   // SSRF guard: only ever proxy the supplier CDN hosts, never an arbitrary URL.
   if (!isSupplierImageUrl(url)) { res.status(404).end(); return; }
+  await serve(res, url, { kind, id, index });
+});
+
+async function serve(res: Response, url: string, logCtx: Record<string, unknown>): Promise<void> {
+  const { kind, id, index } = logCtx;
 
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); // storefront is served from a different Railway origin
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -92,6 +108,6 @@ router.get("/media/:kind/:id/:index", async (req: Request, res: Response): Promi
     logger.warn("media.upstream_failed", { kind, id, index, error: err instanceof Error ? err.name : String(err) });
     res.status(502).end();
   }
-});
+}
 
 export default router;
