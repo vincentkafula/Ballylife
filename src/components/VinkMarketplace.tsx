@@ -2065,6 +2065,10 @@ function WishlistView({ authUser, wishlistIds, onProduct, onCart, onWishlist }: 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 interface VinkMarketplaceProps { initialAction?: "sell" | "shop" | null; initialProductId?: string | null }
 
+// WhatsApp sign-in link token, captured before the router rewrites /wa-login to "/".
+let WA_LOGIN_TOKEN: string | null = typeof window !== "undefined" && window.location.pathname.replace(/\/$/, "") === "/wa-login"
+  ? new URLSearchParams(window.location.search).get("t") : null;
+
 export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketplaceProps) {
   const currency = useCurrency(); // subscribes this whole tree to live currency/rate updates
   const [locating, setLocating] = useState(false);
@@ -2094,6 +2098,23 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
   const [selProductId, setSelProductId] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
+
+  // A one-time sign-in link from WhatsApp (/wa-login?t=...). The token was
+  // read when the page loaded, before the URL is rewritten to "/".
+  useEffect(() => {
+    if (!WA_LOGIN_TOKEN) return;
+    const token = WA_LOGIN_TOKEN;
+    WA_LOGIN_TOKEN = null;
+    (async () => {
+      const r = await mktAuth.magicLogin(token);
+      if (!r.success) { toast.error(r.error ?? "This sign-in link has expired. Ask for a new one on WhatsApp."); setShowAuthModal(true); return; }
+      const restored = mktAuth.restoreSession();
+      if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); setAuthSupplier(restored.supplier); setAuthAuthority(restored.authority); setAuthShipping(restored.shipping); setAuthCredit(restored.credit); }
+      toast.success(`Welcome, ${String(r.user.name).split(" ")[0]}! You're signed in.`);
+      if (r.user.role === "seller") setView("seller");
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Bidirectional sync between `view`/`selProductId` and the real URL.
   // Each direction checks whether an update is actually needed before

@@ -13,6 +13,7 @@ import { JapanPartsAdminPanel } from "./JapanParts";
 import { Sourcing1688AdminPanel } from "./Sourcing1688Admin";
 import { AliExpressAdminPanel } from "./AliExpressAdmin";
 import { SocialAdminPanel } from "./SocialAdmin";
+import { SellerApplicationDetails } from "./SellerApplicationDetails";
 
 type R = Record<string, unknown>;
 type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "aliexpress" | "social" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
@@ -88,6 +89,7 @@ function SideNavButton({ active, onClick, icon, label, badge }: { active: boolea
 interface Props { user: MktAuthUser; onSignOut: () => void; }
 
 export function ManagerDashboard({ user, onSignOut }: Props) {
+  const [openApplication, setOpenApplication] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => {
     // Coming back from connecting AliExpress: open that tab once.
     try { if (sessionStorage.getItem("mgr-tab") === "aliexpress") { sessionStorage.removeItem("mgr-tab"); return "aliexpress"; } } catch { /* storage unavailable */ }
@@ -228,15 +230,25 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Pending Seller Applications</span></div>
                 {pendingSellers.length === 0 ? <p className="text-sm text-gray-500 p-6 text-center">No pending applications.</p> : pendingSellers.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{String(s.storeName)}</p>
-                      <p className="text-[11px] text-gray-500">{String(s.email)} · {String(s.description ?? "No description provided")}</p>
+                  <div key={i} className="border-b border-gray-50 last:border-0">
+                    <div className="flex items-center justify-between px-4 py-3 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{String(s.storeName)}</p>
+                        <p className="text-[11px] text-gray-500">{String(s.email)} · {String(s.description || "No description provided")}</p>
+                        <button onClick={() => setOpenApplication(o => (o === String(s.id) ? null : String(s.id)))} className="text-[11px] font-medium text-[#1E7B4D] mt-0.5">
+                          {openApplication === String(s.id) ? "Hide application" : "View application & documents"}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={async () => {
+                          const reason = window.prompt("Reason for rejecting (the applicant sees this if they applied on WhatsApp):", "we couldn't verify the documents you sent");
+                          if (reason === null) return;
+                          await mktAdmin.rejectSeller(String(s.id), reason); load();
+                        }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-red-600 border border-red-200"><XCircle className="w-3.5 h-3.5" /> Reject</button>
+                        <button onClick={async () => { await mktAdmin.approveSeller(String(s.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#10B981" }}><CheckCircle className="w-3.5 h-3.5" /> Approve</button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={async () => { await mktAdmin.rejectSeller(String(s.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-red-600 border border-red-200"><XCircle className="w-3.5 h-3.5" /> Reject</button>
-                      <button onClick={async () => { await mktAdmin.approveSeller(String(s.id)); load(); }} className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: "#10B981" }}><CheckCircle className="w-3.5 h-3.5" /> Approve</button>
-                    </div>
+                    {openApplication === String(s.id) && <SellerApplicationDetails sellerId={String(s.id)} />}
                   </div>
                 ))}
               </div>

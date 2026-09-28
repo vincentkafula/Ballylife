@@ -1895,12 +1895,18 @@ router.patch("/admin/sellers/:id/approve", requireAuth, requireRole(...MANAGER_R
   const { rows } = await pool!.query(`UPDATE mkt_sellers SET status = 'active', kyc_verified = true WHERE id = $1 RETURNING *`, [req.params.id]);
   if (!rows.length) { res.status(404).json({ success: false, error: "Seller not found" }); return; }
   res.json({ success: true, data: mapSeller(rows[0]) });
+  // Applied on WhatsApp? Tell them there, with a sign-in link.
+  void import("../services/whatsapp/notifications").then(m => m.notifySellerDecision(req.params.id, "approved"))
+    .catch(err => console.error("[whatsapp] approval message failed:", err));
 });
 
 router.patch("/admin/sellers/:id/reject", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
   const { rows } = await pool!.query(`UPDATE mkt_sellers SET status = 'rejected' WHERE id = $1 RETURNING *`, [req.params.id]);
   if (!rows.length) { res.status(404).json({ success: false, error: "Seller not found" }); return; }
   res.json({ success: true, data: mapSeller(rows[0]) });
+  const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+  void import("../services/whatsapp/notifications").then(m => m.notifySellerDecision(req.params.id, "rejected", reason))
+    .catch(err => console.error("[whatsapp] rejection message failed:", err));
 });
 
 // ── ADMIN: customers list (User Management) ──────────────────────────────────

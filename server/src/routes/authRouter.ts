@@ -152,6 +152,24 @@ async function respondWithSessionOrVerificationNeeded(user: any, res: Response):
   res.json({ success: true, data: { token, user: { ...mapUser(user), ...(user.must_change_password ? { mustChangePassword: true } : {}) } } });
 }
 
+// One-time sign-in link sent over WhatsApp (services/magicLink.ts). The
+// link itself proves control of the WhatsApp number it was sent to, so
+// unlike /login it doesn't wait for email verification -- but closed
+// accounts and the super admin (Railway password only) are still refused.
+router.post("/magic-login", async (req: Request, res: Response): Promise<void> => {
+  const { consumeMagicToken } = await import("../services/magicLink");
+  const used = await consumeMagicToken(String(req.body?.token ?? ""), "login");
+  if (!used) { res.status(400).json({ success: false, error: "This sign-in link has expired or was already used. Ask for a new one on WhatsApp." }); return; }
+  const { rows } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [used.userId]);
+  const user = rows[0];
+  if (!user || user.account_status === "removed" || user.role === "super_admin") {
+    res.status(403).json({ success: false, error: "This account can't sign in with a link." }); return;
+  }
+  await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
+  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  res.json({ success: true, data: { token, user: mapUser(user) } });
+});
+
 router.get("/oauth-config", (_req: Request, res: Response) => {
   res.json({ success: true, data: { googleEnabled: isGoogleConfigured(), facebookEnabled: isFacebookConfigured() } });
 });

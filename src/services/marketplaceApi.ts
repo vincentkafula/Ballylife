@@ -149,7 +149,8 @@ export const mktAdmin = {
   approveProduct: (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/products/${id}/approve`, { method: "PATCH" }),
   pendingSellers: () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/sellers/pending"),
   approveSeller: (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/approve`, { method: "PATCH" }),
-  rejectSeller:  (id: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/reject`, { method: "PATCH" }),
+  rejectSeller:  (id: string, reason?: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/sellers/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  sellerApplication: (id: string) => api<{ success: boolean; data: Record<string, any>; error?: string }>(`/api/marketplace/admin/sellers/${id}/application`),
   taxSummary: () => api<{ success: boolean; data: unknown }>("/api/marketplace/admin/tax-summary"),
   revenueAuthorities: {
     list:        () => api<{ success: boolean; data: unknown[] }>("/api/marketplace/admin/revenue-authorities"),
@@ -360,7 +361,19 @@ async function loadRoleRecord(user: MktAuthUser): Promise<void> {
   }
 }
 
+/** An uploaded seller document (decrypted by the server), for viewing in a new tab. Admin only. */
+export async function fetchSellerDocument(docId: string): Promise<Blob> {
+  const res = await fetch(`${BASE}/api/marketplace/admin/seller-documents/${encodeURIComponent(docId)}`, { headers: _token ? { Authorization: `Bearer ${_token}` } : {} });
+  if (!res.ok) throw new ApiConnectionError("Couldn't load that document.");
+  return res.blob();
+}
+
 export const mktAuth = {
+  /** One-time sign-in link from WhatsApp (/wa-login?t=...). */
+  magicLogin: async (token: string) => {
+    const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/magic-login", { method: "POST", body: JSON.stringify({ token }) });
+    return finishOauthLogin(r);
+  },
   login: async (username: string, password: string) => {
     const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
     if (r.success && r.data?.token) {

@@ -1186,3 +1186,72 @@ CREATE TABLE IF NOT EXISTS social_tokens (
   meta             JSONB NOT NULL DEFAULT '{}', -- non-secret ids (page id, instagram id, names)
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ── WhatsApp bot ──────────────────────────────────────────────────────────
+-- One row per WhatsApp number that has messaged us: who it belongs to,
+-- consent (POPIA) and opt-out.
+CREATE TABLE IF NOT EXISTS wa_contacts (
+  phone            TEXT PRIMARY KEY,            -- E.164 digits as WhatsApp sends them, e.g. 27821234567
+  profile_name     TEXT,
+  user_id          UUID,                        -- linked Ballylife account, once registered/linked
+  consent_at       TIMESTAMPTZ,
+  consent_version  TEXT,
+  opted_out        BOOLEAN NOT NULL DEFAULT false,
+  opted_out_at     TIMESTAMPTZ,
+  last_inbound_at  TIMESTAMPTZ,                 -- starts the 24-hour free-reply window
+  handoff          BOOLEAN NOT NULL DEFAULT false, -- a person is handling this chat; the bot stays quiet
+  handoff_at       TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wa_contacts_user ON wa_contacts(user_id);
+
+-- Where each number is in a conversation (the state machine).
+CREATE TABLE IF NOT EXISTS wa_conversations (
+  phone       TEXT PRIMARY KEY,
+  flow        TEXT,                              -- customer | seller | question | NULL (menu)
+  step        TEXT,
+  data        JSONB NOT NULL DEFAULT '{}',       -- answers so far (sensitive ones encrypted)
+  history     JSONB NOT NULL DEFAULT '[]',       -- previous steps, for "back"
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every message in and out (deleted after 90 days -- POPIA minimisation).
+CREATE TABLE IF NOT EXISTS wa_messages (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wamid       TEXT UNIQUE,                       -- WhatsApp's message id (dedupes webhook retries)
+  phone       TEXT NOT NULL,
+  direction   TEXT NOT NULL,                     -- in | out
+  kind        TEXT NOT NULL,                     -- text | button | list | media | location | template | status
+  body        TEXT,                              -- bank details are never stored here
+  status      TEXT,                              -- sent | delivered | read | failed
+  error       TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wa_messages_phone ON wa_messages(phone, created_at);
+
+-- ID / proof-of-address uploads for seller applications. The file itself
+-- is encrypted and kept in the private ballylife-documents bucket.
+CREATE TABLE IF NOT EXISTS seller_documents (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  seller_id    TEXT,
+  phone        TEXT,
+  kind         TEXT NOT NULL,                    -- id_document | proof_of_address
+  object_key   TEXT NOT NULL,
+  mime_type    TEXT NOT NULL,
+  size_bytes   INTEGER NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_seller_documents_seller ON seller_documents(seller_id);
+
+-- One-time sign-in links (only the hash is stored).
+CREATE TABLE IF NOT EXISTS magic_login_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  purpose     TEXT NOT NULL DEFAULT 'login',     -- login | link_whatsapp
+  phone       TEXT,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

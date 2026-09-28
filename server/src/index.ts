@@ -17,6 +17,7 @@ import sourcing1688Router from "./routes/sourcing1688Router";
 import superAdminRouter from "./routes/superAdminRouter";
 import aliexpressRouter from "./routes/aliexpressRouter";
 import socialRouter from "./routes/socialRouter";
+import { whatsappRouter, whatsappAdminRouter, startWhatsAppHousekeeping } from "./routes/whatsappRouter";
 import { startSocialWorker } from "./services/social/socialPosting";
 import { startAliExpressWorker } from "./services/aliexpressFulfillment";
 import { ensureSuperAdminFromEnv } from "./services/superAdmin";
@@ -61,7 +62,11 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 
 app.use(helmet());
 app.use(cors({ origin: (origin, cb) => cb(null, isAllowedOrigin(origin)), credentials: true }));
-app.use(express.json({ limit: "2mb" }));
+// WhatsApp webhooks are signed over the exact bytes Meta sent, so keep them for that route.
+app.use(express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => { if ((req as express.Request).originalUrl?.startsWith("/api/whatsapp/")) (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf); },
+}));
 // PayFast's ITN webhook posts form-urlencoded, not JSON, and its own
 // validate callback (payfastProcessor.confirmWithPayfast) needs the exact
 // raw body PayFast sent, not a reconstruction from the parsed object —
@@ -72,6 +77,8 @@ app.use(express.urlencoded({
 }));
 // Product-photo proxy sits ahead of the general limiter -- see mediaRouter.ts.
 app.use("/api/marketplace", mediaRouter);
+// Meta's webhook deliveries come from a few shared IPs: signature-checked instead of rate limited.
+app.use("/api/whatsapp", whatsappRouter);
 app.use(rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false }));
 // Auth endpoints get a tighter limit on top of the general one above —
 // 300/min was generous enough to make credential-stuffing/brute-force
@@ -115,6 +122,7 @@ app.use("/api/marketplace", sourcing1688Router);
 app.use("/api/marketplace", superAdminRouter);
 app.use("/api/marketplace", aliexpressRouter);
 app.use("/api/marketplace", socialRouter);
+app.use("/api/marketplace", whatsappAdminRouter);
 app.use("/api", geoRouter);
 // Mounted at root, not under /api -- sitemaps are conventionally fetched
 // from a site's own domain root; referenced this way (cross-domain, from
@@ -164,6 +172,7 @@ async function start() {
   start1688Worker();
   startAliExpressWorker();
   startSocialWorker();
+  startWhatsAppHousekeeping();
   logger.info("http.async_errors_caught", { routes: wrappedRoutes });
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);
