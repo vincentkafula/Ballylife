@@ -237,3 +237,56 @@ describe("Seller sourcing (search, profit, import, plan limits)", () => {
     await setPlans({});
   });
 });
+
+describe("Manager sourcing dashboard", () => {
+  const admin = () => ({ Authorization: `Bearer ${adminToken}` });
+
+  it("summarises calls, cache use, suppliers, plans and seller imports", async () => {
+    const res = await request(app).get("/api/marketplace/admin/sourcing/overview?days=7").set(admin());
+    expect(res.status).toBe(200);
+    const d = res.body.data;
+    expect(d.totals.live).toBeGreaterThan(0);
+    expect(d.totals.cached).toBeGreaterThan(0);
+    expect(d.byAdapter.map((a: { adapter: string }) => a.adapter)).toEqual(["aliexpress", "cj"]);
+    expect(d.daily).toHaveLength(7);
+    expect(d.daily.reduce((n: number, x: { live: number; cached: number }) => n + x.live + x.cached, 0)).toBe(d.totals.live + d.totals.cached);
+    expect(d.listings.active).toBe(1);
+    expect(d.suppliers).toHaveLength(2);
+    expect(d.plans.starter.searchesPerDay).toBe(20);
+    expect(d.settings).toEqual({ cacheHours: 24, fxBufferPct: 3 });
+  });
+
+  it("lists sellers with their plan and usage", async () => {
+    const res = await request(app).get("/api/marketplace/admin/sourcing/sellers").set(admin());
+    expect(res.status).toBe(200);
+    const row = res.body.data.find((r: { sellerId: string }) => r.sellerId === sellerId);
+    expect(row).toMatchObject({ storeName: "Src Store", plan: "pro", activeImports: 1, importsThisMonth: 1 });
+    expect(row.searchesToday).toBeGreaterThan(0);
+  });
+
+  it("edits plan limits, rejecting bad numbers", async () => {
+    const bad = await request(app).patch("/api/marketplace/admin/sourcing/plans").set(admin()).send({ starter: { searchesPerDay: -1 } });
+    expect(bad.status).toBe(400);
+    const ok = await request(app).patch("/api/marketplace/admin/sourcing/plans").set(admin()).send({ standard: { searchesPerDay: 150 } });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.standard.searchesPerDay).toBe(150);
+    expect(ok.body.data.standard.activeImports).toBe(125);
+    expect(ok.body.data.starter.searchesPerDay).toBe(20);
+  });
+
+  it("clears the cache, so the next search asks the supplier again", async () => {
+    const res = await request(app).delete("/api/marketplace/admin/sourcing/cache").set(admin());
+    expect(res.status).toBe(200);
+    expect(res.body.data.cleared).toBeGreaterThan(0);
+    const before = calls.ae;
+    await request(app).get("/api/marketplace/admin/sourcing/search?q=earbuds").set(admin());
+    expect(calls.ae).toBe(before + 1);
+  });
+
+  it("is manager-only", async () => {
+    for (const path of ["/overview", "/sellers"]) {
+      const res = await request(app).get(`/api/marketplace/admin/sourcing${path}`).set("Authorization", `Bearer ${sellerToken}`);
+      expect(res.status).toBe(403);
+    }
+  });
+});

@@ -13,11 +13,12 @@ import { JapanPartsAdminPanel } from "./JapanParts";
 import { Sourcing1688AdminPanel } from "./Sourcing1688Admin";
 import { AliExpressAdminPanel } from "./AliExpressAdmin";
 import { SocialAdminPanel } from "./SocialAdmin";
+import { SourcingAdminPanel } from "./SourcingAdmin";
 import { SellerApplicationDetails } from "./SellerApplicationDetails";
 import { WhatsAppInboxPanel } from "./WhatsAppInbox";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "aliexpress" | "social" | "whatsapp" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
+type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "aliexpress" | "sellerSourcing" | "social" | "whatsapp" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
 
 // Maps a specific granted Marketplace Management position (from the job
 // application flow) to which of the 8 real tabs this dashboard already
@@ -53,7 +54,7 @@ const TIER_TABS: Record<MarketTier, Tab[]> = {
   marketplace_ops: ["overview", "sellerApproval", "productApproval"],
   fulfillment: ["overview", "orders", "fulfilment", "supplyChain"],
   finance_security: ["overview", "financial", "programmes", "security", "reports"],
-  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "aliexpress", "social", "whatsapp", "sourcing1688", "japanParts", "programmes", "supplyChain", "financial", "reports", "security"],
+  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "aliexpress", "sellerSourcing", "social", "whatsapp", "sourcing1688", "japanParts", "programmes", "supplyChain", "financial", "reports", "security"],
 };
 
 function positionToMarketTier(position: string | null): MarketTier {
@@ -174,6 +175,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     { id: "financial", label: "Financial", icon: <DollarSign className="w-4 h-4" /> },
     { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
     { id: "aliexpress", label: "AliExpress", icon: <ShoppingBag className="w-4 h-4" /> },
+    { id: "sellerSourcing", label: "Seller Sourcing", icon: <Search className="w-4 h-4" /> },
     { id: "whatsapp", label: "WhatsApp Inbox", icon: <MessageCircle className="w-4 h-4" /> },
     { id: "social", label: "Social Media", icon: <Send className="w-4 h-4" /> },
     { id: "sourcing1688", label: "1688 Research", icon: <Search className="w-4 h-4" /> },
@@ -327,6 +329,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
             )}
 
             {tab === "aliexpress" && <AliExpressAdminPanel />}
+            {tab === "sellerSourcing" && <SourcingAdminPanel />}
             {tab === "social" && <SocialAdminPanel />}
             {tab === "whatsapp" && <WhatsAppInboxPanel />}
             {tab === "sourcing1688" && <Sourcing1688AdminPanel />}

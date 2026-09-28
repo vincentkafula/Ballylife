@@ -302,6 +302,19 @@ export const mktSourcing = {
   importProduct: (body: { ref: string; retailPrice: number; compareAtPrice?: number }) => api<{ success: boolean; data?: unknown; error?: string; message?: string }>(`/api/marketplace/sourcing/import`, { method: "POST", body: JSON.stringify(body) }),
 };
 
+// ── Seller sourcing: manager controls ──
+type SrcRes = { success: boolean; data: any; error?: string };
+export const mktSourcingAdmin = {
+  overview:      (days: number) => api<SrcRes>(`/api/marketplace/admin/sourcing/overview?days=${days}`),
+  sellers:       (search: string) => api<SrcRes>(`/api/marketplace/admin/sourcing/sellers?${new URLSearchParams({ search })}`),
+  setSupplier:   (key: string, enabled: boolean) => api<SrcRes>(`/api/marketplace/admin/sourcing/suppliers/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+  saveSettings:  (body: { cacheHours: number; fxBufferPct: number }) => api<SrcRes>(`/api/marketplace/admin/sourcing/settings`, { method: "PATCH", body: JSON.stringify(body) }),
+  savePlans:     (plans: unknown) => api<SrcRes>(`/api/marketplace/admin/sourcing/plans`, { method: "PATCH", body: JSON.stringify(plans) }),
+  setSellerPlan: (sellerId: string, plan: string) => api<SrcRes>(`/api/marketplace/admin/sourcing/sellers/${encodeURIComponent(sellerId)}/plan`, { method: "PATCH", body: JSON.stringify({ plan }) }),
+  clearCache:    () => api<SrcRes>(`/api/marketplace/admin/sourcing/cache`, { method: "DELETE" }),
+  testSearch:    (q: string) => api<SrcRes>(`/api/marketplace/admin/sourcing/search?${new URLSearchParams({ q })}`),
+};
+
 export const mktCustomer = {
   stats:    (userId: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/customers/${userId}/stats`),
   spending: (userId: string) => api<{ success: boolean; data: unknown }>(`/api/marketplace/customers/${userId}/spending`),

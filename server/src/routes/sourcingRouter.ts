@@ -6,7 +6,8 @@ import {
   searchSourcing, getSourcedProduct, fileInCatalogue, supplierStates, setSupplierEnabled, usageSummary, getSetting, setSetting,
   SourcingUnavailableError, SETTING_DEFAULTS,
 } from "../services/sourcing/sourcingService";
-import { quotaStatus, checkQuota, recordUsage, setSellerPlan, QuotaError, PLAN_IDS, type PlanId } from "../services/sourcing/quotas";
+import { quotaStatus, checkQuota, recordUsage, setSellerPlan, planLimits, QuotaError, PLAN_IDS, PLAN_NAMES, type PlanId } from "../services/sourcing/quotas";
+import { sourcingOverview, sellerSourcingList, savePlanLimits, clearSourcingCache } from "../services/sourcing/analytics";
 import { createImportedListing } from "./marketplaceRouter";
 
 /**
@@ -159,6 +160,38 @@ router.post("/sourcing/import", ...seller, async (req: Request, res: Response): 
     if (r.status === 201) await recordUsage(s.id, "import");
     res.status(r.status).json(r.body);
   } catch (err) { fail(res, err, "Couldn't import the product. Please try again."); }
+});
+
+// ── Managers: dashboard, plans, cache ──────────────────────────────────────
+router.get("/admin/sourcing/overview", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 14));
+    const [overview, suppliers, plans, cacheHours, fxBufferPct] = await Promise.all([
+      sourcingOverview(days), supplierStates(), planLimits(), getSetting("cacheHours"), getSetting("fxBufferPct"),
+    ]);
+    res.json({ success: true, data: { ...overview, suppliers, plans, planNames: PLAN_NAMES, settings: { cacheHours, fxBufferPct } } });
+  } catch (err) { fail(res, err, "Couldn't load sourcing."); }
+});
+
+router.get("/admin/sourcing/sellers", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await sellerSourcingList(String(req.query.search ?? ""), 100) }); }
+  catch (err) { fail(res, err, "Couldn't load sellers."); }
+});
+
+router.patch("/admin/sourcing/plans", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try { await savePlanLimits(req.body); res.json({ success: true, data: await planLimits() }); }
+  catch (err) {
+    if (err instanceof RangeError) { res.status(400).json({ success: false, error: err.message }); return; }
+    fail(res, err, "Couldn't save the plans.");
+  }
+});
+
+router.delete("/admin/sourcing/cache", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const cleared = await clearSourcingCache();
+    logger.info("sourcing.cache_cleared", { by: req.user!.userId, cleared });
+    res.json({ success: true, data: { cleared } });
+  } catch (err) { fail(res, err, "Couldn't clear the cache."); }
 });
 
 // ── Managers: seller plans ─────────────────────────────────────────────────
