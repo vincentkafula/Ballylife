@@ -70,9 +70,9 @@ export async function completeTikTok(code: string): Promise<string> {
   const j = await tokenRequest({ code, grant_type: "authorization_code", redirect_uri: callbackUrl("tiktok") });
   let username = "";
   try {
-    const res = await fetch(`${API}/v2/user/info/?fields=display_name,username`, { headers: { Authorization: `Bearer ${j.access_token}` }, signal: AbortSignal.timeout(20_000) });
+    const res = await fetch(`${API}/v2/user/info/?fields=open_id,display_name`, { headers: { Authorization: `Bearer ${j.access_token}` }, signal: AbortSignal.timeout(20_000) });
     const u = await res.json() as any;
-    username = u?.data?.user?.username || u?.data?.user?.display_name || "";
+    username = u?.data?.user?.display_name || ""; // "username" needs the extra user.info.profile scope
   } catch { /* the name is only for display */ }
   await saveTokens(j, { username, connectedAt: new Date().toISOString() });
   logger.info("social.tiktok.connected", { username });

@@ -24,7 +24,7 @@ function fakeApis() {
     if (url === "https://open.tiktokapis.com/v2/oauth/token/") {
       return json({ access_token: `tt-access-${calls.length}`, refresh_token: "tt-refresh", expires_in: 86400, refresh_expires_in: 31536000, open_id: "open-1" });
     }
-    if (url.startsWith("https://open.tiktokapis.com/v2/user/info/")) return json({ data: { user: { username: "ballylife" } }, error: { code: "ok" } });
+    if (url.startsWith("https://open.tiktokapis.com/v2/user/info/")) return json({ data: { user: { display_name: "ballylife" } }, error: { code: "ok" } });
     if (url.endsWith("/creator_info/query/")) return json({ data: { privacy_level_options: tiktokPrivacy }, error: { code: "ok" } });
     if (url.endsWith("/content/init/")) return json({ data: { publish_id: "p_pub_1" }, error: { code: "ok" } });
     // LinkedIn
