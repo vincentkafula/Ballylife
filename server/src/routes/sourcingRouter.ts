@@ -8,6 +8,7 @@ import {
 } from "../services/sourcing/sourcingService";
 import { quotaStatus, checkQuota, recordUsage, setSellerPlan, planLimits, QuotaError, PLAN_IDS, PLAN_NAMES, type PlanId } from "../services/sourcing/quotas";
 import { sourcingOverview, sellerSourcingList, savePlanLimits, clearSourcingCache } from "../services/sourcing/analytics";
+import { awaitingOrders, approveOrder, rejectOrder, setOrderMode, ORDER_MODES, type OrderMode } from "../services/sourcing/orderRouting";
 import { createImportedListing } from "./marketplaceRouter";
 
 /**
@@ -36,8 +37,15 @@ router.get("/admin/sourcing/suppliers", ...manager, async (_req: Request, res: R
 });
 
 router.patch("/admin/sourcing/suppliers/:key", ...manager, async (req: Request, res: Response): Promise<void> => {
-  if (typeof req.body?.enabled !== "boolean") { res.status(400).json({ success: false, error: "enabled must be true or false" }); return; }
-  try { await setSupplierEnabled(req.params.key, req.body.enabled); res.json({ success: true, data: await supplierStates() }); }
+  const { enabled, orderMode } = req.body ?? {};
+  if (enabled === undefined && orderMode === undefined) { res.status(400).json({ success: false, error: "Send enabled and/or orderMode" }); return; }
+  if (enabled !== undefined && typeof enabled !== "boolean") { res.status(400).json({ success: false, error: "enabled must be true or false" }); return; }
+  if (orderMode !== undefined && !ORDER_MODES.includes(orderMode)) { res.status(400).json({ success: false, error: "orderMode must be auto or approval" }); return; }
+  try {
+    if (enabled !== undefined) await setSupplierEnabled(req.params.key, enabled);
+    if (orderMode !== undefined) await setOrderMode(req.params.key, orderMode as OrderMode);
+    res.json({ success: true, data: await supplierStates() });
+  }
   catch (err) {
     if (err instanceof Error && err.message === "Unknown supplier") { res.status(404).json({ success: false, error: err.message }); return; }
     fail(res, err, "Couldn't update the supplier.");
@@ -192,6 +200,26 @@ router.delete("/admin/sourcing/cache", ...manager, async (req: Request, res: Res
     logger.info("sourcing.cache_cleared", { by: req.user!.userId, cleared });
     res.json({ success: true, data: { cleared } });
   } catch (err) { fail(res, err, "Couldn't clear the cache."); }
+});
+
+// ── Managers: supplier orders waiting for approval ─────────────────────────
+router.get("/admin/sourcing/orders/awaiting", ...manager, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await awaitingOrders() }); }
+  catch (err) { fail(res, err, "Couldn't load waiting orders."); }
+});
+
+router.post("/admin/sourcing/orders/:supplier/:id/approve", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await approveOrder(req.params.supplier, req.params.id, req.user!.userId))) { res.status(409).json({ success: false, error: "This order isn't waiting for approval any more." }); return; }
+    res.json({ success: true, message: "Approved. The supplier order is being placed." });
+  } catch (err) { fail(res, err, "Couldn't approve the order."); }
+});
+
+router.post("/admin/sourcing/orders/:supplier/:id/reject", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!(await rejectOrder(req.params.supplier, req.params.id, req.user!.userId, String(req.body?.reason ?? "")))) { res.status(409).json({ success: false, error: "This order isn't waiting for approval any more." }); return; }
+    res.json({ success: true, message: "Not approved. Refund the customer or fulfil it another way." });
+  } catch (err) { fail(res, err, "Couldn't update the order."); }
 });
 
 // ── Managers: seller plans ─────────────────────────────────────────────────

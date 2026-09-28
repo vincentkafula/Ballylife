@@ -1026,12 +1026,12 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
     // an order with any supplier-sourced line needs the supplier's lead
     // time plus international shipping/customs, not the same 5-day promise)
     // and, further down, to open the two-leg supplier-order records.
-    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null; vehicleDetails: any; condition: string | null; nrcsApproved: boolean; costCurrency: string | null; commissionPct: number }>();
+    const itemFulfillment = new Map<string, { fulfillmentType: string; supplierProductId: string | null; supplierId: string | null; costPrice: number | null; originCountry: string | null; leadTimeDays: number | null; categoryId: string | null; vehicleDetails: any; condition: string | null; nrcsApproved: boolean; costCurrency: string | null; commissionPct: number; shippingCost: number | null; extVariants: unknown }>();
     let maxLeadTimeDays = 0;
     let slowestShippedDays = 0; // business days, over items whose price includes delivery
     for (const item of items) {
       const { rows: prodRows } = await client.query(
-        `SELECT p.fulfillment_type, p.delivery_profile, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.currency AS cost_currency, sp.origin_country, sup.lead_time_days, s.commission_pct
+        `SELECT p.fulfillment_type, p.delivery_profile, p.supplier_product_id, p.category_id, p.vehicle_details, p.condition, p.nrcs_approved, sp.supplier_id, sp.cost_price, sp.currency AS cost_currency, sp.origin_country, sp.est_shipping_usd, sp.external_variants, sup.lead_time_days, s.commission_pct
          FROM mkt_products p
          LEFT JOIN mkt_supplier_products sp ON sp.id = p.supplier_product_id
          LEFT JOIN mkt_suppliers sup ON sup.id = sp.supplier_id
@@ -1045,6 +1045,9 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
         leadTimeDays: p?.lead_time_days ?? null, categoryId: p?.category_id ?? null,
         vehicleDetails: p?.vehicle_details ?? null, condition: p?.condition ?? null, nrcsApproved: p?.nrcs_approved ?? false,
         commissionPct: p?.commission_pct !== undefined && p?.commission_pct !== null ? Number(p.commission_pct) : 8,
+        // Supplier delivery (priced in the catalogue item's currency; est_shipping_usd is only recorded for USD-priced items).
+        shippingCost: p?.est_shipping_usd !== undefined && p?.est_shipping_usd !== null && String(p?.cost_currency ?? "USD").toUpperCase() === "USD" ? Number(p.est_shipping_usd) : null,
+        extVariants: p?.external_variants ?? null,
       });
       const delivery = deliveryInfo(p?.delivery_profile);
       if (delivery.shippingIncluded) slowestShippedDays = Math.max(slowestShippedDays, delivery.deliveryDays.max);
@@ -1217,7 +1220,11 @@ router.post("/orders", requireAuth, orderCreateLimiter, async (req: Request, res
       const platformFeeAmount = calculatePlatformFee(grossAmount, platformFeePct);
       let supplierCostAmount: number | null = null, supplierCostCurrency: string | null = null, supplierCostAmountZar: number | null = null;
       if (f.fulfillmentType === "imported" && f.costPrice) {
-        supplierCostAmount = round2(Number(f.costPrice) * item.quantity);
+        // What the supplier charges: the option the customer chose (options
+        // can cost more than the base) plus delivery to the customer.
+        const chosen = item.variantId ? parseExternalVariants(f.extVariants).find(v => variantIdForVid(v.vid) === item.variantId) : undefined;
+        const unitCost = chosen?.priceUsd ?? Number(f.costPrice);
+        supplierCostAmount = round2((unitCost + (f.shippingCost ?? 0)) * item.quantity);
         supplierCostCurrency = f.costCurrency;
         supplierCostAmountZar = convertToZar(supplierCostAmount, f.costCurrency, fxByCurrency); // null if no FX rate on file yet — flagged for admin, not silently assumed
         if (supplierCostAmountZar !== null) supplierCostAmountZar = round2(supplierCostAmountZar);
@@ -1718,7 +1725,23 @@ router.get("/sellers/:id/orders", requireAuth, requireSellerOwner, async (req: R
   const { rows } = await pool!.query(
     `SELECT * FROM mkt_orders WHERE items::text LIKE $1 ORDER BY placed_at DESC`, [`%"sellerId":"${req.params.id}"%`]
   );
-  res.json({ success: true, data: rows.map(mapOrder), meta: { total: rows.length } });
+  // This seller's share of each order: their lines' sales, Ballylife's
+  // commission, product + delivery for supplier-sourced lines, and what they earn.
+  const { rows: st } = await pool!.query(
+    `SELECT s.order_id, s.gross_amount, s.platform_fee_amount, s.supplier_cost_amount_zar, s.seller_payout_amount, s.seller_payout_status, p.fulfillment_type
+     FROM mkt_order_line_settlements s JOIN mkt_products p ON p.id = s.product_id WHERE s.seller_id = $1`, [req.params.id]);
+  const earnings = new Map<string, { salesZar: number; commissionZar: number; productAndDeliveryZar: number; earningsZar: number; paidOut: boolean; ballylifeShips: boolean }>();
+  for (const r of st) {
+    const e = earnings.get(r.order_id) ?? { salesZar: 0, commissionZar: 0, productAndDeliveryZar: 0, earningsZar: 0, paidOut: true, ballylifeShips: true };
+    e.salesZar = round2(e.salesZar + Number(r.gross_amount));
+    e.commissionZar = round2(e.commissionZar + Number(r.platform_fee_amount));
+    e.productAndDeliveryZar = round2(e.productAndDeliveryZar + Number(r.supplier_cost_amount_zar ?? 0));
+    e.earningsZar = round2(e.earningsZar + Number(r.seller_payout_amount));
+    e.paidOut = e.paidOut && r.seller_payout_status === "paid";
+    e.ballylifeShips = e.ballylifeShips && r.fulfillment_type === "imported";
+    earnings.set(r.order_id, e);
+  }
+  res.json({ success: true, data: rows.map(r => ({ ...mapOrder(r), sellerEarnings: earnings.get(r.id) ?? null })), meta: { total: rows.length } });
 });
 
 // Read-only view into the fulfilment pipeline for this seller's imported

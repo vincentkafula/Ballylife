@@ -57,14 +57,14 @@ export async function supplierStates(): Promise<SupplierState[]> {
     const row = saved.get(a.key);
     let configured = false;
     try { configured = await a.isConfigured(); } catch { /* not configured */ }
-    return { key: a.key, enabled: row ? row.enabled : true, configured, orderMode: row?.order_mode ?? "approval" };
+    return { key: a.key, enabled: row ? row.enabled : true, configured, orderMode: row?.order_mode === "approval" ? "approval" : "auto" };
   }));
 }
 
 export async function setSupplierEnabled(key: string, enabled: boolean): Promise<void> {
   if (!adapterFor(key)) throw new Error("Unknown supplier");
   await pool!.query(
-    `INSERT INTO sourcing_suppliers (key, enabled, updated_at) VALUES ($1, $2, now())
+    `INSERT INTO sourcing_suppliers (key, enabled, order_mode, updated_at) VALUES ($1, $2, 'auto', now())
      ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`, [key, enabled]);
 }
 

@@ -31,7 +31,6 @@ const fakeAe: SupplierAdapter = {
     };
   },
   async getShipping() { return { cost: 2, currency: "USD", minDays: 7, maxDays: 15 }; },
-  async placeOrder() { throw new Error("no"); }, async trackOrder() { throw new Error("no"); },
 };
 const fakeCj: SupplierAdapter = {
   key: "cj", isConfigured: () => true, costPerCall: {},
@@ -41,7 +40,6 @@ const fakeCj: SupplierAdapter = {
     return [{ externalId: "CJ-PID-777", title: "Phone Stand", cost: 3, currency: "USD", image: "https://cf.cjdropshipping.com/stand.jpg", orders: null, rating: null }];
   },
   async getProduct() { throw new Error("unused"); }, async getShipping() { return null; },
-  async placeOrder() { throw new Error("no"); }, async trackOrder() { throw new Error("no"); },
 };
 
 // Words, ids and hosts that must never reach a seller or buyer.

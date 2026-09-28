@@ -238,7 +238,7 @@ describe("Importing products", () => {
       const { rows: f } = await pool.query(`SELECT status, tracking_number, paid FROM aliexpress_fulfillments WHERE order_id = $1`, [orderId]);
       expect(f[0]).toMatchObject({ status: "shipped", tracking_number: "LP00123456789CN", paid: true });
       const { rows: o } = await pool.query(`SELECT tracking_number, carrier, shipping_status FROM mkt_orders WHERE id = $1`, [orderId]);
-      expect(o[0]).toMatchObject({ tracking_number: "LP00123456789CN", carrier: "Ballylife Express", shipping_status: "in_transit" });
+      expect(o[0]).toMatchObject({ tracking_number: "LP00123456789CN", carrier: "Ballylife Shipping", shipping_status: "in_transit" });
     });
 
     it("an address AliExpress rejects goes to an admin, and can be retried", async () => {

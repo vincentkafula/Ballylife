@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, Search, Trash2 } from "lucide-react";
+import { CheckCircle, Loader2, RefreshCw, Search, Trash2, XCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { mktSourcingAdmin, ApiConnectionError } from "../services/marketplaceApi";
 
@@ -89,6 +89,8 @@ export function SourcingAdminPanel() {
         <Stat label="Sales of sourced products" value={rand(data.sales.grossZar)} sub={`${data.sales.units} units · ${rand(data.sales.commissionZar)} commission`} />
       </div>
 
+      <AwaitingOrders onChanged={load} />
+
       <Card title="Supplier requests per day">
         <div style={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -109,7 +111,7 @@ export function SourcingAdminPanel() {
       <Card title="Suppliers">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead><tr className="text-left text-gray-500"><th className="py-1.5">Supplier</th><th>Keys set up</th><th>Calls</th><th>Cache</th><th>Failed</th><th className="text-right">On</th></tr></thead>
+            <thead><tr className="text-left text-gray-500"><th className="py-1.5">Supplier</th><th>Keys set up</th><th>Calls</th><th>Cache</th><th>Failed</th><th>New orders</th><th className="text-right">On</th></tr></thead>
             <tbody>
               {data.suppliers.map((s: R) => {
                 const u = usageBy.get(s.key) ?? {};
@@ -118,6 +120,14 @@ export function SourcingAdminPanel() {
                     <td className="py-2 font-semibold text-gray-900">{SUPPLIER_LABEL[s.key] ?? s.key}</td>
                     <td>{s.configured ? <span className="text-emerald-700">Yes</span> : <span className="text-red-600">No — check keys / connection</span>}</td>
                     <td>{u.live ?? 0}</td><td>{u.cached ?? 0}</td><td>{u.errors ?? 0}</td>
+                    <td>
+                      <select value={s.orderMode} disabled={busy === `mode-${s.key}`}
+                        onChange={e => void run(`mode-${s.key}`, () => mktSourcingAdmin.setOrderMode(s.key, e.target.value as "auto" | "approval"), e.target.value === "auto" ? "Orders go to the supplier automatically" : "Orders now wait for your approval")}
+                        className="border border-gray-200 rounded-md px-1.5 py-1 text-xs bg-white">
+                        <option value="auto">Place automatically</option>
+                        <option value="approval">I approve first</option>
+                      </select>
+                    </td>
                     <td className="text-right">
                       <button disabled={busy === `sup-${s.key}`}
                         onClick={() => void run(`sup-${s.key}`, () => mktSourcingAdmin.setSupplier(s.key, !s.enabled), s.enabled ? "Supplier switched off" : "Supplier switched on")}
@@ -180,6 +190,54 @@ export function SourcingAdminPanel() {
       <SellerPlans planNames={data.planNames} />
       <TestSearch />
     </div>
+  );
+}
+
+function AwaitingOrders({ onChanged }: { onChanged: () => void }) {
+  const [rows, setRows] = useState<R[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try { const r = await mktSourcingAdmin.awaiting(); if (r.success) setRows(r.data); }
+    catch (err) { toast.error(errMessage(err, "Couldn't load waiting orders.")); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const act = async (o: R, approve: boolean) => {
+    let reason = "";
+    if (!approve) {
+      const r = prompt(`Why aren't you approving ${o.orderNumber}? (The customer will need a refund.)`);
+      if (r === null) return;
+      reason = r;
+    }
+    setBusy(o.id);
+    try {
+      const r = approve ? await mktSourcingAdmin.approve(o.supplier, o.id) : await mktSourcingAdmin.reject(o.supplier, o.id, reason);
+      if (r.success) toast.success(r.message ?? "Done"); else toast.error(r.error ?? "That didn't work.");
+      await load(); onChanged();
+    } catch (err) { toast.error(errMessage(err, "That didn't work.")); }
+    finally { setBusy(null); }
+  };
+
+  if (!rows || rows.length === 0) return null;
+  return (
+    <Card title={`Orders waiting for approval (${rows.length})`}>
+      <div className="space-y-2">
+        {rows.map(o => (
+          <div key={o.id} className="border border-amber-200 bg-amber-50/40 rounded-lg p-3 flex flex-wrap items-start justify-between gap-3">
+            <div className="text-xs">
+              <p className="font-bold text-gray-900">{o.orderNumber} <span className="font-normal text-gray-500">· {SUPPLIER_LABEL[o.supplier] ?? o.supplier} · {new Date(o.placedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}{o.customerCity ? ` · ${o.customerCity}` : ""}</span></p>
+              {o.lines.map((l: R, i: number) => <p key={i} className="text-gray-700">{l.quantity} × {l.name}{l.sellerName ? <span className="text-gray-500"> ({l.sellerName})</span> : null}</p>)}
+              <p className="mt-1 text-gray-600">Sale {rand(o.saleZar)} · Supplier cost {o.supplierCostZar === null ? "unknown" : rand(o.supplierCostZar)} ·{" "}
+                <span className="font-semibold" style={{ color: o.marginZar === null ? "#6B7280" : o.marginZar > 0 ? "#0B5C2E" : "#DC2626" }}>margin {o.marginZar === null ? "unknown" : rand(o.marginZar)}</span></p>
+            </div>
+            <div className="flex gap-2">
+              <button disabled={busy === o.id} onClick={() => void act(o, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-white text-xs font-semibold disabled:opacity-40" style={{ background: "#0B5C2E" }}><CheckCircle className="w-3.5 h-3.5" />Approve</button>
+              <button disabled={busy === o.id} onClick={() => void act(o, false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 text-red-700 bg-white disabled:opacity-40"><XCircle className="w-3.5 h-3.5" />Don't approve</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

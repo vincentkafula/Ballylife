@@ -19,11 +19,12 @@ import { logger } from "../utils/logger";
 import { sendEmail } from "./emailService";
 import { callAsBuyer, AliExpressError, connectionStatus } from "./aliexpressClient";
 import { parseExternalVariants, resolveVid } from "../utils/cjVariants";
+import { initialFulfilmentStatus, notifyAwaiting, AWAITING } from "./sourcing/orderRouting";
 
 type Row = Record<string, any>;
 const AUTO_PAY = /^(1|true|yes)$/i.test(process.env.ALIEXPRESS_AUTO_PAY ?? "");
 const ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL?.trim() || null;
-const CARRIER = process.env.WHITE_LABEL_CARRIER_NAME?.trim() || "Ballylife Express";
+const CARRIER = process.env.WHITE_LABEL_CARRIER_NAME?.trim() || "Ballylife Shipping";
 const BACKOFF_MINUTES = [1, 5, 15, 60, 180, 360];
 const LOOKBACK_DAYS = 30;
 const STUCK_PLACING_MS = 10 * 60_000;
@@ -40,8 +41,10 @@ export async function enqueueAliExpressOrders(): Promise<number> {
      WHERE o.payment_status = 'payment_confirmed' AND sp.external_source = 'aliexpress' AND f.id IS NULL AND o.placed_at > $1`,
     [new Date(Date.now() - LOOKBACK_DAYS * 86400_000)]
   );
-  for (const r of rows) await pool!.query(`INSERT INTO aliexpress_fulfillments (order_id) VALUES ($1) ON CONFLICT (order_id) DO NOTHING`, [r.id]);
-  if (rows.length) logger.info("aliexpress.fulfillment_enqueued", { count: rows.length });
+  const status = rows.length ? await initialFulfilmentStatus("aliexpress") : "queued";
+  for (const r of rows) await pool!.query(`INSERT INTO aliexpress_fulfillments (order_id, status) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING`, [r.id, status]);
+  if (rows.length) logger.info("aliexpress.fulfillment_enqueued", { count: rows.length, status });
+  if (status === AWAITING) await notifyAwaiting("aliexpress", rows.map((r: { id: string }) => r.id));
   return rows.length;
 }
 

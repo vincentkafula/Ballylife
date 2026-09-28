@@ -209,7 +209,7 @@ describe("Placing the paid order with CJ", () => {
     const { rows } = await pool.query(`SELECT * FROM mkt_orders WHERE id = $1`, [order.id]);
     expect(rows[0].status).toBe("shipped");
     expect(rows[0].tracking_number).toBe("YT123456789");
-    expect(rows[0].carrier).toBe("Ballylife Express");
+    expect(rows[0].carrier).toBe("Ballylife Shipping");
     expect((await fulfillmentFor(order.id)).status).toBe("shipped");
 
     const res = await request(app).get(`/api/marketplace/orders/${order.id}`).set("Authorization", `Bearer ${custToken}`);
@@ -305,8 +305,8 @@ describe("When placement fails", () => {
 
 describe("whiteLabelCarrier", () => {
   it("hides supplier-branded carrier names but keeps real carriers", () => {
-    expect(fulfillment.whiteLabelCarrier("CJPacket Ordinary")).toBe("Ballylife Express");
-    expect(fulfillment.whiteLabelCarrier("DHL Express")).toBe("DHL Express");
-    expect(fulfillment.whiteLabelCarrier(null)).toBe("Ballylife Express");
+    expect(fulfillment.whiteLabelCarrier("CJPacket Ordinary")).toBe("Ballylife Shipping");
+    expect(fulfillment.whiteLabelCarrier("DHL Express")).toBe("Ballylife Shipping");
+    expect(fulfillment.whiteLabelCarrier(null)).toBe("Ballylife Shipping");
   });
 });

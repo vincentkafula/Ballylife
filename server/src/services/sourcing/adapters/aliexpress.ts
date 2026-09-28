@@ -3,12 +3,11 @@
  * API integration (aliexpressClient / aliexpressCatalog). Needs the
  * AliExpress account connected (Manager dashboard -> AliExpress).
  *
- * Orders (placeOrder / trackOrder) keep going through the existing
- * aliexpressFulfillment worker until Phase 4 routes them via adapters.
+ * Orders go through the aliexpressFulfillment worker (sourcing/orderRouting.ts).
  */
 import { isAliExpressConfigured, connectionStatus } from "../../aliexpressClient";
 import { searchAe, fetchAeProduct, cheapestShipping, ensureAeSupplier, AE_SUPPLIER_ID, AE_SOURCE } from "../../aliexpressCatalog";
-import { AdapterUnsupportedError, type SupplierAdapter } from "../types";
+import type { SupplierAdapter } from "../types";
 import { loadFxRates } from "../fx";
 
 /** "7-15" / "15" -> [7, 15] */
@@ -51,6 +50,4 @@ export const aliexpressAdapter: SupplierAdapter = {
     return { cost: best.usd, currency: "USD", minDays, maxDays };
   },
 
-  async placeOrder() { throw new AdapterUnsupportedError("AliExpress orders are placed by the AliExpress fulfilment worker (adapter routing arrives in Phase 4)."); },
-  async trackOrder() { throw new AdapterUnsupportedError("AliExpress tracking is synced by the AliExpress fulfilment worker (adapter routing arrives in Phase 4)."); },
 };

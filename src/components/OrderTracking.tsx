@@ -95,7 +95,8 @@ export function OrderTracking({ onBack }: { onBack: () => void }) {
             <div className="grid sm:grid-cols-2 gap-3 mt-5 pt-4 border-t border-gray-50 text-sm">
               <div><span className="text-gray-500">Total</span><p className="font-semibold text-gray-800">R{Number(order.totalAmount).toFixed(2)}</p></div>
               <div><span className="text-gray-500">Estimated delivery</span><p className="font-semibold text-gray-800">{order.estimatedDelivery ? new Date(String(order.estimatedDelivery)).toLocaleDateString() : "—"}</p></div>
-              {order.trackingNumber ? (<div><span className="text-gray-500">Tracking number</span><p className="font-semibold text-gray-800">{String(order.trackingNumber)}</p></div>) : null}
+              {order.trackingNumber ? (<div><span className="text-gray-500">Tracking number</span><p className="font-semibold text-gray-800">{String(order.trackingNumber)}</p>
+                <a href={`https://t.17track.net/en#nums=${encodeURIComponent(String(order.trackingNumber))}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 underline">Track parcel</a></div>) : null}
               {order.carrier ? (<div><span className="text-gray-500">Carrier</span><p className="font-semibold text-gray-800">{String(order.carrier)}</p></div>) : null}
             </div>
           </div>

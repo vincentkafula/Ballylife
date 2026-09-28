@@ -150,7 +150,7 @@ export function SellerDashboard({ user, seller, onSignOut }: Props) {
                       <table className="w-full text-sm">
                         <thead><tr className="text-left text-[11px] text-gray-500 border-b border-gray-100">
                           <th className="px-4 py-2 font-medium">Order</th><th className="px-4 py-2 font-medium">Customer</th>
-                          <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
+                          <th className="px-4 py-2 font-medium">Amount</th><th className="px-4 py-2 font-medium">You earn</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Action</th>
                         </tr></thead>
                         <tbody>
                           {orders.map((o, i) => (
@@ -209,15 +209,24 @@ function SellerOrderRow({ order, onUpdated }: { order: R; onUpdated: () => void 
   };
   const status = String(order.status);
   const next: Record<string, string> = { pending: "confirmed", confirmed: "processing", processing: "shipped", shipped: "delivered" };
+  const e = order.sellerEarnings as { salesZar: number; commissionZar: number; productAndDeliveryZar: number; earningsZar: number; paidOut: boolean; ballylifeShips: boolean } | null;
 
   return (
     <tr className="border-b border-gray-50 last:border-0">
       <td className="px-4 py-3 font-semibold text-gray-900">{String(order.orderNumber)}</td>
       <td className="px-4 py-3 text-gray-500">{String(order.customerName)}</td>
       <td className="px-4 py-3 font-bold text-gray-700">{fmtZAR(Number(order.totalAmount))}</td>
+      <td className="px-4 py-3">
+        {e ? (
+          <div title={`Your sales ${fmtZAR(e.salesZar)} − commission ${fmtZAR(e.commissionZar)}${e.productAndDeliveryZar ? ` − product & delivery ${fmtZAR(e.productAndDeliveryZar)}` : ""}`}>
+            <p className="font-bold" style={{ color: e.earningsZar > 0 ? "#0B5C2E" : "#DC2626" }}>{fmtZAR(e.earningsZar)}</p>
+            <p className="text-[10px] text-gray-400">{e.paidOut ? "Paid out" : "To be paid"}</p>
+          </div>
+        ) : <span className="text-xs text-gray-300">—</span>}
+      </td>
       <td className="px-4 py-3 capitalize text-gray-600">{status.replace("_", " ")}</td>
       <td className="px-4 py-3">
-        {next[status] ? (
+        {e?.ballylifeShips ? <span className="text-[11px] text-gray-500">Ballylife ships this</span> : next[status] ? (
           <button onClick={() => advance(next[status])} disabled={saving}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: "#B8862E" }}>
             {saving ? "..." : `Mark ${next[status]}`}

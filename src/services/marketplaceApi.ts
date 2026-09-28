@@ -313,6 +313,10 @@ export const mktSourcingAdmin = {
   setSellerPlan: (sellerId: string, plan: string) => api<SrcRes>(`/api/marketplace/admin/sourcing/sellers/${encodeURIComponent(sellerId)}/plan`, { method: "PATCH", body: JSON.stringify({ plan }) }),
   clearCache:    () => api<SrcRes>(`/api/marketplace/admin/sourcing/cache`, { method: "DELETE" }),
   testSearch:    (q: string) => api<SrcRes>(`/api/marketplace/admin/sourcing/search?${new URLSearchParams({ q })}`),
+  setOrderMode:  (key: string, orderMode: "auto" | "approval") => api<SrcRes>(`/api/marketplace/admin/sourcing/suppliers/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ orderMode }) }),
+  awaiting:      () => api<SrcRes>(`/api/marketplace/admin/sourcing/orders/awaiting`),
+  approve:       (supplier: string, id: string) => api<SrcRes & { message?: string }>(`/api/marketplace/admin/sourcing/orders/${encodeURIComponent(supplier)}/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+  reject:        (supplier: string, id: string, reason: string) => api<SrcRes & { message?: string }>(`/api/marketplace/admin/sourcing/orders/${encodeURIComponent(supplier)}/${encodeURIComponent(id)}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
 };
 
 export const mktCustomer = {

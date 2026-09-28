@@ -1995,6 +1995,7 @@ function OrdersView() {
             <div>
               <p className="text-xs font-bold text-emerald-700">Tracking: {selected.trackingNumber as string}</p>
               <p className="text-xs text-emerald-600">{selected.carrier as string}</p>
+              <a href={`https://t.17track.net/en#nums=${encodeURIComponent(String(selected.trackingNumber))}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 underline">Track parcel</a>
             </div>
           </div>
         )}

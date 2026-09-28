@@ -6,6 +6,7 @@ import {
   type CjCreateOrderRequest, type CjOrderDetail,
 } from "./cjDropshippingClient";
 import { parseExternalVariants, resolveVid } from "../utils/cjVariants";
+import { initialFulfilmentStatus, notifyAwaiting, AWAITING } from "./sourcing/orderRouting";
 
 /**
  * Places paid customer orders with CJdropshipping using the platform's one
@@ -36,7 +37,7 @@ const SANDBOX = /^(1|true|yes)$/i.test(process.env.CJ_SANDBOX ?? "");
 const FROM_COUNTRY = (process.env.CJ_FROM_COUNTRY || "CN").toUpperCase();
 const FIXED_LOGISTIC = process.env.CJ_LOGISTIC_NAME?.trim() || null;
 const ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL?.trim() || null;
-const WHITE_LABEL_CARRIER = process.env.WHITE_LABEL_CARRIER_NAME?.trim() || "Ballylife Express";
+const WHITE_LABEL_CARRIER = process.env.WHITE_LABEL_CARRIER_NAME?.trim() || "Ballylife Shipping";
 
 // Minutes to wait before attempt N+1. After the last one the job is marked
 // failed and the admin alerted -- about 10.5 hours of retries in total.
@@ -64,10 +65,12 @@ export async function enqueueNewlyPaidOrders(): Promise<number> {
        AND f.id IS NULL AND o.placed_at > $1`,
     [since]
   );
+  const status = rows.length ? await initialFulfilmentStatus("cj") : "queued";
   for (const r of rows) {
-    await pool!.query(`INSERT INTO cj_fulfillments (order_id) VALUES ($1) ON CONFLICT (order_id) DO NOTHING`, [r.id]);
+    await pool!.query(`INSERT INTO cj_fulfillments (order_id, status) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING`, [r.id, status]);
   }
-  if (rows.length) logger.info("cj.fulfillment_enqueued", { count: rows.length });
+  if (rows.length) logger.info("cj.fulfillment_enqueued", { count: rows.length, status });
+  if (status === AWAITING) await notifyAwaiting("cj", rows.map((r: { id: string }) => r.id));
   return rows.length;
 }
 
@@ -345,10 +348,9 @@ export async function syncOne(f: Row): Promise<void> {
   }
 }
 
-/** Customers see the real carrier name (e.g. "DHL") unless it names the supplier. */
-export function whiteLabelCarrier(logisticName: string | null | undefined): string {
-  if (!logisticName || /\bcj|1688/i.test(logisticName)) return WHITE_LABEL_CARRIER; // "CJPacket Ordinary" etc.
-  return logisticName;
+/** Customers and sellers see Ballylife's own shipping name, never the supplier's logistics line (the tracking number still works on any tracker). */
+export function whiteLabelCarrier(_logisticName?: string | null): string {
+  return WHITE_LABEL_CARRIER;
 }
 
 async function setStatus(id: string, status: string, lastError?: string) {

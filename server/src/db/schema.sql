@@ -1369,3 +1369,8 @@ CREATE TABLE IF NOT EXISTS sourcing_usage (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sourcing_usage_seller ON sourcing_usage(seller_id, action, created_at);
+
+-- Order routing: suppliers place orders automatically unless a manager
+-- chooses "approval". Rows saved before order routing existed (whose
+-- 'approval' was only the old column default) go back to automatic.
+UPDATE sourcing_suppliers SET order_mode = 'auto' WHERE order_mode = 'approval' AND updated_at < '2026-09-28T20:20:00Z';

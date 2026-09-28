@@ -57,12 +57,6 @@ export interface SupplierShipping {
   maxDays: number | null;
 }
 
-export interface SupplierOrderRequest {
-  reference: string;       // Ballylife order number
-  lines: { externalId: string; externalSku: string; quantity: number }[];
-  shipTo: { name: string; phone: string; line1: string; line2?: string; city: string; province?: string; postalCode: string; country: "ZA" };
-}
-
 export interface SupplierAdapter {
   /** Internal key, e.g. "aliexpress". Never shown to sellers or buyers. */
   key: string;
@@ -79,11 +73,9 @@ export interface SupplierAdapter {
   search(q: SourcingQuery): Promise<SupplierHit[]>;
   getProduct(externalId: string): Promise<SupplierProduct>;
   getShipping(externalId: string, externalSku?: string): Promise<SupplierShipping | null>;
-  placeOrder(req: SupplierOrderRequest): Promise<{ supplierOrderIds: string[] }>;
-  trackOrder(supplierOrderId: string): Promise<{ status: string; trackingNumber: string | null; carrier: string | null }>;
+  // Orders: placed, paid, retried and tracked by the supplier's fulfilment
+  // worker, found from catalogue.source; see sourcing/orderRouting.ts.
 }
 
-export type SourcingEndpoint = "search" | "getProduct" | "getShipping" | "placeOrder" | "trackOrder";
+export type SourcingEndpoint = "search" | "getProduct" | "getShipping";
 
-/** Thrown for things a supplier doesn't do (yet) through the adapter layer. */
-export class AdapterUnsupportedError extends Error {}

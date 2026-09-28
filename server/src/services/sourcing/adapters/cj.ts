@@ -11,7 +11,7 @@ import { parseSupplierImageList, splitSupplierDescription, dedupeImages, isPhoto
 import { cleanProductName } from "../../../utils/productNaming";
 import { englishLines } from "../../../utils/englishOnly";
 import { CJ_SUPPLIER_ID, ensureCjSupplierExists } from "../../cjCatalog";
-import { AdapterUnsupportedError, type SupplierAdapter } from "../types";
+import type { SupplierAdapter } from "../types";
 
 function dayRange(aging: string | undefined): [number | null, number | null] {
   const n = String(aging ?? "").match(/\d+/g)?.map(Number) ?? [];
@@ -68,6 +68,4 @@ export const cjAdapter: SupplierAdapter = {
     return { cost: Number(best.logisticPrice), currency: "USD", minDays, maxDays };
   },
 
-  async placeOrder() { throw new AdapterUnsupportedError("CJ orders are placed by the CJ fulfilment worker (adapter routing arrives in Phase 4)."); },
-  async trackOrder() { throw new AdapterUnsupportedError("CJ tracking is synced by the CJ fulfilment worker (adapter routing arrives in Phase 4)."); },
 };
