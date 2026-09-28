@@ -8,10 +8,13 @@
  * per supplier (sourcing_suppliers.order_mode), and runs the approval queue.
  *
  * Suppliers with no saved setting stay on "auto" -- how orders flowed before.
+ * Approval only ever holds orders that contain another seller's product:
+ * orders for Ballylife's own store always go straight to the supplier.
  */
 import { pool } from "../../db/pool";
 import { logger } from "../../utils/logger";
 import { isEmailConfigured, sendEmail } from "../emailService";
+import { HOUSE_SELLER_ID } from "../cjCatalog";
 
 export type OrderMode = "auto" | "approval";
 export const ORDER_MODES: OrderMode[] = ["auto", "approval"];
@@ -39,8 +42,16 @@ export async function setOrderMode(adapterKey: string, mode: OrderMode): Promise
 }
 
 /** Status a newly paid supplier order starts in. Workers only pick up 'queued'. */
-export async function initialFulfilmentStatus(adapterKey: string): Promise<"queued" | typeof AWAITING> {
-  return (await orderMode(adapterKey)) === "approval" ? AWAITING : "queued";
+export async function initialFulfilmentStatus(adapterKey: string, orderId?: string): Promise<"queued" | typeof AWAITING> {
+  if ((await orderMode(adapterKey)) !== "approval") return "queued";
+  if (!orderId) return AWAITING;
+  const q = FULFILMENT_QUEUES[adapterKey];
+  const { rows } = await pool!.query(
+    `SELECT 1 FROM mkt_supplier_orders so
+       JOIN mkt_products p ON p.id = so.product_id
+       JOIN mkt_supplier_products sp ON sp.id = so.supplier_product_id
+     WHERE so.order_id = $1 AND sp.external_source = $2 AND p.seller_id <> $3 LIMIT 1`, [orderId, q.source, HOUSE_SELLER_ID]);
+  return rows.length ? AWAITING : "queued";
 }
 
 const ALERT_EMAIL = process.env.ADMIN_ALERT_EMAIL?.trim() || null;

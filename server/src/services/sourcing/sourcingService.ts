@@ -217,8 +217,8 @@ export async function fileInCatalogue(ref: string, who: Caller): Promise<{ suppl
   }));
   const { rows } = await pool!.query(
     `INSERT INTO mkt_supplier_products (supplier_id, category_id, name, description, cost_price, currency, retail_price, moq, images, origin_country, status,
-       external_source, external_id, external_variants, est_shipping_usd)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,'CN','active',$9,$10,$11,$12) RETURNING id`,
+       external_source, external_id, external_variants, est_shipping_usd, added_via)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,1,$8,'CN','active',$9,$10,$11,$12,'seller_sourcing') RETURNING id`,
     [supplierId, categoryId, sourced.title, cleanDescription(p.description), cheapest.cost, p.currency, sourced.baseCostZar, JSON.stringify(images),
      source, externalId, JSON.stringify(variants), shipping.currency === "USD" ? shipping.cost : null]);
   logger.info("sourcing.catalogue_item_created", { adapter: a.key, supplierProductId: rows[0].id });

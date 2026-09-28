@@ -216,6 +216,16 @@ describe("Seller sourcing (search, profit, import, plan limits)", () => {
     expect(rows[0].images).toEqual(["https://ae01.alicdn.com/kf/earbuds.jpg"]);
   });
 
+  it("marks it as seller-sourced, so Ballylife's automatic AliExpress refresh (which lists in the Ballylife store) leaves it alone", async () => {
+    const { rows } = await pool.query(`SELECT added_via FROM mkt_supplier_products WHERE external_source = 'aliexpress'`);
+    expect(rows[0].added_via).toBe("seller_sourcing");
+    await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1 WHERE external_source = 'aliexpress'`, [new Date(Date.now() - 48 * 3600_000)]);
+    const { refreshAeProducts } = await import("../services/aliexpressCatalog");
+    expect(await refreshAeProducts()).toBe(0); // nothing picked up (picking it up would call AliExpress and list it for Ballylife)
+    const { rows: house } = await pool.query(`SELECT COUNT(*)::int AS n FROM mkt_products WHERE seller_id = 'sel-ballylife'`);
+    expect(house[0].n).toBe(0);
+  });
+
   it("won't import the same product twice, and a manager can approve it", async () => {
     const again = await request(app).post("/api/marketplace/sourcing/import").set(auth()).send({ ref, retailPrice: 399 });
     expect(again.status).toBe(409);

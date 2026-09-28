@@ -41,10 +41,14 @@ export async function enqueueAliExpressOrders(): Promise<number> {
      WHERE o.payment_status = 'payment_confirmed' AND sp.external_source = 'aliexpress' AND f.id IS NULL AND o.placed_at > $1`,
     [new Date(Date.now() - LOOKBACK_DAYS * 86400_000)]
   );
-  const status = rows.length ? await initialFulfilmentStatus("aliexpress") : "queued";
-  for (const r of rows) await pool!.query(`INSERT INTO aliexpress_fulfillments (order_id, status) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING`, [r.id, status]);
-  if (rows.length) logger.info("aliexpress.fulfillment_enqueued", { count: rows.length, status });
-  if (status === AWAITING) await notifyAwaiting("aliexpress", rows.map((r: { id: string }) => r.id));
+  const held: string[] = [];
+  for (const r of rows) {
+    const status = await initialFulfilmentStatus("aliexpress", r.id); // Ballylife-store orders: always "queued"
+    await pool!.query(`INSERT INTO aliexpress_fulfillments (order_id, status) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING`, [r.id, status]);
+    if (status === AWAITING) held.push(r.id);
+  }
+  if (rows.length) logger.info("aliexpress.fulfillment_enqueued", { count: rows.length, awaitingApproval: held.length });
+  await notifyAwaiting("aliexpress", held);
   return rows.length;
 }
 

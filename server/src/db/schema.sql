@@ -1402,3 +1402,7 @@ CREATE TABLE IF NOT EXISTS seller_sourcing_payments (
   processor_ref    TEXT UNIQUE,                                   -- PayFast pf_payment_id (duplicate ITNs are ignored)
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- How a catalogue item arrived. 'seller_sourcing' = a seller added it through
+-- Find products; Ballylife's own automatic catalogue jobs leave those alone.
+ALTER TABLE mkt_supplier_products ADD COLUMN IF NOT EXISTS added_via TEXT;

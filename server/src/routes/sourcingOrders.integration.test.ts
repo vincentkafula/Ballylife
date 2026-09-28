@@ -131,6 +131,25 @@ describe("Supplier orders: payouts, approval and seller earnings", () => {
     expect(JSON.stringify(res.body)).not.toMatch(/aliexpress|1005001234567890/i);
   });
 
+  it("Ballylife's own store orders are never held, even when approval is on", async () => {
+    await request(app).patch("/api/marketplace/admin/sourcing/suppliers/aliexpress").set("Authorization", `Bearer ${adminToken}`).send({ orderMode: "approval" });
+    await pool.query(`INSERT INTO users (id, username, password_hash, role, name, email) VALUES ('77777777-7777-7777-7777-777777777777','ballylifehouse','x','seller','Ballylife','house@example.com')`);
+    await pool.query(`INSERT INTO mkt_sellers (id, user_id, store_name, store_slug, status) VALUES ('sel-ballylife','77777777-7777-7777-7777-777777777777','Ballylife','ballylife','active')`);
+    const { rows: sp } = await pool.query(`SELECT id FROM mkt_supplier_products WHERE external_source = 'aliexpress'`);
+    const HOUSE_PRODUCT = "88888888-8888-8888-8888-888888888888";
+    await pool.query(
+      `INSERT INTO mkt_products (id, seller_id, category_id, name, slug, price, currency, images, status, stock, fulfillment_type, supplier_product_id)
+       VALUES ($1,'sel-ballylife','cat-01','Wireless Earbuds','wireless-earbuds-house',299,'ZAR','[]','active',10,'imported',$2)`, [HOUSE_PRODUCT, sp[0].id]);
+    await request(app).post(`/api/marketplace/cart/${customerId}/add`).set("Authorization", `Bearer ${customerToken}`).send({ productId: HOUSE_PRODUCT, quantity: 1 });
+    const order = await request(app).post("/api/marketplace/orders").set("Authorization", `Bearer ${customerToken}`).send({ paymentMethod: "bank_transfer" });
+    expect(order.body.success).toBe(true);
+    await pool.query(`UPDATE mkt_orders SET payment_status = 'payment_confirmed', placed_at = $2 WHERE id = $1`, [order.body.data.id, new Date()]);
+    const { enqueueAliExpressOrders } = await import("../services/aliexpressFulfillment");
+    await enqueueAliExpressOrders();
+    const { rows } = await pool.query(`SELECT status FROM aliexpress_fulfillments WHERE order_id = $1`, [order.body.data.id]);
+    expect(rows[0].status).toBe("queued");
+  });
+
   it("automatic suppliers go straight to the worker", async () => {
     await request(app).patch("/api/marketplace/admin/sourcing/suppliers/aliexpress").set("Authorization", `Bearer ${adminToken}`).send({ orderMode: "auto" });
     const { initialFulfilmentStatus } = await import("../services/sourcing/orderRouting");

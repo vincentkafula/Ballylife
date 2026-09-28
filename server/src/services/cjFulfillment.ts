@@ -65,12 +65,14 @@ export async function enqueueNewlyPaidOrders(): Promise<number> {
        AND f.id IS NULL AND o.placed_at > $1`,
     [since]
   );
-  const status = rows.length ? await initialFulfilmentStatus("cj") : "queued";
+  const held: string[] = [];
   for (const r of rows) {
+    const status = await initialFulfilmentStatus("cj", r.id); // Ballylife-store orders: always "queued"
     await pool!.query(`INSERT INTO cj_fulfillments (order_id, status) VALUES ($1, $2) ON CONFLICT (order_id) DO NOTHING`, [r.id, status]);
+    if (status === AWAITING) held.push(r.id);
   }
-  if (rows.length) logger.info("cj.fulfillment_enqueued", { count: rows.length, status });
-  if (status === AWAITING) await notifyAwaiting("cj", rows.map((r: { id: string }) => r.id));
+  if (rows.length) logger.info("cj.fulfillment_enqueued", { count: rows.length, awaitingApproval: held.length });
+  await notifyAwaiting("cj", held);
   return rows.length;
 }
 

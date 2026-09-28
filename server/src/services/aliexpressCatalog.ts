@@ -198,7 +198,9 @@ export async function importAeProduct(idOrUrl: string): Promise<ImportResult> {
 /** Re-checks every imported product's price, stock and shipping (a slice per call). */
 export async function refreshAeProducts(limit = 30): Promise<number> {
   const { rows } = await pool!.query(
-    `SELECT external_id FROM mkt_supplier_products WHERE supplier_id = $1 AND updated_at < $2 ORDER BY updated_at ASC LIMIT $3`,
+    // Items a seller added through Find products aren't refreshed here: importing lists in the Ballylife store.
+    `SELECT external_id FROM mkt_supplier_products WHERE supplier_id = $1 AND updated_at < $2 AND COALESCE(added_via, '') <> 'seller_sourcing'
+     ORDER BY updated_at ASC LIMIT $3`,
     [AE_SUPPLIER_ID, new Date(Date.now() - 20 * 3600_000), limit]
   );
   let n = 0;
