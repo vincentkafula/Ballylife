@@ -369,6 +369,13 @@ export async function fetchSellerDocument(docId: string): Promise<Blob> {
 }
 
 export const mktAuth = {
+  /** "Sign in with a WhatsApp code": is it available, send a code, check it. */
+  otpAvailable: () => api<{ success: boolean; data: { available: boolean; channel: "whatsapp" | "sms" | null } }>("/api/auth/otp/available"),
+  otpRequest: (phone: string) => api<{ success: boolean; message?: string; error?: string }>("/api/auth/otp/request", { method: "POST", body: JSON.stringify({ phone }) }),
+  otpVerify: async (phone: string, code: string) => {
+    const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/otp/verify", { method: "POST", body: JSON.stringify({ phone, code }) });
+    return finishOauthLogin(r);
+  },
   /** One-time sign-in link from WhatsApp (/wa-login?t=...). */
   magicLogin: async (token: string) => {
     const r = await api<{ success: boolean; data?: { token?: string; user: MktAuthUser } & Partial<MktNeedsVerification>; error?: string }>("/api/auth/magic-login", { method: "POST", body: JSON.stringify({ token }) });

@@ -28,10 +28,15 @@ async function graph(method: "GET" | "POST", path: string, body?: unknown): Prom
   return j;
 }
 
-interface TemplateDef { name: string; category: "UTILITY" | "MARKETING"; body: string; examples: string[]; button?: { text: string; url: string; example?: string }; purpose: string }
+interface TemplateDef { name: string; category: "UTILITY" | "MARKETING" | "AUTHENTICATION"; body: string; examples: string[]; button?: { text: string; url: string; example?: string }; purpose: string }
 
 /** Every template the bot sends. Placeholders ({{1}}…) are filled by the code that sends them. */
 export const TEMPLATES: TemplateDef[] = [
+  {
+    // Meta writes the text of authentication templates itself: "<code> is your verification code."
+    name: "ballylife_verification_code", category: "AUTHENTICATION", purpose: "Website verification / sign-in codes",
+    body: "{{1}} is your verification code. For your security, do not share this code.", examples: ["123456"],
+  },
   {
     name: "seller_application_approved", category: "UTILITY", purpose: "Seller approved (with sign-in link)",
     body: "Hi {{1}}, good news! Your Ballylife seller application for {{2}} has been approved. Tap below to sign in and set up your store. The link works once and expires in 24 hours.",
@@ -68,6 +73,16 @@ export const TEMPLATES: TemplateDef[] = [
 ];
 
 function toMeta(t: TemplateDef) {
+  if (t.category === "AUTHENTICATION") {
+    return {
+      name: t.name, language: LANG(), category: "AUTHENTICATION",
+      components: [
+        { type: "BODY", add_security_recommendation: true },
+        { type: "FOOTER", code_expiration_minutes: 10 },
+        { type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE", text: "Copy code" }] },
+      ],
+    };
+  }
   const components: unknown[] = [{ type: "BODY", text: t.body, example: { body_text: [t.examples] } }];
   if (t.button) {
     components.push({ type: "BUTTONS", buttons: [{ type: "URL", text: t.button.text, url: t.button.url, ...(t.button.example ? { example: [t.button.example] } : {}) }] });

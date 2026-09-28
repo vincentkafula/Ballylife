@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import { pool } from "../db/pool";
 import { sendVerificationEmail } from "./emailService";
-import { sendVerificationOtp, isSmsConfigured } from "./smsService";
+import { deliverCode, isPhoneOtpAvailable, OTP_MINUTES } from "./otpDelivery";
+import { logger } from "../utils/logger";
 
 /**
  * Extracted from authRouter.ts's original /register route so seller
@@ -19,7 +20,7 @@ import { sendVerificationOtp, isSmsConfigured } from "./smsService";
 // real, for every signup from then on; already-active accounts aren't
 // retroactively downgraded.
 export function computeAccountStatus(emailVerified: boolean, phoneVerified: boolean, hasPhone: boolean): "unverified" | "partially_verified" | "active" {
-  const phoneRequirementMet = !hasPhone || !isSmsConfigured() || phoneVerified;
+  const phoneRequirementMet = !hasPhone || !isPhoneOtpAvailable() || phoneVerified;
   if (emailVerified && phoneRequirementMet) return "active";
   if (emailVerified || phoneVerified) return "partially_verified";
   return "unverified";
@@ -36,12 +37,26 @@ export async function sendEmailVerification(userId: string, email: string): Prom
   await sendVerificationEmail(email, verifyUrl);
 }
 
-export async function sendPhoneVerification(userId: string, phone: string): Promise<void> {
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+/** A fresh 6-digit code (only its hash is stored), sent by WhatsApp or SMS. */
+export async function sendPhoneCode(userId: string, phone: string, purpose: "verify" | "login"): Promise<"whatsapp" | "sms" | null> {
+  const otp = String(crypto.randomInt(100000, 1000000));
   const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-  await pool!.query(
-    `INSERT INTO phone_verification_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')`,
-    [userId, otpHash]
-  );
-  await sendVerificationOtp(phone, otp);
+  const { rows } = await pool!.query(
+    `INSERT INTO phone_verification_codes (user_id, code_hash, expires_at, purpose) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [userId, otpHash, new Date(Date.now() + OTP_MINUTES * 60_000), purpose]);
+  // With no way to send codes the record is harmless: the account doesn't
+  // require phone verification then (computeAccountStatus).
+  if (!isPhoneOtpAvailable()) return null;
+  try {
+    const channel = await deliverCode(phone, otp);
+    await pool!.query(`UPDATE phone_verification_codes SET channel = $2 WHERE id = $1`, [rows[0].id, channel]);
+    return channel;
+  } catch (err) {
+    logger.warn("otp.send_failed", { purpose, error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
+export async function sendPhoneVerification(userId: string, phone: string): Promise<void> {
+  await sendPhoneCode(userId, phone, "verify");
 }

@@ -1308,3 +1308,7 @@ CREATE TABLE IF NOT EXISTS social_oauth_states (
   platform    TEXT NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Phone codes can now also sign someone in ("Sign in with a WhatsApp code").
+ALTER TABLE phone_verification_codes ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'verify'; -- verify | login
+ALTER TABLE phone_verification_codes ADD COLUMN IF NOT EXISTS channel TEXT;                         -- whatsapp | sms

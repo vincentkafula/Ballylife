@@ -379,7 +379,7 @@ router.post("/verify-phone", async (req: Request, res: Response): Promise<void> 
   const user = userRows[0];
 
   const { rows } = await pool!.query(
-    `SELECT * FROM phone_verification_codes WHERE user_id = $1 AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1`,
+    `SELECT * FROM phone_verification_codes WHERE user_id = $1 AND purpose = 'verify' AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1`,
     [user.id]
   );
   if (!rows.length) { res.status(400).json({ success: false, error: "Invalid or expired code. Request a new one." }); return; }
@@ -416,6 +416,70 @@ router.post("/resend-phone-otp", resendLimiter, async (req: Request, res: Respon
   const user = rows[0];
   await sendPhoneVerification(user.id, user.phone);
   res.json({ success: true });
+});
+
+// ── Sign in with a code sent to your phone (WhatsApp, or SMS) ──────────
+// Never says whether a number has an account: the reply is the same either
+// way. Codes: 6 digits, hashed, 10 minutes, 5 wrong tries, 60 s between
+// sends, 5 sends an hour per account (plus the /api/auth rate limits).
+
+async function userByPhone(phoneInput: unknown) {
+  const { normalizePhone, phoneVariants } = await import("../services/otpDelivery");
+  const digits = normalizePhone(phoneInput);
+  if (!digits) return { digits: null, user: null };
+  const v = phoneVariants(digits);
+  const { rows } = await pool!.query(
+    `SELECT * FROM users WHERE phone IN (${v.map((_, i) => "$" + (i + 1)).join(",")}) AND account_status <> 'removed' AND role <> 'super_admin' ORDER BY last_login DESC NULLS LAST LIMIT 1`, v);
+  return { digits, user: rows[0] ?? null };
+}
+
+router.get("/otp/available", async (_req: Request, res: Response): Promise<void> => {
+  const { isPhoneOtpAvailable, isWhatsAppOtpReady } = await import("../services/otpDelivery");
+  res.json({ success: true, data: { available: isPhoneOtpAvailable(), channel: isWhatsAppOtpReady() ? "whatsapp" : isPhoneOtpAvailable() ? "sms" : null } });
+});
+
+// Code requests: 5 a minute per address by default (each one can send a paid WhatsApp message).
+const otpLimiter = rateLimit({ windowMs: 60_000, max: Number(process.env.OTP_REQUESTS_PER_MINUTE ?? 5), standardHeaders: true, legacyHeaders: false });
+
+router.post("/otp/request", otpLimiter, async (req: Request, res: Response): Promise<void> => {
+  const { isPhoneOtpAvailable } = await import("../services/otpDelivery");
+  if (!isPhoneOtpAvailable()) { res.status(503).json({ success: false, error: "Sign-in codes aren't available right now. Please sign in with your password." }); return; }
+  const { digits, user } = await userByPhone(req.body?.phone);
+  if (!digits) { res.status(400).json({ success: false, error: "Please enter a valid phone number, e.g. 082 123 4567." }); return; }
+  const generic = { success: true, message: "If this number belongs to a Ballylife account, we've sent a 6-digit code to it." };
+  if (!user) { res.json(generic); return; }
+  const { rows: recent } = await pool!.query(
+    `SELECT created_at FROM phone_verification_codes WHERE user_id = $1 AND purpose = 'login' AND created_at > now() - interval '1 hour' ORDER BY created_at DESC`, [user.id]);
+  const tooSoon = recent[0] && Date.now() - new Date(recent[0].created_at).getTime() < 60_000;
+  if (!tooSoon && recent.length < 5) {
+    const { sendPhoneCode } = await import("../services/accountVerification");
+    await sendPhoneCode(user.id, digits, "login");
+  }
+  res.json(generic);
+});
+
+router.post("/otp/verify", async (req: Request, res: Response): Promise<void> => {
+  const code = String(req.body?.code ?? "").replace(/\s/g, "");
+  const { user } = await userByPhone(req.body?.phone);
+  const wrong = () => res.status(400).json({ success: false, error: "That code is wrong or has expired. Check it, or ask for a new one." });
+  if (!user || !/^\d{6}$/.test(code)) { wrong(); return; }
+  const { rows } = await pool!.query(
+    `SELECT * FROM phone_verification_codes WHERE user_id = $1 AND purpose = 'login' AND used_at IS NULL AND expires_at > now() ORDER BY created_at DESC LIMIT 1`, [user.id]);
+  const row = rows[0];
+  if (!row) { wrong(); return; }
+  if (row.attempts >= 5) { res.status(400).json({ success: false, error: "Too many incorrect attempts. Ask for a new code." }); return; }
+  if (crypto.createHash("sha256").update(code).digest("hex") !== row.code_hash) {
+    await pool!.query(`UPDATE phone_verification_codes SET attempts = attempts + 1 WHERE id = $1`, [row.id]);
+    wrong(); return;
+  }
+  await pool!.query(`UPDATE phone_verification_codes SET used_at = now() WHERE id = $1`, [row.id]);
+  // Receiving the code proves the number: count it as verified.
+  const status = computeAccountStatus(Boolean(user.email_verified), true, true);
+  await pool!.query(
+    `UPDATE users SET phone_verified = true, last_login = now(), account_status = CASE WHEN account_status = 'active' THEN 'active' ELSE $2 END WHERE id = $1`, [user.id, status]);
+  const { rows: fresh } = await pool!.query(`SELECT * FROM users WHERE id = $1`, [user.id]);
+  const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: fresh[0].token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  res.json({ success: true, data: { token, user: mapUser(fresh[0]) } });
 });
 
 // ── Who am I ────────────────────────────────────────────────────────────

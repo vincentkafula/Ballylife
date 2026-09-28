@@ -173,6 +173,7 @@ async function start() {
   startAliExpressWorker();
   startSocialWorker();
   startWhatsAppHousekeeping();
+  void import("./services/otpDelivery").then(m => m.startOtpReadinessCheck()).catch(() => undefined);
   logger.info("http.async_errors_caught", { routes: wrappedRoutes });
   app.listen(PORT, () => {
     console.log(`Ballylife backend listening on port ${PORT}`);

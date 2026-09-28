@@ -30,7 +30,7 @@ function loadScriptOnce(src: string, id: string): Promise<void> {
   });
 }
 
-type Tab = "signin" | "customer" | "seller" | "forgot" | "reset" | "verify";
+type Tab = "signin" | "customer" | "seller" | "forgot" | "reset" | "verify" | "code";
 
 interface Props {
   onClose: () => void;
@@ -195,6 +195,45 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // "Sign in with a WhatsApp code" -- offered only when the server can send codes.
+  const [otpChannel, setOtpChannel] = useState<"whatsapp" | "sms" | null>(null);
+  const [codePhone, setCodePhone] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [codeValue, setCodeValue] = useState("");
+  const [codeCooldown, setCodeCooldown] = useState(0);
+  useEffect(() => {
+    mktAuth.otpAvailable().then(r => setOtpChannel(r.success && r.data.available ? r.data.channel : null)).catch(() => setOtpChannel(null));
+  }, []);
+  useEffect(() => {
+    if (codeCooldown <= 0) return;
+    const t = setTimeout(() => setCodeCooldown(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [codeCooldown]);
+  const channelName = otpChannel === "sms" ? "SMS" : "WhatsApp";
+
+  const handleSendCode = async () => {
+    setError(null); setMessage(null);
+    if (codePhone.replace(/\D/g, "").length < 9) { setError("Enter your mobile number, e.g. 082 123 4567."); return; }
+    setLoading(true);
+    try {
+      const r = await mktAuth.otpRequest(codePhone);
+      if (!r.success) { setError(r.error ?? "Couldn't send a code. Please try again."); return; }
+      setCodeSent(true); setCodeCooldown(60);
+      setMessage(`If this number belongs to a Ballylife account, a 6-digit code is on its way by ${channelName}.`);
+    } catch { setError("Couldn't send a code. Please try again."); }
+    finally { setLoading(false); }
+  };
+
+  const handleCodeSignIn = async () => {
+    setError(null);
+    if (!/^\d{6}$/.test(codeValue.trim())) { setError("Enter the 6-digit code."); return; }
+    setLoading(true);
+    const r = await mktAuth.otpVerify(codePhone, codeValue.trim());
+    setLoading(false);
+    if (r.success && r.user) { onAuthenticated(r.user, JSON.parse(localStorage.getItem("mkt_seller") ?? "null"), JSON.parse(localStorage.getItem("mkt_supplier") ?? "null"), JSON.parse(localStorage.getItem("mkt_authority") ?? "null")); return; }
+    setError(r.error ?? "That code is wrong or has expired.");
+  };
+
   const handleSignIn = async () => {
     setError(null);
     if (!siUsername || !siPassword) { setError("Enter your username and password."); return; }
@@ -244,7 +283,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     setLoading(true);
     await mktAuth.resendPhoneOtp(vUsername);
     setLoading(false);
-    setMessage("A new code has been sent to your phone.");
+    setMessage(`A new code has been sent to your phone${otpChannel === "whatsapp" ? " on WhatsApp" : ""}.`);
     setVResendCooldown(30);
   };
 
@@ -344,10 +383,43 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
                 style={{ background: "#D4A54A" }}>
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><User className="w-4 h-4" /> Sign In</>}
               </button>
+              {otpChannel && (
+                <button onClick={() => { setTab("code"); setError(null); setMessage(null); setCodeSent(false); setCodeValue(""); }}
+                  className="w-full mt-2 py-2.5 rounded-lg font-semibold text-sm border border-[#25D366] text-[#128C4B] hover:bg-[#25D366]/10 flex items-center justify-center gap-2">
+                  {otpChannel === "whatsapp" ? "💬 Sign in with a WhatsApp code" : "📱 Sign in with an SMS code"}
+                </button>
+              )}
               <button onClick={() => { setTab("forgot"); setError(null); setMessage(null); }} className="block w-full text-center text-[11px] text-gray-500 hover:text-gray-800 mt-3 hover:underline">
                 Forgot your password?
               </button>
               <p className="text-[11px] text-gray-400 mt-2 text-center">Don't have an account? Use the tabs above to register.</p>
+            </div>
+          )}
+
+          {tab === "code" && (
+            <div>
+              <p className="text-xs text-gray-500 mb-3">Enter the mobile number on your Ballylife account. We'll send a 6-digit code by {channelName} — no password needed.</p>
+              <Field label="Mobile number" value={codePhone} onChange={v => { setCodePhone(v); setCodeSent(false); }} type="tel" />
+              {!codeSent ? (
+                <button onClick={handleSendCode} disabled={loading}
+                  className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: "#D4A54A" }}>
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : `Send code by ${channelName}`}
+                </button>
+              ) : (
+                <>
+                  <Field label="6-digit code" value={codeValue} onChange={v => setCodeValue(v.replace(/\D/g, "").slice(0, 6))} />
+                  <button onClick={handleCodeSignIn} disabled={loading}
+                    className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: "#D4A54A" }}>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><User className="w-4 h-4" /> Sign In</>}
+                  </button>
+                  <button onClick={handleSendCode} disabled={loading || codeCooldown > 0} className="block w-full text-center text-[11px] text-gray-500 hover:text-gray-800 mt-3 hover:underline disabled:no-underline disabled:opacity-60">
+                    {codeCooldown > 0 ? `Send a new code in ${codeCooldown}s` : "Send a new code"}
+                  </button>
+                </>
+              )}
+              <button onClick={() => { setTab("signin"); setError(null); setMessage(null); }} className="block w-full text-center text-[11px] text-gray-500 hover:text-gray-800 mt-3 hover:underline">
+                Sign in with a password instead
+              </button>
             </div>
           )}
 

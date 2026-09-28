@@ -588,7 +588,9 @@ describe("Phase 4: deals, my details, customer photos, templates and profile", (
     const newArrival = templatePosts.find(t => t.name === "new_arrival");
     expect(newArrival).toMatchObject({ category: "MARKETING", language: "en" });
     expect(newArrival.components[0].text.match(/\{\{\d\}\}/g)).toHaveLength(3); // first name, product, price
-    for (const t of templatePosts) {
+    const authTemplate = templatePosts.find(t => t.name === "ballylife_verification_code");
+    expect(authTemplate).toMatchObject({ category: "AUTHENTICATION", components: [{ type: "BODY", add_security_recommendation: true }, { type: "FOOTER", code_expiration_minutes: 10 }, { type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE" }] }] });
+    for (const t of templatePosts.filter(x => x.category !== "AUTHENTICATION")) { // Meta writes authentication texts itself
       const body: string = t.components[0].text;
       expect(body.trim().startsWith("{{")).toBe(false); // Meta rejects templates that start or end with a placeholder
       expect(body.trim().endsWith("}}")).toBe(false);
