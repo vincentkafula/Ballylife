@@ -38,7 +38,10 @@ async function graph(path: string, body: unknown): Promise<any> {
     signal: AbortSignal.timeout(30_000),
   });
   const j = await res.json().catch(() => ({})) as any;
-  if (!res.ok || j?.error) throw new WhatsAppError(`WhatsApp: ${j?.error?.error_data?.details || j?.error?.message || `HTTP ${res.status}`}`, j?.error?.code);
+  if (!res.ok || j?.error) {
+    const e = j?.error ?? {};
+    throw new WhatsAppError(`WhatsApp (code ${e.code ?? res.status}${e.error_subcode ? `/${e.error_subcode}` : ""}): ${e.error_data?.details || e.message || `HTTP ${res.status}`}`, e.code);
+  }
   return j;
 }
 
@@ -137,6 +140,11 @@ export async function checkWhatsAppSetup(): Promise<void> {
   try {
     const num = await get(`/${process.env.WHATSAPP_PHONE_NUMBER_ID!.trim()}?fields=display_phone_number,verified_name,quality_rating,code_verification_status`);
     logger.info("whatsapp.number_ok", { number: num.display_phone_number, name: num.verified_name, quality: num.quality_rating });
+    try {
+      const perms = await get("/me/permissions");
+      const granted = ((perms.data ?? []) as any[]).filter(x => x.status === "granted").map(x => String(x.permission));
+      logger.info("whatsapp.token_permissions", { granted, missing: ["whatsapp_business_messaging", "whatsapp_business_management"].filter(n => !granted.includes(n)) });
+    } catch (err) { logger.warn("whatsapp.permissions_check_failed", { error: err instanceof Error ? err.message : String(err) }); }
   } catch (err) {
     logger.error("whatsapp.number_check_failed", { error: err instanceof Error ? err.message : String(err) });
     return;
