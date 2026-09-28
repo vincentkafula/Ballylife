@@ -172,6 +172,7 @@ export async function whatsappHousekeeping(): Promise<void> {
 
 export function startWhatsAppHousekeeping(): NodeJS.Timeout | null {
   if (!pool) return null;
+  void import("../services/whatsapp/client").then(m => m.checkWhatsAppSetup()).catch(() => undefined);
   const run = () => void whatsappHousekeeping().catch(err => logger.error("whatsapp.housekeeping_failed", { error: String(err) }));
   setTimeout(run, 60_000).unref();
   const t = setInterval(run, 24 * 3600_000);

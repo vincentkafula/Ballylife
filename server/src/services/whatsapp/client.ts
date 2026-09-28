@@ -119,6 +119,41 @@ export async function markRead(wamid: string): Promise<void> {
   catch { /* not important */ }
 }
 
+/**
+ * Start-up check: the token works, the phone number is reachable, and the
+ * WhatsApp Business Account is subscribed to this app -- without that last
+ * one Meta never delivers incoming messages to the webhook. Subscribes it
+ * if needed. Logs what it finds (never the token).
+ */
+export async function checkWhatsAppSetup(): Promise<void> {
+  if (!isWhatsAppConfigured()) return;
+  const auth = { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN!.trim()}` };
+  const get = async (path: string) => {
+    const r = await fetch(`${GRAPH()}${path}`, { headers: auth, signal: AbortSignal.timeout(20_000) });
+    const j = await r.json().catch(() => ({})) as any;
+    if (!r.ok || j?.error) throw new WhatsAppError(j?.error?.message ?? `HTTP ${r.status}`, j?.error?.code);
+    return j;
+  };
+  try {
+    const num = await get(`/${process.env.WHATSAPP_PHONE_NUMBER_ID!.trim()}?fields=display_phone_number,verified_name,quality_rating,code_verification_status`);
+    logger.info("whatsapp.number_ok", { number: num.display_phone_number, name: num.verified_name, quality: num.quality_rating });
+  } catch (err) {
+    logger.error("whatsapp.number_check_failed", { error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  const waba = process.env.WHATSAPP_WABA_ID?.trim();
+  if (!waba) return;
+  try {
+    const subs = await get(`/${waba}/subscribed_apps`);
+    const apps = ((subs.data ?? []) as any[]).map(a => a.whatsapp_business_api_data?.name ?? a.whatsapp_business_api_data?.id ?? "?");
+    if (apps.length) { logger.info("whatsapp.waba_subscribed", { apps }); return; }
+    await graph(`/${waba}/subscribed_apps`, {});
+    logger.info("whatsapp.waba_subscribed_now");
+  } catch (err) {
+    logger.error("whatsapp.waba_subscription_failed", { error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 /** Downloads a file the user sent (photo / PDF). */
 export async function downloadMedia(mediaId: string): Promise<{ bytes: Buffer; mimeType: string; size: number }> {
   const auth = { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN!.trim()}` };
