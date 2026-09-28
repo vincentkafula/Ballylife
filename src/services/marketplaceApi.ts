@@ -591,6 +591,16 @@ export const mktSocial = {
   retry: (id: string) => api<SocOk<unknown>>(`/api/marketplace/admin/social/posts/${id}/retry`, { method: "POST" }),
 };
 
+// ── WhatsApp Inbox (staff) ─────────────────────────────────────────────────
+type WaOk<T> = { success: boolean; data: T; error?: string };
+export const mktWhatsApp = {
+  inbox: () => api<WaOk<{ conversations: Record<string, any>[]; ai: Record<string, any> }>>("/api/marketplace/admin/whatsapp/inbox"),
+  thread: (phone: string) => api<WaOk<Record<string, any>>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}`),
+  reply: (phone: string, text: string) => api<WaOk<unknown>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}/reply`, { method: "POST", body: JSON.stringify({ text }) }),
+  take: (phone: string) => api<WaOk<unknown>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}/take`, { method: "POST" }),
+  resolve: (phone: string) => api<WaOk<unknown>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}/resolve`, { method: "POST" }),
+};
+
 // ── Super admin ───────────────────────────────────────────────────────────
 export const mktSuperAdmin = {
   managers: () => api<{ success: boolean; data: unknown[]; error?: string }>("/api/marketplace/admin/managers"),

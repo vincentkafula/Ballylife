@@ -17,7 +17,9 @@ import { sendText, sendButtons, sendList } from "./client";
 import { touchContact, updateContact, loadConversation, saveConversation, setInboundBody, type Conversation } from "./store";
 import { customerFlow, sendSignInLink } from "./flows/customer";
 import { sellerFlow } from "./flows/seller";
-import { questionFlow } from "./flows/question";
+import { questionFlow, humanFlow } from "./flows/question";
+import { answerQuestion, isAssistantConfigured } from "./assistant";
+import { endHandoff } from "./handoff";
 import { shopFlow } from "./flows/shop";
 import { sellerProductsFlow, addProductFlow, activeSellerFor } from "./flows/sellerTools";
 import { sendMyOrders, sendOrderDetail, sendSellerOrders } from "./orders";
@@ -26,7 +28,7 @@ import { deleteDocument } from "../documentStore";
 import type { Ctx, Flow, Input, Step } from "./types";
 
 const FLOWS: Record<string, Flow> = {
-  customer: customerFlow, seller: sellerFlow, question: questionFlow,
+  customer: customerFlow, seller: sellerFlow, question: questionFlow, human: humanFlow,
   shop: shopFlow, seller_products: sellerProductsFlow, add_product: addProductFlow,
 };
 /** Flows you can jump out of with "shop" / "orders" (browsing, not filling in a form). */
@@ -82,7 +84,8 @@ export async function sendMainMenu(ctx: Ctx, paused: boolean): Promise<void> {
         { id: "menu:shop", title: "🛍️ Shop products", description: "Search Ballylife" },
         { id: "menu:orders", title: "📦 My orders", description: "Track your orders" },
         { id: "menu:signin", title: "🔐 Sign-in link", description: seller?.status === "active" ? "Open your seller dashboard" : "Sign in on ballylife.com" },
-        { id: "menu:question", title: "💬 Talk to a person", description: "Ask our team a question" },
+        { id: "menu:question", title: "❓ Ask a question", description: "Delivery, returns, products…" },
+        { id: "menu:human", title: "👩‍💼 Talk to a person", description: "Our team replies here" },
       ],
     }]);
     return;
@@ -215,6 +218,7 @@ async function handleMenuChoice(id: string, ctx: Ctx, conv: Conversation): Promi
     case "menu:customer": await startFlow(ctx, conv, "customer"); return true;
     case "menu:seller": await startFlow(ctx, conv, "seller"); return true;
     case "menu:question": await startFlow(ctx, conv, "question"); return true;
+    case "menu:human": await startFlow(ctx, conv, "human"); return true;
     case "menu:continue": await runCommand("continue", ctx, conv); return true;
     case "menu:shop": await startFlow(ctx, conv, "shop"); return true;
     case "menu:orders":
@@ -350,6 +354,17 @@ async function handleOne({ phone, profileName, wamid, input }: { phone: string; 
   const cmd = commandOf(input, Boolean(conv.flow), conv.flow);
   if (contact.opted_out && cmd !== "start") return; // they asked us to stop
 
+  // A person has this chat: stay quiet (the message is in the inbox), unless
+  // they ask for the bot back with "menu", or opt out.
+  if (contact.handoff && cmd !== "stop" && cmd !== "start") {
+    if (cmd === "menu") {
+      await endHandoff(phone, "customer");
+      await saveConversation(phone, emptyConversation());
+      await sendMainMenu(ctx, false);
+    }
+    return;
+  }
+
   try {
     if (cmd) { await runCommand(cmd, ctx, conv); return; }
     if (conv.flow && NAV_FLOWS.has(conv.flow) && input.kind === "choice" && (input.id.startsWith("menu:") || input.id.startsWith("order:"))) {
@@ -358,6 +373,8 @@ async function handleOne({ phone, profileName, wamid, input }: { phone: string; 
     }
     if (conv.flow) { await runStep(input, ctx, conv); return; }
     if (input.kind === "choice" && await handleMenuChoice(input.id, ctx, conv)) return;
+    if (input.kind === "text" && input.text.trim().length >= 3 && isAssistantConfigured()
+        && await answerQuestion(phone, ctx.userId, input.text, { wamid, profileName })) return;
     await sendMainMenu(ctx, Boolean(conv.data.paused));
   } catch (err) {
     logger.error("whatsapp.step_failed", { flow: conv.flow, step: conv.step, error: err instanceof Error ? err.message : String(err) });

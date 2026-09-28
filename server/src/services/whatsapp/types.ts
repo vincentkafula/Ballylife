@@ -35,7 +35,7 @@ export interface Step {
 }
 
 export interface Flow {
-  id: "customer" | "seller" | "question" | "shop" | "seller_products" | "add_product";
+  id: "customer" | "seller" | "question" | "shop" | "seller_products" | "add_product" | "human";
   steps: Step[];
   /** The review/confirm step "edit" returns to. */
   confirmStep?: string;

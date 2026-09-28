@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   BarChart3, Users, Store, Package, ShoppingBag, DollarSign, CheckCircle, XCircle,
-  Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus, Search, Send,
+  Download, Loader2, Clock, Shield, Percent, FileText, Globe2, Warehouse, Truck, Plus, Search, Send, MessageCircle,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob, type CjSourcingJob } from "../services/marketplaceApi";
@@ -14,9 +14,10 @@ import { Sourcing1688AdminPanel } from "./Sourcing1688Admin";
 import { AliExpressAdminPanel } from "./AliExpressAdmin";
 import { SocialAdminPanel } from "./SocialAdmin";
 import { SellerApplicationDetails } from "./SellerApplicationDetails";
+import { WhatsAppInboxPanel } from "./WhatsAppInbox";
 
 type R = Record<string, unknown>;
-type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "aliexpress" | "social" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
+type Tab = "overview" | "users" | "sellerApproval" | "productApproval" | "orders" | "fulfilment" | "aliexpress" | "social" | "whatsapp" | "sourcing1688" | "japanParts" | "programmes" | "supplyChain" | "financial" | "reports" | "security";
 
 // Maps a specific granted Marketplace Management position (from the job
 // application flow) to which of the 8 real tabs this dashboard already
@@ -52,7 +53,7 @@ const TIER_TABS: Record<MarketTier, Tab[]> = {
   marketplace_ops: ["overview", "sellerApproval", "productApproval"],
   fulfillment: ["overview", "orders", "fulfilment", "supplyChain"],
   finance_security: ["overview", "financial", "programmes", "security", "reports"],
-  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "aliexpress", "social", "sourcing1688", "japanParts", "programmes", "supplyChain", "financial", "reports", "security"],
+  admin: ["overview", "users", "sellerApproval", "productApproval", "orders", "fulfilment", "aliexpress", "social", "whatsapp", "sourcing1688", "japanParts", "programmes", "supplyChain", "financial", "reports", "security"],
 };
 
 function positionToMarketTier(position: string | null): MarketTier {
@@ -172,6 +173,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
     { id: "financial", label: "Financial", icon: <DollarSign className="w-4 h-4" /> },
     { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
     { id: "aliexpress", label: "AliExpress", icon: <ShoppingBag className="w-4 h-4" /> },
+    { id: "whatsapp", label: "WhatsApp Inbox", icon: <MessageCircle className="w-4 h-4" /> },
     { id: "social", label: "Social Media", icon: <Send className="w-4 h-4" /> },
     { id: "sourcing1688", label: "1688 Research", icon: <Search className="w-4 h-4" /> },
     { id: "japanParts", label: "Japan Parts", icon: <Package className="w-4 h-4" /> },
@@ -325,6 +327,7 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
 
             {tab === "aliexpress" && <AliExpressAdminPanel />}
             {tab === "social" && <SocialAdminPanel />}
+            {tab === "whatsapp" && <WhatsAppInboxPanel />}
             {tab === "sourcing1688" && <Sourcing1688AdminPanel />}
             {tab === "japanParts" && <JapanPartsAdminPanel />}
             {tab === "programmes" && <ProgrammesAdminPanel />}

@@ -57,7 +57,13 @@ let E: typeof import("./engine");
 let app: Express;
 let n = 0;
 const PHONE = "27821234567";
-const say = (input: any, phone = PHONE) => E.handleIncoming({ phone, profileName: "Thandi", wamid: `wamid.in.${++n}`, input });
+// Same as the webhook: record the incoming message, then handle it.
+const say = async (input: any, phone = PHONE) => {
+  const wamid = `wamid.in.${++n}`;
+  const { recordInbound } = await import("./store");
+  await recordInbound(wamid, phone, input.kind);
+  return E.handleIncoming({ phone, profileName: "Thandi", wamid, input });
+};
 const text = (t: string, phone = PHONE) => say({ kind: "text", text: t }, phone);
 const tap = (id: string, title = id, phone = PHONE) => say({ kind: "choice", id, title }, phone);
 const last = () => sent[sent.length - 1];
@@ -368,5 +374,132 @@ describe("Phase 2: shopping, orders and seller tools", () => {
     const { magicLoginUrl } = await import("../magicLink");
     expect(magicLoginUrl("abc", "/checkout")).toMatch(/wa-login\?t=abc&next=%2Fcheckout$/);
     expect(magicLoginUrl("abc", "https://evil.example")).toMatch(/wa-login\?t=abc$/);
+  });
+});
+
+// ---------------------------------------------------------------- Phase 3
+
+describe("Phase 3: AI assistant, handoff and the staff inbox", () => {
+  const STAFF = "27829990000";
+  const requests: any[] = [];
+  let script: Array<(params: any) => any> = [];
+  const reply = (content: any[], stop_reason = "end_turn") => ({
+    content, stop_reason, stop_details: null,
+    usage: { input_tokens: 900, output_tokens: 120, cache_read_input_tokens: 1500, cache_creation_input_tokens: 0 },
+  });
+  let adminToken = "";
+
+  beforeAll(async () => {
+    const A = await import("./assistant");
+    A._setAnthropicClientForTests({ beta: { messages: { create: async (params: any) => {
+      requests.push(JSON.parse(JSON.stringify(params)));
+      const next = script.shift();
+      if (!next) throw new Error("unexpected Claude call");
+      return next(params);
+    } } } });
+    process.env.ADMIN_ALERT_EMAIL = "team@ballylife.test";
+    process.env.WHATSAPP_STAFF_NUMBER = `+${STAFF}`;
+    const bcrypt = (await import("bcryptjs")).default;
+    await pool.query(`INSERT INTO users (username, password_hash, role, name, email) VALUES ('boss', $1, 'marketplace_admin', 'Boss', 'boss@ballylife.test')`, [await bcrypt.hash("Pass-12345", 4)]);
+    adminToken = (await request(app).post("/api/auth/login").send({ username: "boss", password: "Pass-12345" })).body.data.token;
+  });
+  beforeEach(() => { requests.length = 0; script = []; process.env.ANTHROPIC_API_KEY = "test-key"; });
+
+  it("answers a free-text question using the live catalogue, with safe request settings", async () => {
+    script = [
+      () => reply([{ type: "tool_use", id: "t1", name: "search_products", input: { query: "earbuds" } }], "tool_use"),
+      () => reply([{ type: "text", text: "Yes! *Wireless Earbuds Pro* are R349 with delivery included." }]),
+    ];
+    await text("do you sell earbuds and how long is delivery");
+    expect(lastText()).toMatch(/Wireless Earbuds Pro\* are R349/);
+    const first = requests[0];
+    expect(first).toMatchObject({ model: "claude-opus-5", fallbacks: "default", betas: ["server-side-fallback-2026-07-01"], output_config: { effort: "low" } });
+    expect(first.system[0].cache_control).toEqual({ type: "ephemeral" });
+    const toolResult = requests[1].messages.at(-1).content[0];
+    expect(toolResult).toMatchObject({ type: "tool_result", tool_use_id: "t1" });
+    expect(toolResult.content).toMatch(/Wireless Earbuds Pro[\s\S]*R349[\s\S]*3–5 business days[\s\S]*\/product\//); // no delivery profile = local seller times
+    const { rows } = await pool.query(`SELECT sent_by FROM wa_messages WHERE phone = $1 AND direction = 'out' ORDER BY created_at DESC LIMIT 1`, [PHONE]);
+    expect(rows[0].sent_by).toBe("ai");
+    const usage = (await pool.query(`SELECT answers, api_calls FROM ai_usage_daily`)).rows[0];
+    expect(usage).toMatchObject({ answers: 1, api_calls: 2 });
+  });
+
+  it("order lookups only ever see the orders of the account linked to this number", async () => {
+    script = [
+      () => reply([{ type: "tool_use", id: "t2", name: "get_order", input: { order_number: "bl-1002" } }], "tool_use"),
+      () => reply([{ type: "text", text: "Order BL-1002 is on its way." }]),
+    ];
+    await text("where is my order BL-1002");
+    expect(requests[1].messages.at(-1).content[0].content).toMatch(/BL-1002[\s\S]*On its way[\s\S]*TRK9/);
+    // A number without an account gets nothing.
+    script = [
+      () => reply([{ type: "tool_use", id: "t3", name: "get_order", input: { order_number: "BL-1002" } }], "tool_use"),
+      () => reply([{ type: "text", text: "I can't see that order." }]),
+    ];
+    await text("where is order BL-1002", "27875550000");
+    expect(requests[3].messages.at(-1).content[0].content).toMatch(/Not linked/);
+  });
+
+  it("hands over to a person: alerts staff, the bot goes quiet, staff reply from the inbox, then resolve", async () => {
+    script = [() => reply([{ type: "tool_use", id: "t4", name: "handoff_to_human", input: { reason: "Wants a refund for a broken kettle" } }], "tool_use")];
+    await text("my kettle arrived broken I want my money back");
+    const contact = (await pool.query(`SELECT handoff, handoff_reason FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0];
+    expect(contact).toMatchObject({ handoff: true, handoff_reason: "Wants a refund for a broken kettle" });
+    expect(sent.some(s => s.to === PHONE && /passed this chat to the Ballylife team/.test(s.text ?? ""))).toBe(true);
+    expect(emails.some(e => e.to === "team@ballylife.test" && /broken kettle/.test(e.html))).toBe(true);
+    expect(sent.some(s => s.to === STAFF)).toBe(true);
+
+    sent = [];
+    await text("hello? anyone there");
+    expect(sent).toHaveLength(0); // the bot stays quiet while a person has the chat
+    expect(requests).toHaveLength(1);
+
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const inbox = (await request(app).get("/api/marketplace/admin/whatsapp/inbox").set(auth)).body.data;
+    const row = inbox.conversations.find((c: any) => c.phone === PHONE);
+    expect(row).toMatchObject({ handoff: true, windowOpen: true });
+    expect(row.unread).toBeGreaterThan(0);
+    expect(inbox.ai.enabled).toBe(true);
+
+    const thread = (await request(app).get(`/api/marketplace/admin/whatsapp/inbox/${PHONE}`).set(auth)).body.data;
+    expect(thread.messages.some((m: any) => m.text === "hello? anyone there")).toBe(true);
+
+    const r = await request(app).post(`/api/marketplace/admin/whatsapp/inbox/${PHONE}/reply`).set(auth).send({ text: "Hi Thandi, sorry about that — we'll collect it tomorrow." });
+    expect(r.body.success).toBe(true);
+    expect(lastText()).toMatch(/we'll collect it tomorrow/);
+    const { rows } = await pool.query(`SELECT sent_by FROM wa_messages WHERE phone = $1 AND direction = 'out' ORDER BY created_at DESC LIMIT 1`, [PHONE]);
+    expect(rows[0].sent_by).toBe("boss");
+
+    await request(app).post(`/api/marketplace/admin/whatsapp/inbox/${PHONE}/resolve`).set(auth);
+    expect((await pool.query(`SELECT handoff FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0].handoff).toBe(false);
+    expect(lastText()).toMatch(/marked your question as sorted/);
+  });
+
+  it("the customer can type menu to get the bot back", async () => {
+    await request(app).post(`/api/marketplace/admin/whatsapp/inbox/${PHONE}/take`).set({ Authorization: `Bearer ${adminToken}` });
+    expect((await pool.query(`SELECT handoff FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0].handoff).toBe(true);
+    await text("menu");
+    expect((await pool.query(`SELECT handoff FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0].handoff).toBe(false);
+    expect(last().rows).toContain("menu:human");
+  });
+
+  it("the inbox is for managers only", async () => {
+    expect((await request(app).get("/api/marketplace/admin/whatsapp/inbox")).status).toBe(401);
+  });
+
+  it("a declined request goes to a person instead of failing", async () => {
+    const P = "27876660000";
+    script = [() => ({ ...reply([]), stop_reason: "refusal", stop_details: { category: "cyber" } })];
+    await text("something the model declines", P);
+    expect((await pool.query(`SELECT handoff FROM wa_contacts WHERE phone = $1`, [P])).rows[0].handoff).toBe(true);
+  });
+
+  it("without an API key, questions go straight to the team", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const P = "27877770000";
+    await tap("menu:question", "Just a question", P);
+    await text("Do you deliver to Polokwane?", P);
+    expect(requests).toHaveLength(0);
+    expect((await pool.query(`SELECT handoff FROM wa_contacts WHERE phone = $1`, [P])).rows[0].handoff).toBe(true);
   });
 });

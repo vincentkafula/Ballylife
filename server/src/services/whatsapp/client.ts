@@ -45,31 +45,31 @@ async function graph(path: string, body: unknown): Promise<any> {
   return j;
 }
 
-async function logOut(phone: string, kind: string, body: string, wamid: string | null, error: string | null) {
+async function logOut(phone: string, kind: string, body: string, wamid: string | null, error: string | null, sentBy = "bot") {
   try {
-    await pool!.query(`INSERT INTO wa_messages (wamid, phone, direction, kind, body, status, error) VALUES ($1, $2, 'out', $3, $4, $5, $6)`,
-      [wamid, phone, kind, body.slice(0, 4000), error ? "failed" : "sent", error]);
+    await pool!.query(`INSERT INTO wa_messages (wamid, phone, direction, kind, body, status, error, sent_by) VALUES ($1, $2, 'out', $3, $4, $5, $6, $7)`,
+      [wamid, phone, kind, body.slice(0, 4000), error ? "failed" : "sent", error, sentBy]);
   } catch (err) { logger.warn("whatsapp.log_failed", { error: String(err) }); }
 }
 
-async function send(phone: string, kind: string, logBody: string, payload: Record<string, unknown>): Promise<string | null> {
-  if (!isWhatsAppConfigured()) { logger.warn("whatsapp.not_configured", { kind }); await logOut(phone, kind, logBody, null, "not configured"); return null; }
+async function send(phone: string, kind: string, logBody: string, payload: Record<string, unknown>, sentBy = "bot"): Promise<string | null> {
+  if (!isWhatsAppConfigured()) { logger.warn("whatsapp.not_configured", { kind }); await logOut(phone, kind, logBody, null, "not configured", sentBy); return null; }
   try {
     const r = await graph(`/${process.env.WHATSAPP_PHONE_NUMBER_ID!.trim()}/messages`, { messaging_product: "whatsapp", recipient_type: "individual", to: phone, ...payload });
     const wamid = r?.messages?.[0]?.id ?? null;
-    await logOut(phone, kind, logBody, wamid, null);
+    await logOut(phone, kind, logBody, wamid, null, sentBy);
     return wamid;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error("whatsapp.send_failed", { kind, error: message });
-    await logOut(phone, kind, logBody, null, message);
-    if (err instanceof WhatsAppError && kind === "template") throw err; // callers fall back to plain text
+    await logOut(phone, kind, logBody, null, message, sentBy);
+    if (err instanceof WhatsAppError && (kind === "template" || sentBy !== "bot")) throw err; // callers (templates, staff replies) need to know // callers fall back to plain text
     return null;
   }
 }
 
-export function sendText(phone: string, text: string, opts: { previewUrl?: boolean; logAs?: string } = {}) {
-  return send(phone, "text", opts.logAs ?? text, { type: "text", text: { body: text.slice(0, 4096), preview_url: Boolean(opts.previewUrl) } });
+export function sendText(phone: string, text: string, opts: { previewUrl?: boolean; logAs?: string; sentBy?: string } = {}) {
+  return send(phone, "text", opts.logAs ?? text, { type: "text", text: { body: text.slice(0, 4096), preview_url: Boolean(opts.previewUrl) } }, opts.sentBy);
 }
 
 /** A photo (fetched by WhatsApp from a public https URL) with a caption. */

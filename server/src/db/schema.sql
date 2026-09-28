@@ -1265,3 +1265,19 @@ CREATE TABLE IF NOT EXISTS wa_order_notifications (
   notified_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (order_id, audience)
 );
+
+-- WhatsApp Phase 3: human handoff inbox + AI assistant usage.
+ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS handoff_reason TEXT;
+ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS staff_seen_at TIMESTAMPTZ;   -- inbox "unread" marker
+ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS sent_by TEXT;                -- 'bot' | 'ai' | staff name (outbound)
+
+-- One row per day: how much the AI assistant was used (for the cost line in the inbox).
+CREATE TABLE IF NOT EXISTS ai_usage_daily (
+  day                 DATE PRIMARY KEY,
+  answers             INTEGER NOT NULL DEFAULT 0,
+  api_calls           INTEGER NOT NULL DEFAULT 0,
+  input_tokens        BIGINT NOT NULL DEFAULT 0,
+  output_tokens       BIGINT NOT NULL DEFAULT 0,
+  cache_read_tokens   BIGINT NOT NULL DEFAULT 0,
+  cache_write_tokens  BIGINT NOT NULL DEFAULT 0
+);

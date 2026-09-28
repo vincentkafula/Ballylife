@@ -25,6 +25,8 @@ import { sendSignInLink } from "../services/whatsapp/flows/customer";
 import { consumeMagicToken } from "../services/magicLink";
 import { computeAccountStatus } from "../services/accountVerification";
 import { getDocument, getProductPhoto } from "../services/documentStore";
+import { startHandoff, endHandoff, sendStaffReply, releaseStaleHandoffs } from "../services/whatsapp/handoff";
+import { estimateUsd, isAssistantConfigured } from "../services/whatsapp/assistant";
 import type { Input } from "../services/whatsapp/types";
 
 export const whatsappRouter: ReturnType<typeof Router> = Router();
@@ -166,6 +168,79 @@ whatsappAdminRouter.get("/admin/seller-documents/:docId", ...admin, async (req: 
   }
 });
 
+// ---------------------------------------------------------------- WhatsApp Inbox (staff)
+
+const phoneParam = (req: Request) => String(req.params.phone ?? "").replace(/\D/g, "");
+
+whatsappAdminRouter.get("/admin/whatsapp/inbox", ...admin, async (_req: Request, res: Response): Promise<void> => {
+  const { rows: contacts } = await pool!.query(
+    `SELECT c.phone, c.profile_name, c.handoff, c.handoff_reason, c.handoff_at, c.last_inbound_at, c.staff_seen_at, c.opted_out, u.name AS user_name
+       FROM wa_contacts c LEFT JOIN users u ON u.id = c.user_id
+      WHERE c.last_inbound_at IS NOT NULL
+      ORDER BY c.handoff DESC, c.last_inbound_at DESC LIMIT 60`);
+  const data = [];
+  for (const c of contacts) {
+    const { rows: last } = await pool!.query(`SELECT direction, body, sent_by, created_at FROM wa_messages WHERE phone = $1 AND body IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [c.phone]);
+    const { rows: unread } = await pool!.query(
+      `SELECT COUNT(*)::int AS n FROM wa_messages WHERE phone = $1 AND direction = 'in' AND created_at > $2`, [c.phone, c.staff_seen_at ?? new Date(0)]);
+    data.push({
+      phone: c.phone, name: c.user_name ?? c.profile_name ?? null, handoff: c.handoff, handoffReason: c.handoff_reason, handoffAt: c.handoff_at,
+      lastInboundAt: c.last_inbound_at, optedOut: c.opted_out,
+      windowOpen: Boolean(c.last_inbound_at && Date.now() - new Date(c.last_inbound_at).getTime() < 24 * 3600_000),
+      unread: c.handoff ? Number(unread[0]?.n ?? 0) : 0,
+      lastMessage: last[0] ? { direction: last[0].direction, text: String(last[0].body).slice(0, 120), sentBy: last[0].sent_by, at: last[0].created_at } : null,
+    });
+  }
+  const since = new Date(Date.now() - 30 * 24 * 3600_000).toISOString().slice(0, 10);
+  const { rows: usage } = await pool!.query(`SELECT * FROM ai_usage_daily WHERE day >= $1`, [since]);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayRow = usage.find((r: any) => new Date(r.day).toISOString().slice(0, 10) === todayKey);
+  res.json({ success: true, data: {
+    conversations: data,
+    ai: {
+      enabled: isAssistantConfigured(),
+      today: { answers: Number(todayRow?.answers ?? 0), usd: todayRow ? Math.round(estimateUsd(todayRow) * 100) / 100 : 0 },
+      last30Days: { answers: usage.reduce((n: number, r: any) => n + Number(r.answers), 0), usd: Math.round(usage.reduce((t: number, r: any) => t + estimateUsd(r), 0) * 100) / 100 },
+    },
+  } });
+});
+
+whatsappAdminRouter.get("/admin/whatsapp/inbox/:phone", ...admin, async (req: Request, res: Response): Promise<void> => {
+  const phone = phoneParam(req);
+  const { rows: contact } = await pool!.query(
+    `SELECT c.*, u.name AS user_name, u.email AS user_email FROM wa_contacts c LEFT JOIN users u ON u.id = c.user_id WHERE c.phone = $1`, [phone]);
+  if (!contact[0]) { res.status(404).json({ success: false, error: "Conversation not found" }); return; }
+  const { rows: msgs } = await pool!.query(
+    `SELECT id, direction, kind, body, sent_by, status, error, created_at FROM wa_messages WHERE phone = $1 AND body IS NOT NULL ORDER BY created_at DESC LIMIT 100`, [phone]);
+  await pool!.query(`UPDATE wa_contacts SET staff_seen_at = now() WHERE phone = $1`, [phone]);
+  const c = contact[0];
+  res.json({ success: true, data: {
+    phone, name: c.user_name ?? c.profile_name ?? null, email: c.user_email ?? null, linked: Boolean(c.user_id),
+    handoff: c.handoff, handoffReason: c.handoff_reason, optedOut: c.opted_out,
+    windowOpen: Boolean(c.last_inbound_at && Date.now() - new Date(c.last_inbound_at).getTime() < 24 * 3600_000),
+    messages: msgs.reverse().map((m: any) => ({ id: m.id, direction: m.direction, kind: m.kind, text: m.body, sentBy: m.sent_by, status: m.status, error: m.error, at: m.created_at })),
+  } });
+});
+
+whatsappAdminRouter.post("/admin/whatsapp/inbox/:phone/reply", ...admin, async (req: Request, res: Response): Promise<void> => {
+  const text = String(req.body?.text ?? "").trim();
+  if (!text) { res.status(400).json({ success: false, error: "Type a message first." }); return; }
+  const r = await sendStaffReply(phoneParam(req), text, req.user?.username ?? "staff");
+  if (!r.ok) { res.status(400).json({ success: false, error: r.error }); return; }
+  logger.info("whatsapp.staff_replied", { by: req.user?.userId ?? null });
+  res.json({ success: true });
+});
+
+whatsappAdminRouter.post("/admin/whatsapp/inbox/:phone/take", ...admin, async (req: Request, res: Response): Promise<void> => {
+  await startHandoff(phoneParam(req), `Taken over by ${req.user?.username ?? "staff"}`, { silent: true });
+  res.json({ success: true });
+});
+
+whatsappAdminRouter.post("/admin/whatsapp/inbox/:phone/resolve", ...admin, async (req: Request, res: Response): Promise<void> => {
+  await endHandoff(phoneParam(req), "staff");
+  res.json({ success: true });
+});
+
 // ---------------------------------------------------------------- housekeeping
 
 /** Daily POPIA clean-up: old message logs, abandoned conversations and their uploads. */
@@ -187,6 +262,8 @@ export function startWhatsAppHousekeeping(): NodeJS.Timeout | null {
   if (!pool) return null;
   void import("../services/whatsapp/client").then(m => m.checkWhatsAppSetup()).catch(() => undefined);
   void import("../services/whatsapp/orderAlerts").then(m => m.startOrderAlerts()).catch(() => undefined);
+  // Handed-off chats nobody answered for 48 hours go back to the bot.
+  setInterval(() => void releaseStaleHandoffs().catch(err => logger.error("whatsapp.release_handoffs_failed", { error: String(err) })), 3600_000).unref();
   const run = () => void whatsappHousekeeping().catch(err => logger.error("whatsapp.housekeeping_failed", { error: String(err) }));
   setTimeout(run, 60_000).unref();
   const t = setInterval(run, 24 * 3600_000);
