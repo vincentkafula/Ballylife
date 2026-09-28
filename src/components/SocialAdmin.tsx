@@ -67,6 +67,15 @@ export function SocialAdminPanel() {
     } catch (err) { toast.error(errMessage(err, "Couldn't share.")); }
     finally { setBusy(null); }
   };
+  // One-time sign-in: the platform sends the browser back to /admin?social=…&result=…
+  const connect = async (platform: string) => {
+    setBusy(`connect-${platform}`);
+    try {
+      const r = await mktSocial.connect(platform);
+      if (r.success) window.location.href = r.data.url; else toast.error(r.error ?? "Couldn't start the connection.");
+    } catch (err) { toast.error(errMessage(err, "Couldn't start the connection.")); }
+    finally { setBusy(null); }
+  };
   const retry = async (id: string) => {
     setBusy(`retry-${id}`);
     try { const r = await mktSocial.retry(id); if (r.success) { toast.success("Queued again."); void load(); } else toast.error(r.error ?? "Couldn't retry."); }
@@ -102,6 +111,12 @@ export function SocialAdminPanel() {
                     : !p.configured ? `Needs ${p.missing.join(", ")}`
                     : conn?.detail ?? "Checking…"}
                 </div>
+                {(p.platform === "tiktok" || p.platform === "linkedin") && p.configured && (
+                  <button onClick={() => void connect(p.platform)} disabled={busy === `connect-${p.platform}`}
+                    className="mt-2 text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white hover:border-[#1E7B4D] disabled:opacity-50">
+                    {conn?.ok ? "Reconnect" : `Connect ${LABEL[p.platform]}`}
+                  </button>
+                )}
               </div>
             );
           })}

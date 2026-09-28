@@ -589,6 +589,7 @@ export const mktSocial = {
   preview: (productId: string) => api<SocOk<{ image: string; captions: Record<string, string> }>>(`/api/marketplace/admin/social/preview/${productId}`),
   share: (productId: string, platforms?: string[]) => api<SocOk<Record<string, string>>>(`/api/marketplace/admin/social/share/${productId}`, { method: "POST", body: JSON.stringify({ platforms }) }),
   retry: (id: string) => api<SocOk<unknown>>(`/api/marketplace/admin/social/posts/${id}/retry`, { method: "POST" }),
+  connect: (platform: string) => api<SocOk<{ url: string }>>(`/api/marketplace/admin/social/${platform}/connect`, { method: "POST" }),
 };
 
 // ── WhatsApp Inbox (staff) ─────────────────────────────────────────────────

@@ -22,10 +22,14 @@ import { captionFor, PLATFORMS, type PlatformId, type SocialProduct } from "./so
 import { POSTERS, NonRetryable, type PostResult } from "./platforms";
 import { facebookPoster, instagramPoster } from "./platforms/meta";
 import { threadsPoster } from "./platforms/threads";
+import { tiktokPoster } from "./platforms/tiktok";
+import { linkedinPoster } from "./platforms/linkedin";
 
 POSTERS.facebook = facebookPoster;
 POSTERS.instagram = instagramPoster;
 POSTERS.threads = threadsPoster;
+POSTERS.tiktok = tiktokPoster;
+POSTERS.linkedin = linkedinPoster;
 export { NonRetryable };
 
 type Row = Record<string, any>;

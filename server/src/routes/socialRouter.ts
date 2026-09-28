@@ -7,6 +7,61 @@ import { metaStatus } from "../services/social/platforms/meta";
 
 /** Social media auto-posting: status, post log, "Share now", caption preview. Admin-only. */
 const router: ReturnType<typeof Router> = Router();
+const SITE = () => (process.env.MARKETPLACE_PUBLIC_URL || "https://www.ballylife.com").replace(/\/$/, "");
+
+// ---------------------------------------------------------------- Connect TikTok / LinkedIn
+
+const CONNECT: Record<string, { configured: () => boolean; url: () => Promise<string>; complete: (code: string) => Promise<string> }> = {
+  tiktok: {
+    configured: () => Boolean(process.env.TIKTOK_CLIENT_KEY?.trim() && process.env.TIKTOK_CLIENT_SECRET?.trim()),
+    url: async () => (await import("../services/social/platforms/tiktok")).tiktokAuthorizeUrl(),
+    complete: async code => (await import("../services/social/platforms/tiktok")).completeTikTok(code),
+  },
+  linkedin: {
+    configured: () => Boolean(process.env.LINKEDIN_CLIENT_ID?.trim() && process.env.LINKEDIN_CLIENT_SECRET?.trim()),
+    url: async () => (await import("../services/social/platforms/linkedin")).linkedinAuthorizeUrl(),
+    complete: async code => (await import("../services/social/platforms/linkedin")).completeLinkedIn(code),
+  },
+};
+
+/** Where the admin's browser goes to sign in (the dashboard opens this). */
+router.post("/admin/social/:platform/connect", requireAuth, requireRole("marketplace_admin"), async (req: Request, res: Response): Promise<void> => {
+  const c = CONNECT[req.params.platform];
+  if (!c) { res.status(404).json({ success: false, error: "Unknown platform" }); return; }
+  if (!c.configured()) { res.status(400).json({ success: false, error: `Add the ${req.params.platform === "tiktok" ? "TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET" : "LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET"} variables on Railway first.` }); return; }
+  res.json({ success: true, data: { url: await c.url() } });
+});
+
+/** The platform sends the browser back here after the sign-in (public; protected by the one-time state). */
+router.get("/social/oauth/:platform/callback", async (req: Request, res: Response): Promise<void> => {
+  const platform = req.params.platform;
+  const c = CONNECT[platform];
+  const back = (result: string, reason?: string) => res.redirect(`${SITE()}/admin?social=${encodeURIComponent(platform)}&result=${result}${reason ? `&reason=${encodeURIComponent(reason.slice(0, 200))}` : ""}`);
+  if (!c) { res.sendStatus(404); return; }
+  const { code, state, error, error_description } = req.query as Record<string, string | undefined>;
+  if (error) { back("error", error_description || error); return; }
+  const { consumeState } = await import("../services/social/oauth");
+  if (!code || !(await consumeState(String(state ?? ""), platform))) { back("error", "The sign-in expired — please try Connect again."); return; }
+  try {
+    const who = await c.complete(code);
+    logger.info("social.connected", { platform, who });
+    back("connected");
+  } catch (err) {
+    logger.error("social.connect_failed", { platform, error: err instanceof Error ? err.message : String(err) });
+    back("error", err instanceof Error ? err.message : "Connection failed");
+  }
+});
+
+/**
+ * TikTok's URL-prefix verification file. TikTok fetches it from the start of
+ * our photo addresses (/api/marketplace/media/) to confirm they're ours.
+ */
+router.get("/media/:file", (req: Request, res: Response, next) => {
+  const name = process.env.TIKTOK_VERIFY_FILENAME?.trim();
+  if (!name || req.params.file !== name) { next(); return; }
+  res.type("text/plain").send(process.env.TIKTOK_VERIFY_CONTENT ?? "");
+});
+
 const admin = [requireAuth, requireRole("marketplace_admin")];
 
 router.get("/admin/social/status", ...admin, async (_req: Request, res: Response): Promise<void> => {

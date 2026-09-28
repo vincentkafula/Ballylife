@@ -1300,3 +1300,11 @@ CREATE TABLE IF NOT EXISTS wa_broadcasts (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   finished_at  TIMESTAMPTZ
 );
+
+-- One-time "state" values for the Connect TikTok / Connect LinkedIn sign-ins
+-- (stops someone else's sign-in being attached to Ballylife's account).
+CREATE TABLE IF NOT EXISTS social_oauth_states (
+  state       TEXT PRIMARY KEY,
+  platform    TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

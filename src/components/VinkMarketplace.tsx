@@ -2234,6 +2234,19 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     params.delete("aliexpress"); params.delete("reason");
     window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
   }, []);
+  // Back from connecting TikTok / LinkedIn (admin, Social Media tab).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const platform = params.get("social");
+    if (!platform) return;
+    const label = platform === "tiktok" ? "TikTok" : platform === "linkedin" ? "LinkedIn" : platform;
+    if (params.get("result") === "connected") toast.success(`${label} connected.`);
+    else toast.error(`${label} wasn't connected: ${params.get("reason") ?? "please try again"}`);
+    try { sessionStorage.setItem("mgr-tab", "social"); } catch { /* storage unavailable */ }
+    setView("admin");
+    ["social", "result", "reason"].forEach(k => params.delete(k));
+    window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
+  }, []);
   // Back from PayFast's payment page for an order.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

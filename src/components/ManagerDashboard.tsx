@@ -93,7 +93,8 @@ export function ManagerDashboard({ user, onSignOut }: Props) {
   const [openApplication, setOpenApplication] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => {
     // Coming back from connecting AliExpress: open that tab once.
-    try { if (sessionStorage.getItem("mgr-tab") === "aliexpress") { sessionStorage.removeItem("mgr-tab"); return "aliexpress"; } } catch { /* storage unavailable */ }
+    // Back from an external sign-in (AliExpress, TikTok, LinkedIn): reopen the tab it started from.
+    try { const t = sessionStorage.getItem("mgr-tab"); if (t === "aliexpress" || t === "social") { sessionStorage.removeItem("mgr-tab"); return t; } } catch { /* storage unavailable */ }
     return "overview";
   });
   const [tier, setTier] = useState<MarketTier>("admin");

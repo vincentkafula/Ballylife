@@ -35,7 +35,7 @@ describe("social auto-posting", () => {
   it("only lists platforms that are set up", () => {
     expect(S.activePlatforms()).toEqual(["facebook", "instagram"]);
     const st = S.platformStatus();
-    expect(st.find(p => p.platform === "linkedin")).toMatchObject({ built: false, active: false });
+    expect(st.find(p => p.platform === "linkedin")).toMatchObject({ built: true, configured: false, active: false, missing: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"] });
   });
 
   it("picks the best new products with real photos, best seller first", async () => {
