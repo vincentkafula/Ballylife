@@ -46,10 +46,11 @@ export async function saveConversation(phone: string, c: Conversation): Promise<
 }
 
 /** Records an inbound message; false when WhatsApp re-delivered one we already have. */
-export async function recordInbound(wamid: string, phone: string, kind: string): Promise<boolean> {
+export async function recordInbound(wamid: string, phone: string, kind: string, media?: { id: string; mime: string } | null): Promise<boolean> {
   const existing = await pool!.query(`SELECT 1 FROM wa_messages WHERE wamid = $1`, [wamid]);
   if (existing.rows.length) return false;
-  await pool!.query(`INSERT INTO wa_messages (wamid, phone, direction, kind) VALUES ($1, $2, 'in', $3)`, [wamid, phone, kind]);
+  await pool!.query(`INSERT INTO wa_messages (wamid, phone, direction, kind, media_id, media_mime) VALUES ($1, $2, 'in', $3, $4, $5)`,
+    [wamid, phone, kind, media?.id ?? null, media?.mime ?? null]);
   return true;
 }
 

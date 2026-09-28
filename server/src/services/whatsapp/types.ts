@@ -4,7 +4,7 @@
 export type Input =
   | { kind: "text"; text: string }
   | { kind: "choice"; id: string; title: string }           // reply button or list row
-  | { kind: "media"; mediaId: string; mimeType: string; filename?: string }
+  | { kind: "media"; mediaId: string; mimeType: string; filename?: string; caption?: string }
   | { kind: "location"; lat: number; lng: number; address?: string; name?: string }
   | { kind: "other"; type: string };
 
@@ -35,7 +35,7 @@ export interface Step {
 }
 
 export interface Flow {
-  id: "customer" | "seller" | "question" | "shop" | "seller_products" | "add_product" | "human";
+  id: "customer" | "seller" | "question" | "shop" | "seller_products" | "add_product" | "human" | "details";
   steps: Step[];
   /** The review/confirm step "edit" returns to. */
   confirmStep?: string;

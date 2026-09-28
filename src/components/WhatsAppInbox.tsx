@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Bot, CheckCircle, Loader2, MessageCircle, RefreshCw, Send, UserRound } from "lucide-react";
-import { mktWhatsApp, ApiConnectionError } from "../services/marketplaceApi";
+import { mktWhatsApp, fetchWhatsAppMedia, ApiConnectionError } from "../services/marketplaceApi";
+import { WhatsAppSetupPanel } from "./WhatsAppSetup";
 
 type R = Record<string, any>;
 const errMessage = (err: unknown, fallback: string) => (err instanceof ApiConnectionError ? err.message : fallback);
@@ -48,6 +49,15 @@ export function WhatsAppInboxPanel() {
       else toast.error(r.error ?? "That didn't work.");
     } catch (err) { toast.error(errMessage(err, "That didn't work.")); }
     finally { setBusy(null); }
+  };
+
+  const openMedia = async (messageId: string) => {
+    const tab = window.open("", "_blank"); // open first: pop-up blockers stop tabs opened after an await
+    try {
+      const url = URL.createObjectURL(await fetchWhatsAppMedia(messageId));
+      if (tab) tab.location.href = url; else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) { tab?.close(); toast.error(errMessage(err, "Couldn't open that file.")); }
   };
 
   if (!inbox) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>;
@@ -105,6 +115,7 @@ export function WhatsAppInboxPanel() {
                     <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap break-words ${m.direction === "in" ? "bg-white border border-gray-100 text-gray-900" : m.sentBy && !["bot", "ai"].includes(m.sentBy) ? "bg-[#1E7B4D] text-white" : "bg-emerald-50 text-gray-900"}`}>
                       <div className={`text-[10px] mb-0.5 ${m.direction !== "in" && m.sentBy && !["bot", "ai"].includes(m.sentBy) ? "text-emerald-100" : "text-gray-400"}`}>{who(m)} · {time(m.at)}{m.status === "failed" ? " · ⚠️ not delivered" : ""}</div>
                       {m.text}
+                      {m.media && <button onClick={() => void openMedia(String(m.id))} className="mt-1 block text-xs font-semibold underline">{String(m.media.mimeType ?? "").startsWith("image/") ? "📷 View photo" : "📎 Open file"}</button>}
                     </div>
                   </div>
                 ))}
@@ -126,6 +137,8 @@ export function WhatsAppInboxPanel() {
           )}
         </div>
       </div>
+
+      <WhatsAppSetupPanel />
     </div>
   );
 }

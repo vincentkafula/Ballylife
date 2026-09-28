@@ -1281,3 +1281,22 @@ CREATE TABLE IF NOT EXISTS ai_usage_daily (
   cache_read_tokens   BIGINT NOT NULL DEFAULT 0,
   cache_write_tokens  BIGINT NOT NULL DEFAULT 0
 );
+
+-- WhatsApp Phase 4: customer photos in the inbox, deals subscriptions, broadcasts.
+ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS media_id TEXT;              -- WhatsApp media id of a photo/file the customer sent
+ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS media_mime TEXT;
+ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS deals_opt_in_at TIMESTAMPTZ; -- said yes to new-product offers (marketing consent)
+ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS deals_opt_out_at TIMESTAMPTZ;
+ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS last_marketing_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS wa_broadcasts (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id   UUID NOT NULL,
+  created_by   TEXT,
+  status       TEXT NOT NULL DEFAULT 'sending',   -- sending | done
+  recipients   INTEGER NOT NULL DEFAULT 0,
+  sent         INTEGER NOT NULL DEFAULT 0,
+  failed       INTEGER NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at  TIMESTAMPTZ
+);

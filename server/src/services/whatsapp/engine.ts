@@ -19,7 +19,9 @@ import { customerFlow, sendSignInLink } from "./flows/customer";
 import { sellerFlow } from "./flows/seller";
 import { questionFlow, humanFlow } from "./flows/question";
 import { answerQuestion, isAssistantConfigured } from "./assistant";
-import { endHandoff } from "./handoff";
+import { endHandoff, startHandoff } from "./handoff";
+import { askDeals, dealsOptIn, dealsOptOut } from "./deals";
+import { detailsFlow } from "./flows/details";
 import { shopFlow } from "./flows/shop";
 import { sellerProductsFlow, addProductFlow, activeSellerFor } from "./flows/sellerTools";
 import { sendMyOrders, sendOrderDetail, sendSellerOrders } from "./orders";
@@ -28,11 +30,11 @@ import { deleteDocument } from "../documentStore";
 import type { Ctx, Flow, Input, Step } from "./types";
 
 const FLOWS: Record<string, Flow> = {
-  customer: customerFlow, seller: sellerFlow, question: questionFlow, human: humanFlow,
+  customer: customerFlow, seller: sellerFlow, question: questionFlow, human: humanFlow, details: detailsFlow,
   shop: shopFlow, seller_products: sellerProductsFlow, add_product: addProductFlow,
 };
 /** Flows you can jump out of with "shop" / "orders" (browsing, not filling in a form). */
-const NAV_FLOWS = new Set([null, "shop", "seller_products"]);
+const NAV_FLOWS = new Set([null, "shop", "seller_products", "details"]);
 const EDIT_STEP = "__edit";
 const SITE = () => (process.env.MARKETPLACE_PUBLIC_URL || "https://www.ballylife.com").replace(/\/$/, "");
 
@@ -40,7 +42,8 @@ const HELP =
   "You can type these any time:\n" +
   "• *menu* — main menu\n• *back* — previous question\n• *edit* — change an answer\n" +
   "• *cancel* — stop and delete your answers\n• *continue* — carry on where you left off\n" +
-  "• *shop* — search products\n• *orders* — track your orders\n• *STOP* — stop receiving messages";
+  "• *shop* — search products\n• *orders* — track your orders\n• *my details* — change your address or email\n" +
+  "• *deals* — get new arrivals on WhatsApp (*stop deals* to stop)\n• *STOP* — stop receiving messages";
 
 // ---------------------------------------------------------------- helpers
 
@@ -86,7 +89,9 @@ export async function sendMainMenu(ctx: Ctx, paused: boolean): Promise<void> {
         { id: "menu:signin", title: "🔐 Sign-in link", description: seller?.status === "active" ? "Open your seller dashboard" : "Sign in on ballylife.com" },
         { id: "menu:question", title: "❓ Ask a question", description: "Delivery, returns, products…" },
         { id: "menu:human", title: "👩‍💼 Talk to a person", description: "Our team replies here" },
-      ],
+        { id: "menu:details", title: "👤 My details", description: "Change your address or email" },
+        { id: "menu:deals", title: "🔔 Deals on WhatsApp", description: "New arrivals, at most every few days" },
+      ].slice(0, 10),
     }]);
     return;
   }
@@ -113,13 +118,14 @@ async function askCurrent(ctx: Ctx, conv: Conversation): Promise<void> {
 
 // ---------------------------------------------------------------- commands
 
-type Command = "menu" | "back" | "edit" | "cancel" | "continue" | "help" | "stop" | "start" | "shop" | "orders" | "store_orders";
-const NAV_COMMANDS = new Set<Command>(["shop", "orders", "store_orders"]);
+type Command = "menu" | "back" | "edit" | "cancel" | "continue" | "help" | "stop" | "start" | "shop" | "orders" | "store_orders" | "deals" | "stop_deals" | "details";
+const NAV_COMMANDS = new Set<Command>(["shop", "orders", "store_orders", "deals", "details"]);
 const COMMANDS: Record<string, Command> = {
   menu: "menu", "main menu": "menu", hi: "menu", hello: "menu", hey: "menu",
   back: "back", edit: "edit", cancel: "cancel", continue: "continue", resume: "continue",
   help: "help", stop: "stop", unsubscribe: "stop", start: "start", subscribe: "start",
   shop: "shop", search: "shop", orders: "orders", "my orders": "orders", "track order": "orders", "store orders": "store_orders",
+  deals: "deals", "stop deals": "stop_deals", "my details": "details", details: "details",
 };
 
 function commandOf(input: Input, inFlow: boolean, flow: string | null = null): Command | null {
@@ -141,6 +147,15 @@ async function runCommand(cmd: Command, ctx: Ctx, conv: Conversation): Promise<v
       return;
     case "shop":
       await startFlow(ctx, conv, "shop");
+      return;
+    case "deals":
+      await askDeals(ctx.phone);
+      return;
+    case "stop_deals":
+      await dealsOptOut(ctx.phone);
+      return;
+    case "details":
+      await handleMenuChoice("menu:details", ctx, conv);
       return;
     case "orders":
     case "store_orders":
@@ -219,6 +234,13 @@ async function handleMenuChoice(id: string, ctx: Ctx, conv: Conversation): Promi
     case "menu:seller": await startFlow(ctx, conv, "seller"); return true;
     case "menu:question": await startFlow(ctx, conv, "question"); return true;
     case "menu:human": await startFlow(ctx, conv, "human"); return true;
+    case "menu:deals": await askDeals(ctx.phone); return true;
+    case "deals:yes": await dealsOptIn(ctx.phone); return true;
+    case "deals:no": await sendText(ctx.phone, "No problem — you won't get deals messages. Type *menu* for other options."); return true;
+    case "menu:details":
+      if (ctx.userId) await startFlow(ctx, conv, "details");
+      else await sendText(ctx.phone, "You don't have a Ballylife account on this number yet. Type *menu* and choose *I'm a customer* to create one.");
+      return true;
     case "menu:continue": await runCommand("continue", ctx, conv); return true;
     case "menu:shop": await startFlow(ctx, conv, "shop"); return true;
     case "menu:orders":
@@ -318,7 +340,7 @@ function describeInput(input: Input): string {
   switch (input.kind) {
     case "text": return input.text;
     case "choice": return `[${input.title}]`;
-    case "media": return `[file ${input.mimeType}]`;
+    case "media": return `[${input.mimeType.startsWith("image/") ? "photo" : "file"}${input.caption ? `: ${input.caption}` : ""}]`;
     case "location": return `[location ${input.lat.toFixed(4)},${input.lng.toFixed(4)}]`;
     default: return `[${input.type}]`;
   }
@@ -356,7 +378,7 @@ async function handleOne({ phone, profileName, wamid, input }: { phone: string; 
 
   // A person has this chat: stay quiet (the message is in the inbox), unless
   // they ask for the bot back with "menu", or opt out.
-  if (contact.handoff && cmd !== "stop" && cmd !== "start") {
+  if (contact.handoff && cmd !== "stop" && cmd !== "start" && cmd !== "stop_deals") {
     if (cmd === "menu") {
       await endHandoff(phone, "customer");
       await saveConversation(phone, emptyConversation());
@@ -373,6 +395,10 @@ async function handleOne({ phone, profileName, wamid, input }: { phone: string; 
     }
     if (conv.flow) { await runStep(input, ctx, conv); return; }
     if (input.kind === "choice" && await handleMenuChoice(input.id, ctx, conv)) return;
+    if (input.kind === "media") {
+      await startHandoff(phone, `Sent a ${input.mimeType.startsWith("image/") ? "photo" : "file"}${input.caption ? `: ${input.caption}` : ""}`, { profileName });
+      return;
+    }
     if (input.kind === "text" && input.text.trim().length >= 3 && isAssistantConfigured()
         && await answerQuestion(phone, ctx.userId, input.text, { wamid, profileName })) return;
     await sendMainMenu(ctx, Boolean(conv.data.paused));

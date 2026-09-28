@@ -599,7 +599,20 @@ export const mktWhatsApp = {
   reply: (phone: string, text: string) => api<WaOk<unknown>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}/reply`, { method: "POST", body: JSON.stringify({ text }) }),
   take: (phone: string) => api<WaOk<unknown>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}/take`, { method: "POST" }),
   resolve: (phone: string) => api<WaOk<unknown>>(`/api/marketplace/admin/whatsapp/inbox/${encodeURIComponent(phone)}/resolve`, { method: "POST" }),
+  templates: () => api<WaOk<Record<string, any>[]>>("/api/marketplace/admin/whatsapp/templates"),
+  submitTemplates: () => api<WaOk<{ submitted: string[]; failed: { name: string; error: string }[] }>>("/api/marketplace/admin/whatsapp/templates/submit", { method: "POST" }),
+  profile: () => api<WaOk<{ current: Record<string, any>; suggested: Record<string, any> }>>("/api/marketplace/admin/whatsapp/profile"),
+  saveProfile: (p: Record<string, unknown>) => api<WaOk<unknown>>("/api/marketplace/admin/whatsapp/profile", { method: "POST", body: JSON.stringify(p) }),
+  deals: () => api<WaOk<{ subscribers: number; reachableNow: number; broadcasts: Record<string, any>[] }>>("/api/marketplace/admin/whatsapp/deals"),
+  broadcast: (productId: string) => api<WaOk<{ id: string; recipients: number }>>("/api/marketplace/admin/whatsapp/deals/broadcast", { method: "POST", body: JSON.stringify({ productId, confirm: true }) }),
 };
+
+/** A photo/file a customer sent on WhatsApp, for viewing in the inbox. Admin only. */
+export async function fetchWhatsAppMedia(messageId: string): Promise<Blob> {
+  const res = await fetch(`${BASE}/api/marketplace/admin/whatsapp/media/${encodeURIComponent(messageId)}`, { headers: _token ? { Authorization: `Bearer ${_token}` } : {} });
+  if (!res.ok) throw new ApiConnectionError(res.status === 410 ? "WhatsApp no longer has this file (it expires after about 30 days)." : "Couldn't load that file.");
+  return res.blob();
+}
 
 // ── Super admin ───────────────────────────────────────────────────────────
 export const mktSuperAdmin = {

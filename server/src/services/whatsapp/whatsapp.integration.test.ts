@@ -31,6 +31,8 @@ vi.mock("../emailService", () => ({
 type Sent = { to: string; type: string; text?: string; image?: string; buttons?: string[]; rows?: string[]; template?: string };
 let sent: Sent[] = [];
 let outCounter = 0;
+const templatePosts: any[] = [];
+const profilePosts: any[] = [];
 function fakeWhatsApp() {
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
@@ -47,6 +49,14 @@ function fakeWhatsApp() {
       });
       return json({ messages: [{ id: `wamid.out.${++outCounter}` }] });
     }
+    if (url.includes("/message_templates")) {
+      if (init?.method === "POST") { templatePosts.push(JSON.parse(String(init.body))); return json({ id: "tpl-1", status: "PENDING" }); }
+      return json({ data: [{ name: "order_status_update", status: "APPROVED", language: "en", category: "UTILITY" }] });
+    }
+    if (url.includes("/whatsapp_business_profile")) {
+      if (init?.method === "POST") { profilePosts.push(JSON.parse(String(init.body))); return json({ success: true }); }
+      return json({ data: [{ about: "old", websites: [] }] });
+    }
     if (url.includes("/media-")) return json({ url: "https://lookaside.fbsbx.com/file", mime_type: "image/jpeg", file_size: 5 });
     if (url.startsWith("https://lookaside.fbsbx.com/")) return new Response(Buffer.from("JPEG!"), { status: 200 });
     return new Response("{}", { status: 404 });
@@ -61,7 +71,7 @@ const PHONE = "27821234567";
 const say = async (input: any, phone = PHONE) => {
   const wamid = `wamid.in.${++n}`;
   const { recordInbound } = await import("./store");
-  await recordInbound(wamid, phone, input.kind);
+  await recordInbound(wamid, phone, input.kind, input.kind === "media" ? { id: input.mediaId, mime: input.mimeType } : null);
   return E.handleIncoming({ phone, profileName: "Thandi", wamid, input });
 };
 const text = (t: string, phone = PHONE) => say({ kind: "text", text: t }, phone);
@@ -501,5 +511,95 @@ describe("Phase 3: AI assistant, handoff and the staff inbox", () => {
     await text("Do you deliver to Polokwane?", P);
     expect(requests).toHaveLength(0);
     expect((await pool.query(`SELECT handoff FROM wa_contacts WHERE phone = $1`, [P])).rows[0].handoff).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------- Phase 4
+
+describe("Phase 4: deals, my details, customer photos, templates and profile", () => {
+  let auth: Record<string, string> = {};
+  let productId = "";
+
+  beforeAll(async () => {
+    const token = (await request(app).post("/api/auth/login").send({ username: "boss", password: "Pass-12345" })).body.data.token;
+    auth = { Authorization: `Bearer ${token}` };
+    productId = (await pool.query(`SELECT id FROM mkt_products WHERE name = 'Wireless Earbuds Pro'`)).rows[0].id;
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.WHATSAPP_WABA_ID = "999";
+  });
+
+  it("deals are opt-in, sent only after confirming, at most every few days, and STOP DEALS works", async () => {
+    await text("deals");
+    expect(last().buttons).toEqual(["deals:yes", "deals:no"]);
+    await tap("deals:yes", "Yes, send deals");
+    expect((await pool.query(`SELECT deals_opt_in_at FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0].deals_opt_in_at).toBeTruthy();
+
+    const stats = (await request(app).get("/api/marketplace/admin/whatsapp/deals").set(auth)).body.data;
+    expect(stats).toMatchObject({ subscribers: 1, reachableNow: 1 });
+    expect((await request(app).post("/api/marketplace/admin/whatsapp/deals/broadcast").set(auth).send({ productId })).status).toBe(400); // not confirmed
+
+    sent = [];
+    const r = await request(app).post("/api/marketplace/admin/whatsapp/deals/broadcast").set(auth).send({ productId, confirm: true });
+    expect(r.body.data.recipients).toBe(1);
+    await new Promise(res => setTimeout(res, 500));
+    expect(sent.find(s => s.to === PHONE)?.text).toMatch(/New on Ballylife: \*Wireless Earbuds Pro\*[\s\S]*STOP DEALS/); // inside the 24h window: a free photo message
+    const b = (await request(app).get("/api/marketplace/admin/whatsapp/deals").set(auth)).body.data.broadcasts[0];
+    expect(b).toMatchObject({ status: "done", sent: 1, failed: 0 });
+
+    const again = await request(app).post("/api/marketplace/admin/whatsapp/deals/broadcast").set(auth).send({ productId, confirm: true });
+    expect(again.body.error).toMatch(/Nobody is due/);
+
+    await text("stop deals");
+    expect(lastText()).toMatch(/won't get deals messages/);
+    expect((await request(app).get("/api/marketplace/admin/whatsapp/deals").set(auth)).body.data.subscribers).toBe(0);
+  });
+
+  it("customers update their delivery address in WhatsApp", async () => {
+    await text("my details");
+    expect(last().buttons).toEqual(["address", "email", "done"]);
+    await tap("address", "Address");
+    await text("7 Oak Ave, Sea Point, Cape Town, 8005");
+    const userId = (await pool.query(`SELECT user_id FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0].user_id;
+    const { rows } = await pool.query(`SELECT line1, postal_code FROM mkt_addresses WHERE user_id = $1 AND is_default = true`, [userId]);
+    expect(rows[0]).toMatchObject({ postal_code: "8005" });
+    expect(rows[0].line1).toMatch(/7 Oak Ave/);
+  });
+
+  it("a photo sent outside a form goes to the team, and staff can open it in the inbox", async () => {
+    await say({ kind: "media", mediaId: "media-77", mimeType: "image/jpeg", caption: "the box was crushed" });
+    expect((await pool.query(`SELECT handoff, handoff_reason FROM wa_contacts WHERE phone = $1`, [PHONE])).rows[0])
+      .toMatchObject({ handoff: true, handoff_reason: "Sent a photo: the box was crushed" });
+    const thread = (await request(app).get(`/api/marketplace/admin/whatsapp/inbox/${PHONE}`).set(auth)).body.data;
+    const photo = thread.messages.find((m: any) => m.media);
+    expect(photo.text).toBe("[photo: the box was crushed]");
+    const file = await request(app).get(`/api/marketplace/admin/whatsapp/media/${photo.id}`).set(auth);
+    expect(file.status).toBe(200);
+    expect(file.headers["content-type"]).toMatch(/image\/jpeg/);
+    await request(app).post(`/api/marketplace/admin/whatsapp/inbox/${PHONE}/resolve`).set(auth);
+  });
+
+  it("submits only the missing templates, with the placeholders the code fills", async () => {
+    const status = (await request(app).get("/api/marketplace/admin/whatsapp/templates").set(auth)).body.data;
+    expect(status.find((t: any) => t.name === "order_status_update").status).toBe("APPROVED");
+    expect(status.find((t: any) => t.name === "new_arrival").status).toBe("NOT_SUBMITTED");
+    const r = (await request(app).post("/api/marketplace/admin/whatsapp/templates/submit").set(auth)).body.data;
+    expect(r.submitted).not.toContain("order_status_update");
+    expect(r.submitted).toEqual(expect.arrayContaining(["seller_application_approved", "seller_new_order", "staff_handoff_alert", "new_arrival"]));
+    const newArrival = templatePosts.find(t => t.name === "new_arrival");
+    expect(newArrival).toMatchObject({ category: "MARKETING", language: "en" });
+    expect(newArrival.components[0].text.match(/\{\{\d\}\}/g)).toHaveLength(3); // first name, product, price
+    for (const t of templatePosts) {
+      const body: string = t.components[0].text;
+      expect(body.trim().startsWith("{{")).toBe(false); // Meta rejects templates that start or end with a placeholder
+      expect(body.trim().endsWith("}}")).toBe(false);
+    }
+  });
+
+  it("updates the WhatsApp business profile", async () => {
+    const r = await request(app).post("/api/marketplace/admin/whatsapp/profile").set(auth)
+      .send({ about: "x".repeat(200), description: "Shop Ballylife", websites: ["https://www.ballylife.com", "not-a-url"] });
+    expect(r.body.success).toBe(true);
+    expect(profilePosts[0].about).toHaveLength(139);
+    expect(profilePosts[0].websites).toEqual(["https://www.ballylife.com"]);
   });
 });

@@ -27,6 +27,9 @@ import { computeAccountStatus } from "../services/accountVerification";
 import { getDocument, getProductPhoto } from "../services/documentStore";
 import { startHandoff, endHandoff, sendStaffReply, releaseStaleHandoffs } from "../services/whatsapp/handoff";
 import { estimateUsd, isAssistantConfigured } from "../services/whatsapp/assistant";
+import { templateStatus, submitMissingTemplates, getBusinessProfile, updateBusinessProfile, DEFAULT_PROFILE } from "../services/whatsapp/setup";
+import { subscriberCount, recentBroadcasts, startBroadcast } from "../services/whatsapp/deals";
+import { downloadMedia } from "../services/whatsapp/client";
 import type { Input } from "../services/whatsapp/types";
 
 export const whatsappRouter: ReturnType<typeof Router> = Router();
@@ -63,8 +66,8 @@ export function toInput(m: any): Input {
       if (m.interactive?.type === "list_reply") return { kind: "choice", id: String(m.interactive.list_reply.id), title: String(m.interactive.list_reply.title) };
       return { kind: "other", type: "interactive" };
     case "button": return { kind: "text", text: String(m.button?.text ?? "") }; // quick-reply on a template
-    case "image": return { kind: "media", mediaId: String(m.image.id), mimeType: String(m.image.mime_type ?? "") };
-    case "document": return { kind: "media", mediaId: String(m.document.id), mimeType: String(m.document.mime_type ?? ""), filename: m.document.filename };
+    case "image": return { kind: "media", mediaId: String(m.image.id), mimeType: String(m.image.mime_type ?? ""), caption: m.image.caption };
+    case "document": return { kind: "media", mediaId: String(m.document.id), mimeType: String(m.document.mime_type ?? ""), filename: m.document.filename, caption: m.document.caption };
     case "location": return { kind: "location", lat: Number(m.location.latitude), lng: Number(m.location.longitude), address: m.location.address, name: m.location.name };
     default: return { kind: "other", type: String(m.type) };
   }
@@ -90,7 +93,8 @@ whatsappRouter.post("/webhook", async (req: Request, res: Response): Promise<voi
           const phone = String(m.from);
           if (!/^\d{8,15}$/.test(phone)) continue;
           const input = toInput(m);
-          if (!(await recordInbound(String(m.id), phone, input.kind))) continue; // re-delivery
+          const media = input.kind === "media" ? { id: input.mediaId, mime: input.mimeType } : null;
+          if (!(await recordInbound(String(m.id), phone, input.kind, media))) continue; // re-delivery
           void handleIncoming({ phone, profileName: names.get(phone) || null, wamid: String(m.id), input });
         }
       }
@@ -211,14 +215,14 @@ whatsappAdminRouter.get("/admin/whatsapp/inbox/:phone", ...admin, async (req: Re
     `SELECT c.*, u.name AS user_name, u.email AS user_email FROM wa_contacts c LEFT JOIN users u ON u.id = c.user_id WHERE c.phone = $1`, [phone]);
   if (!contact[0]) { res.status(404).json({ success: false, error: "Conversation not found" }); return; }
   const { rows: msgs } = await pool!.query(
-    `SELECT id, direction, kind, body, sent_by, status, error, created_at FROM wa_messages WHERE phone = $1 AND body IS NOT NULL ORDER BY created_at DESC LIMIT 100`, [phone]);
+    `SELECT id, direction, kind, body, sent_by, status, error, media_id, media_mime, created_at FROM wa_messages WHERE phone = $1 AND body IS NOT NULL ORDER BY created_at DESC LIMIT 100`, [phone]);
   await pool!.query(`UPDATE wa_contacts SET staff_seen_at = now() WHERE phone = $1`, [phone]);
   const c = contact[0];
   res.json({ success: true, data: {
     phone, name: c.user_name ?? c.profile_name ?? null, email: c.user_email ?? null, linked: Boolean(c.user_id),
     handoff: c.handoff, handoffReason: c.handoff_reason, optedOut: c.opted_out,
     windowOpen: Boolean(c.last_inbound_at && Date.now() - new Date(c.last_inbound_at).getTime() < 24 * 3600_000),
-    messages: msgs.reverse().map((m: any) => ({ id: m.id, direction: m.direction, kind: m.kind, text: m.body, sentBy: m.sent_by, status: m.status, error: m.error, at: m.created_at })),
+    messages: msgs.reverse().map((m: any) => ({ id: m.id, direction: m.direction, kind: m.kind, text: m.body, sentBy: m.sent_by, status: m.status, error: m.error, at: m.created_at, media: m.media_id ? { mimeType: m.media_mime } : null })),
   } });
 });
 
@@ -239,6 +243,66 @@ whatsappAdminRouter.post("/admin/whatsapp/inbox/:phone/take", ...admin, async (r
 whatsappAdminRouter.post("/admin/whatsapp/inbox/:phone/resolve", ...admin, async (req: Request, res: Response): Promise<void> => {
   await endHandoff(phoneParam(req), "staff");
   res.json({ success: true });
+});
+
+/** A photo or file the customer sent (fetched from WhatsApp, which keeps media for about 30 days). */
+whatsappAdminRouter.get("/admin/whatsapp/media/:messageId", ...admin, async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT media_id FROM wa_messages WHERE id::text = $1 AND media_id IS NOT NULL`, [req.params.messageId]);
+  if (!rows[0]) { res.status(404).json({ success: false, error: "No file on that message." }); return; }
+  try {
+    const file = await downloadMedia(String(rows[0].media_id));
+    res.setHeader("Cache-Control", "no-store");
+    res.type(file.mimeType || "application/octet-stream").send(file.bytes);
+  } catch {
+    res.status(410).json({ success: false, error: "WhatsApp no longer has this file (media expires after about 30 days)." });
+  }
+});
+
+// ---------------------------------------------------------------- setup: templates & business profile
+
+whatsappAdminRouter.get("/admin/whatsapp/templates", ...admin, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await templateStatus() }); }
+  catch (err) { res.status(502).json({ success: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+whatsappAdminRouter.post("/admin/whatsapp/templates/submit", ...admin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const r = await submitMissingTemplates();
+    logger.info("whatsapp.templates_submitted", { by: req.user?.userId ?? null, submitted: r.submitted, failed: r.failed.length });
+    res.json({ success: true, data: r });
+  } catch (err) { res.status(502).json({ success: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+whatsappAdminRouter.get("/admin/whatsapp/profile", ...admin, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: { current: await getBusinessProfile(), suggested: DEFAULT_PROFILE } }); }
+  catch (err) { res.status(502).json({ success: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+whatsappAdminRouter.post("/admin/whatsapp/profile", ...admin, async (req: Request, res: Response): Promise<void> => {
+  const b = req.body ?? {};
+  try {
+    await updateBusinessProfile({
+      about: typeof b.about === "string" ? b.about : undefined,
+      description: typeof b.description === "string" ? b.description : undefined,
+      email: typeof b.email === "string" ? b.email : undefined,
+      address: typeof b.address === "string" ? b.address : undefined,
+      websites: Array.isArray(b.websites) ? b.websites.map(String) : undefined,
+    });
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ success: false, error: err instanceof Error ? err.message : String(err) }); }
+});
+
+// ---------------------------------------------------------------- deals broadcasts
+
+whatsappAdminRouter.get("/admin/whatsapp/deals", ...admin, async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, data: { ...(await subscriberCount()), broadcasts: await recentBroadcasts() } });
+});
+
+whatsappAdminRouter.post("/admin/whatsapp/deals/broadcast", ...admin, async (req: Request, res: Response): Promise<void> => {
+  const productId = String(req.body?.productId ?? "");
+  if (req.body?.confirm !== true) { res.status(400).json({ success: false, error: "Confirm the broadcast first." }); return; }
+  try { res.json({ success: true, data: await startBroadcast(productId, req.user?.username ?? "staff") }); }
+  catch (err) { res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) }); }
 });
 
 // ---------------------------------------------------------------- housekeeping
