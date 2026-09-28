@@ -176,6 +176,10 @@ export async function planAutoPosts(now = new Date()): Promise<number> {
   let planned = 0;
   for (const platform of activePlatforms()) {
     try {
+      // Keys set but not connected yet (e.g. TikTok before "Connect TikTok"): wait, rather than
+      // using up new products on posts that can only fail.
+      const describe = POSTERS[platform]?.describe;
+      if (describe && !(await describe().then(() => true, () => false))) continue;
       const { rows } = await pool!.query(
         `SELECT COUNT(*)::int AS n, MAX(scheduled_for) AS last FROM social_posts WHERE platform = $1 AND trigger = 'auto' AND scheduled_for >= $2`,
         [platform, dayStart]);
