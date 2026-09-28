@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiConnectionError } from "../services/marketplaceApi";
 import { pathForView, viewForPath, TITLE_FOR_VIEW, setPageMeta, type MarketplaceView } from "../services/routes";
+import { track, ttProduct } from "../services/tracking";
 import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import businessBoardroomAd from "../imports/business-boardroom-ad.jpg";
 import {
@@ -1143,6 +1144,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           // rather than a mid-word cut.
           const shortDesc = rawDesc.length > 155 ? rawDesc.slice(0, 155).replace(/\s+\S*$/, "") + "…" : rawDesc;
           setPageMeta(`${name} — Ballylife`, shortDesc || undefined);
+          track("ViewContent", ttProduct(d.product));
         }
       })
       .catch(showLoadError)
@@ -2253,7 +2255,10 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     const result = params.get("payfast");
     if (!result) return;
     const order = params.get("order") ?? "your order";
-    if (result === "success") toast.success(`Payment submitted for ${order}. We'll confirm your order by email as soon as PayFast clears it.`);
+    if (result === "success") {
+      toast.success(`Payment submitted for ${order}. We'll confirm your order by email as soon as PayFast clears it.`);
+      track("CompletePayment", { content_type: "product", description: order });
+    }
     else toast(`Payment cancelled — ${order} is saved and you haven't been charged. You can pay any time from My Orders.`);
     setView("orders");
     params.delete("payfast"); params.delete("order");
@@ -2270,6 +2275,16 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     window.history.replaceState(null, "", window.location.pathname + (params.toString() ? `?${params}` : ""));
   }, []);
   useEffect(() => { setCartCount(((cart?.items as R[]) ?? []).length); }, [cart]);
+  // Checkout opened: tell the ad pixel (only sends with advertising consent).
+  useEffect(() => {
+    if (view !== "checkout" || !cart) return;
+    const items = ((cart.items as R[]) ?? []);
+    track("InitiateCheckout", {
+      contents: items.map(i => ({ content_id: String(i.productId), content_type: "product", content_name: String(i.name ?? ""), quantity: Number(i.quantity ?? 1), price: Number(i.unitPrice ?? 0) })),
+      value: Number(cart.total ?? items.reduce((t, i) => t + Number(i.unitPrice ?? 0) * Number(i.quantity ?? 1), 0)),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   const handleAddToCart = async (p: R, variantId?: string) => {
     if (!authUser) { setShowAuthModal(true); return; }
@@ -2282,6 +2297,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
         return;
       }
       setCart(res.data as R);
+      track("AddToCart", ttProduct(p));
     } catch (err) { showLoadError(err); }
   };
 

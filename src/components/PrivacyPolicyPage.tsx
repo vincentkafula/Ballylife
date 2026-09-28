@@ -418,7 +418,9 @@ const PRIVACY_PAGE_HTML = String.raw`<!DOCTYPE html>
           <div class="cookie-item"><span class="mark">-</span><span>Understand how people use our platform, so we can improve it</span></div>
           <div class="cookie-item"><span class="mark">-</span><span>See which features work well, through anonymised analytics</span></div>
           <div class="cookie-item"><span class="mark">-</span><span>Spot suspicious activity and help keep everyone safe</span></div>
+          <div class="cookie-item"><span class="mark">-</span><span>Advertising, only if you choose "Accept all": the TikTok Pixel tells TikTok which pages you view and what you add to your cart or buy, so we can measure our TikTok ads and show relevant offers. TikTok processes this under its own privacy policy. Choose "Essential only" and it isn't used.</span></div>
         </div>
+        <p><button type="button" onclick="parent.dispatchEvent(new CustomEvent('bl:open-cookie-settings'))" style="margin-top:14px;padding:8px 14px;border-radius:8px;border:1px solid currentColor;background:transparent;cursor:pointer;font:inherit">Cookie settings</button></p>
       </section>
 
       <section id="complaints">

@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { InstallPrompt } from "./components/InstallPrompt";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { WhatsAppChatButton } from "./components/WhatsAppChatButton";
+import { CookieConsent } from "./components/CookieConsent";
 
 const VinkMarketplace = lazy(() =>
   import("./components/VinkMarketplace").then((m) => ({ default: m.VinkMarketplace }))
@@ -36,6 +37,7 @@ export default function App() {
       <Toaster position="top-right" richColors closeButton duration={4000} />
       <InstallPrompt />
       <WhatsAppChatButton />
+      <CookieConsent />
     </BrowserRouter>
   );
 }
