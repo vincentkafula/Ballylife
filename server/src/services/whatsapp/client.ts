@@ -72,6 +72,24 @@ export function sendText(phone: string, text: string, opts: { previewUrl?: boole
   return send(phone, "text", opts.logAs ?? text, { type: "text", text: { body: text.slice(0, 4096), preview_url: Boolean(opts.previewUrl) } });
 }
 
+/** A photo (fetched by WhatsApp from a public https URL) with a caption. */
+export function sendImage(phone: string, imageUrl: string, caption: string) {
+  return send(phone, "image", `[photo] ${caption}`, { type: "image", image: { link: imageUrl, caption: caption.slice(0, 1024) } });
+}
+
+/** Up to 3 reply buttons, optionally with a photo on top. */
+export function sendButtonsWithImage(phone: string, imageUrl: string, text: string, buttons: Button[]) {
+  return send(phone, "button", `[photo] ${text}\n[${buttons.map(b => b.title).join("] [")}]`, {
+    type: "interactive",
+    interactive: {
+      type: "button",
+      header: { type: "image", image: { link: imageUrl } },
+      body: { text: text.slice(0, 1024) },
+      action: { buttons: buttons.slice(0, 3).map(b => ({ type: "reply", reply: { id: b.id, title: clip(b.title, BUTTON_TITLE_MAX) } })) },
+    },
+  });
+}
+
 /** Up to 3 reply buttons. */
 export function sendButtons(phone: string, text: string, buttons: Button[], header?: string) {
   return send(phone, "button", `${text}\n[${buttons.map(b => b.title).join("] [")}]`, {

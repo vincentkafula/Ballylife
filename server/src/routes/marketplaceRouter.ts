@@ -541,40 +541,48 @@ async function saveCart(cartId: string, items: any[], couponCode: string | null)
   return rows[0];
 }
 
-router.post("/cart/:userId/add", requireAuth, requireSelf, async (req: Request, res: Response): Promise<void> => {
-  const { productId, variantId, quantity } = req.body;
+/**
+ * Adds a product to a user's cart with every rule the shop applies (stock,
+ * required colour/size choice, variant price). Shared by the website's
+ * cart endpoint and the WhatsApp bot so both follow the same rules.
+ */
+export async function addToCart(userId: string, productId: string, variantId: string | null | undefined, quantity = 1):
+  Promise<{ ok: true; cart: any } | { ok: false; status: number; error: string; code?: string }> {
   const { rows: productRows } = await pool!.query(
     `SELECT p.*, s.store_name AS seller_name FROM mkt_products p JOIN mkt_sellers s ON s.id = p.seller_id WHERE p.id::text = $1`, [productId]
   );
-  if (!productRows.length) { res.status(404).json({ success: false, error: "Product not found" }); return; }
+  if (!productRows.length) return { ok: false, status: 404, error: "Product not found" };
   const product = mapProduct(productRows[0]);
-  if (product.stock <= 0) { res.status(409).json({ success: false, error: "This product is out of stock." }); return; }
+  if (product.stock <= 0) return { ok: false, status: 409, error: "This product is out of stock." };
 
-  const cartRow = await getOrCreateCart(req.params.userId);
+  const cartRow = await getOrCreateCart(userId);
   const items: any[] = cartRow.items;
   const existing = items.find(i => i.productId === productId && i.variantId === (variantId ?? null));
-  const requestedQty = (existing?.quantity ?? 0) + (quantity ?? 1);
-  if (requestedQty > product.stock) {
-    res.status(409).json({ success: false, error: `Only ${product.stock} left in stock.` });
-    return;
-  }
+  const requestedQty = (existing?.quantity ?? 0) + quantity;
+  if (requestedQty > product.stock) return { ok: false, status: 409, error: `Only ${product.stock} left in stock.` };
   // A supplier-fulfilled product with options (colour/size) can't be
   // placed with the supplier without knowing which one -- so the choice is
   // required up front rather than discovered after the customer has paid.
   const variants: any[] = Array.isArray(product.variants) ? product.variants : [];
   const variant = variantId ? variants.find(v => v.id === variantId) : undefined;
-  if (variantId && !variant) { res.status(400).json({ success: false, error: "That option isn't available for this product." }); return; }
+  if (variantId && !variant) return { ok: false, status: 400, error: "That option isn't available for this product." };
   if (!variant && product.fulfillmentType === "imported" && variants.length > 1) {
-    res.status(400).json({ success: false, error: "Please choose an option (e.g. colour or size) on the product page first.", code: "VARIANT_REQUIRED" });
-    return;
+    return { ok: false, status: 400, error: "Please choose an option (e.g. colour or size) on the product page first.", code: "VARIANT_REQUIRED" };
   }
   const unitPrice = round2(product.price + Number(variant?.additionalPrice ?? 0));
 
-  if (existing) existing.quantity += (quantity ?? 1);
-  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity: quantity ?? 1, unitPrice, shippingIncluded: product.shippingIncluded, isDeal: Boolean(product.isFlashDeal), name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
+  if (existing) existing.quantity += quantity;
+  else items.push({ productId, variantId: variantId ?? null, variantLabel: variant?.value ?? null, quantity, unitPrice, shippingIncluded: product.shippingIncluded, isDeal: Boolean(product.isFlashDeal), name: product.name, emoji: product.emoji, image: firstPhoto(product.images ?? []), sellerId: product.sellerId, sellerName: product.sellerName, maxStock: product.stock });
 
   const updated = await saveCart(cartRow.id, items, cartRow.coupon_code);
-  res.json({ success: true, data: cartRowToApi(updated) });
+  return { ok: true, cart: cartRowToApi(updated) };
+}
+
+router.post("/cart/:userId/add", requireAuth, requireSelf, async (req: Request, res: Response): Promise<void> => {
+  const { productId, variantId, quantity } = req.body;
+  const r = await addToCart(req.params.userId, productId, variantId, quantity ?? 1);
+  if (!r.ok) { res.status(r.status).json({ success: false, error: r.error, ...(r.code ? { code: r.code } : {}) }); return; }
+  res.json({ success: true, data: r.cart });
 });
 
 router.patch("/cart/:userId/item/:productId", requireAuth, requireSelf, async (req: Request, res: Response): Promise<void> => {
@@ -1738,19 +1746,26 @@ router.get("/sellers/:id/supplier-orders", requireAuth, requireSellerOwner, asyn
   res.json({ success: true, data: rows.map(forSeller), meta: { total: rows.length } });
 });
 
-router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
-  if (cjOnlyCatalog()) { res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return; }
-  const { categoryId, name, shortDescription, description, price, compareAtPrice, stock, sku, brand, tags, attributes, emoji, images } = req.body;
-  if (!categoryId || !name || !price) { res.status(400).json({ success: false, error: "categoryId, name and price are required" }); return; }
+/** Creates a seller's own product, waiting for admin approval. Shared with the WhatsApp bot. */
+export async function createSellerProduct(sellerId: string, body: Record<string, any>): Promise<any> {
+  const { categoryId, name, shortDescription, description, price, compareAtPrice, stock, sku, brand, tags, attributes, emoji, images } = body;
   const slug = `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Date.now().toString(36)}`;
   const { rows } = await pool!.query(
     `INSERT INTO mkt_products (seller_id, category_id, name, slug, short_description, description, price, compare_at_price,
        currency, images, emoji, status, stock, sku, brand, tags, attributes)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ZAR',$9,$10,'pending_review',$11,$12,$13,$14,$15) RETURNING *`,
-    [req.params.id, categoryId, name, slug, shortDescription ?? "", description ?? "", price, compareAtPrice ?? null,
+    [sellerId, categoryId, name, slug, shortDescription ?? "", description ?? "", price, compareAtPrice ?? null,
      JSON.stringify(images ?? []), emoji ?? "📦", stock ?? 0, sku ?? null, brand ?? "", JSON.stringify(tags ?? []), JSON.stringify(attributes ?? {})]
   );
-  res.status(201).json({ success: true, data: mapProduct(rows[0]), message: "Product submitted — it will appear once approved by the marketplace team." });
+  return mapProduct(rows[0]);
+}
+
+router.post("/sellers/:id/products", requireAuth, requireSellerOwner, async (req: Request, res: Response): Promise<void> => {
+  if (cjOnlyCatalog()) { res.status(403).json({ success: false, error: CJ_ONLY_MESSAGE, code: "CJ_ONLY_CATALOG" }); return; }
+  const { categoryId, name, price } = req.body;
+  if (!categoryId || !name || !price) { res.status(400).json({ success: false, error: "categoryId, name and price are required" }); return; }
+  const product = await createSellerProduct(req.params.id, req.body);
+  res.status(201).json({ success: true, data: product, message: "Product submitted — it will appear once approved by the marketplace team." });
 });
 
 // Import a supplier-catalog item into this seller's own store — the

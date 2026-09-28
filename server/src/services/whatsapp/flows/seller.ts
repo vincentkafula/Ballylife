@@ -30,7 +30,7 @@ const BUSINESS_TYPES = [
 ];
 const MAX_CATEGORIES = 3;
 
-async function topCategories(): Promise<{ id: string; name: string }[]> {
+export async function topCategories(): Promise<{ id: string; name: string }[]> {
   const { rows } = await pool!.query(
     `SELECT c.id, c.name, COUNT(p.id)::int AS n FROM mkt_categories c
        LEFT JOIN mkt_products p ON p.category_id = c.id AND p.status = 'active'

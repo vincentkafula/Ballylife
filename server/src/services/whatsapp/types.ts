@@ -16,7 +16,7 @@ export interface Ctx {
 }
 
 export type StepResult =
-  | { ok: true; set?: Record<string, any>; next?: string; finish?: boolean; cancel?: string }
+  | { ok: true; set?: Record<string, any>; next?: string; finish?: boolean; cancel?: string; startFlow?: string; done?: boolean }
   | { ok: false; retry: string; reask?: boolean };
 
 export interface Step {
@@ -35,7 +35,7 @@ export interface Step {
 }
 
 export interface Flow {
-  id: "customer" | "seller" | "question";
+  id: "customer" | "seller" | "question" | "shop" | "seller_products" | "add_product";
   steps: Step[];
   /** The review/confirm step "edit" returns to. */
   confirmStep?: string;

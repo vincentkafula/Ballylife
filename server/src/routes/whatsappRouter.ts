@@ -24,7 +24,7 @@ import { recordInbound, recordStatus, updateContact } from "../services/whatsapp
 import { sendSignInLink } from "../services/whatsapp/flows/customer";
 import { consumeMagicToken } from "../services/magicLink";
 import { computeAccountStatus } from "../services/accountVerification";
-import { getDocument } from "../services/documentStore";
+import { getDocument, getProductPhoto } from "../services/documentStore";
 import type { Input } from "../services/whatsapp/types";
 
 export const whatsappRouter: ReturnType<typeof Router> = Router();
@@ -122,6 +122,19 @@ whatsappRouter.get("/link", async (req: Request, res: Response): Promise<void> =
   res.type("html").send(page("WhatsApp connected ✅", "Your WhatsApp number is now linked to your Ballylife account. You can close this page and go back to WhatsApp."));
 });
 
+/** Product photos sellers sent on WhatsApp (public -- they appear on the product page). */
+whatsappRouter.get("/photos/:id", async (req: Request, res: Response): Promise<void> => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) { res.sendStatus(404); return; }
+  try {
+    const photo = await getProductPhoto(req.params.id);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.type(photo.mimeType).send(photo.bytes);
+  } catch {
+    res.sendStatus(404);
+  }
+});
+
 // ---------------------------------------------------------------- admin
 
 const admin = [requireAuth, requireRole("marketplace_admin", "super_admin")];
@@ -173,6 +186,7 @@ export async function whatsappHousekeeping(): Promise<void> {
 export function startWhatsAppHousekeeping(): NodeJS.Timeout | null {
   if (!pool) return null;
   void import("../services/whatsapp/client").then(m => m.checkWhatsAppSetup()).catch(() => undefined);
+  void import("../services/whatsapp/orderAlerts").then(m => m.startOrderAlerts()).catch(() => undefined);
   const run = () => void whatsappHousekeeping().catch(err => logger.error("whatsapp.housekeeping_failed", { error: String(err) }));
   setTimeout(run, 60_000).unref();
   const t = setInterval(run, 24 * 3600_000);

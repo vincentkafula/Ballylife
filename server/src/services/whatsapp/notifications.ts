@@ -19,7 +19,7 @@ async function withinWindow(phone: string): Promise<boolean> {
   return Boolean(c?.last_inbound_at && Date.now() - new Date(c.last_inbound_at).getTime() < 23.5 * 3600_000);
 }
 
-async function templateOrText(phone: string, template: string, params: string[], text: string, opts: { buttonParam?: string; logAs?: string } = {}): Promise<void> {
+export async function templateOrText(phone: string, template: string, params: string[], text: string, opts: { buttonParam?: string; logAs?: string } = {}): Promise<void> {
   if (await withinWindow(phone)) { await sendText(phone, text, { logAs: opts.logAs }); return; }
   try { await sendTemplate(phone, template, params, opts); }
   catch (err) {

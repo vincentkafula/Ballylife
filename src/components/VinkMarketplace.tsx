@@ -2068,6 +2068,8 @@ interface VinkMarketplaceProps { initialAction?: "sell" | "shop" | null; initial
 // WhatsApp sign-in link token, captured before the router rewrites /wa-login to "/".
 let WA_LOGIN_TOKEN: string | null = typeof window !== "undefined" && window.location.pathname.replace(/\/$/, "") === "/wa-login"
   ? new URLSearchParams(window.location.search).get("t") : null;
+// Where to go after that sign-in (e.g. /checkout); only paths the app itself knows.
+const WA_LOGIN_NEXT: string | null = WA_LOGIN_TOKEN ? new URLSearchParams(window.location.search).get("next") : null;
 
 export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketplaceProps) {
   const currency = useCurrency(); // subscribes this whole tree to live currency/rate updates
@@ -2111,7 +2113,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
       const restored = mktAuth.restoreSession();
       if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); setAuthSupplier(restored.supplier); setAuthAuthority(restored.authority); setAuthShipping(restored.shipping); setAuthCredit(restored.credit); }
       toast.success(`Welcome, ${String(r.user.name).split(" ")[0]}! You're signed in.`);
-      if (r.user.role === "seller") setView("seller");
+      const next = WA_LOGIN_NEXT && WA_LOGIN_NEXT.startsWith("/") ? viewForPath(WA_LOGIN_NEXT) : null;
+      if (next && next.view !== "home") { if (next.productId) setSelProductId(next.productId); setView(next.view as View); }
+      else if (r.user.role === "seller") setView("seller");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

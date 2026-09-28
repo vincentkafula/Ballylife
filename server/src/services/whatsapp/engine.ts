@@ -18,17 +18,27 @@ import { touchContact, updateContact, loadConversation, saveConversation, setInb
 import { customerFlow, sendSignInLink } from "./flows/customer";
 import { sellerFlow } from "./flows/seller";
 import { questionFlow } from "./flows/question";
+import { shopFlow } from "./flows/shop";
+import { sellerProductsFlow, addProductFlow, activeSellerFor } from "./flows/sellerTools";
+import { sendMyOrders, sendOrderDetail, sendSellerOrders } from "./orders";
+import { cjOnlyCatalog } from "../../utils/catalogPolicy";
 import { deleteDocument } from "../documentStore";
 import type { Ctx, Flow, Input, Step } from "./types";
 
-const FLOWS: Record<string, Flow> = { customer: customerFlow, seller: sellerFlow, question: questionFlow };
+const FLOWS: Record<string, Flow> = {
+  customer: customerFlow, seller: sellerFlow, question: questionFlow,
+  shop: shopFlow, seller_products: sellerProductsFlow, add_product: addProductFlow,
+};
+/** Flows you can jump out of with "shop" / "orders" (browsing, not filling in a form). */
+const NAV_FLOWS = new Set([null, "shop", "seller_products"]);
 const EDIT_STEP = "__edit";
 const SITE = () => (process.env.MARKETPLACE_PUBLIC_URL || "https://www.ballylife.com").replace(/\/$/, "");
 
 const HELP =
   "You can type these any time:\n" +
   "• *menu* — main menu\n• *back* — previous question\n• *edit* — change an answer\n" +
-  "• *cancel* — stop and delete your answers\n• *continue* — carry on where you left off\n• *STOP* — stop receiving messages";
+  "• *cancel* — stop and delete your answers\n• *continue* — carry on where you left off\n" +
+  "• *shop* — search products\n• *orders* — track your orders\n• *STOP* — stop receiving messages";
 
 // ---------------------------------------------------------------- helpers
 
@@ -41,9 +51,11 @@ function nextStep(flow: Flow, afterId: string, data: Record<string, any>): Step 
 
 /** Deletes uploaded documents of an application that won't be submitted. */
 async function discardUploads(data: Record<string, any>): Promise<void> {
-  for (const doc of Object.values((data.docs ?? {}) as Record<string, { key: string }>)) {
-    await deleteDocument(doc.key).catch(err => logger.warn("whatsapp.doc_delete_failed", { error: String(err) }));
-  }
+  const keys = [
+    ...Object.values((data.docs ?? {}) as Record<string, { key: string }>).map(d => d.key),
+    ...((data.photoIds ?? []) as string[]).map(id => `product-photos/${id}`),
+  ];
+  for (const key of keys) await deleteDocument(key).catch(err => logger.warn("whatsapp.doc_delete_failed", { error: String(err) }));
 }
 
 async function firstName(userId: string | null): Promise<string | null> {
@@ -55,21 +67,28 @@ async function firstName(userId: string | null): Promise<string | null> {
 export async function sendMainMenu(ctx: Ctx, paused: boolean): Promise<void> {
   const name = await firstName(ctx.userId);
   if (name) {
-    const { rows } = await pool!.query(`SELECT role FROM users WHERE id = $1`, [ctx.userId]);
-    const isSeller = rows[0]?.role === "seller";
-    await sendList(ctx.phone, `👋 Welcome back, *${name}*! What would you like to do?`, "Options", [{
+    const seller = await activeSellerFor(ctx.userId);
+    const cont = paused ? [{ id: "menu:continue", title: "↩️ Continue", description: "Pick up where you left off" }] : [];
+    const sellerRows = seller?.status === "active" ? [
+      { id: "menu:store_orders", title: "🧾 Store orders", description: `Latest orders for ${seller.storeName}` },
+      { id: "menu:products", title: "🏷️ My products", description: "Update stock, pause or make live" },
+      { id: "menu:add_product", title: "➕ Add a product", description: "Submit a new product for approval" },
+    ] : [];
+    const pending = seller && seller.status === "pending_kyc" ? "\n\n⏳ Your seller application is being reviewed — we'll message you here." : "";
+    await sendList(ctx.phone, `👋 Welcome back, *${name}*! What would you like to do?${pending}`, "Options", [{
       rows: [
-        ...(paused ? [{ id: "menu:continue", title: "↩️ Continue", description: "Pick up where you left off" }] : []),
-        { id: "menu:shop", title: "🛍️ Shop products", description: "Browse Ballylife" },
+        ...cont,
+        ...sellerRows,
+        { id: "menu:shop", title: "🛍️ Shop products", description: "Search Ballylife" },
         { id: "menu:orders", title: "📦 My orders", description: "Track your orders" },
-        { id: "menu:signin", title: "🔐 Sign-in link", description: isSeller ? "Open your seller dashboard" : "Sign in on ballylife.com" },
+        { id: "menu:signin", title: "🔐 Sign-in link", description: seller?.status === "active" ? "Open your seller dashboard" : "Sign in on ballylife.com" },
         { id: "menu:question", title: "💬 Talk to a person", description: "Ask our team a question" },
       ],
     }]);
     return;
   }
   await sendButtons(ctx.phone,
-    "👋 Welcome to *Ballylife* — South Africa's online marketplace, with delivery included on every order.\n\nAre you here to shop or to sell?",
+    "👋 Welcome to *Ballylife* — South Africa's online marketplace, with delivery included on every order.\n\nAre you here to shop or to sell? (Just browsing? Type *shop* to search products.)",
     [{ id: "menu:customer", title: "🛍️ I'm a customer" }, { id: "menu:seller", title: "🏪 I want to sell" }, { id: "menu:question", title: "❓ Just a question" }]);
   if (paused) await sendText(ctx.phone, "You have an unfinished registration — type *continue* to pick up where you left off.");
 }
@@ -91,17 +110,21 @@ async function askCurrent(ctx: Ctx, conv: Conversation): Promise<void> {
 
 // ---------------------------------------------------------------- commands
 
-type Command = "menu" | "back" | "edit" | "cancel" | "continue" | "help" | "stop" | "start";
+type Command = "menu" | "back" | "edit" | "cancel" | "continue" | "help" | "stop" | "start" | "shop" | "orders" | "store_orders";
+const NAV_COMMANDS = new Set<Command>(["shop", "orders", "store_orders"]);
 const COMMANDS: Record<string, Command> = {
   menu: "menu", "main menu": "menu", hi: "menu", hello: "menu", hey: "menu",
   back: "back", edit: "edit", cancel: "cancel", continue: "continue", resume: "continue",
   help: "help", stop: "stop", unsubscribe: "stop", start: "start", subscribe: "start",
+  shop: "shop", search: "shop", orders: "orders", "my orders": "orders", "track order": "orders", "store orders": "store_orders",
 };
 
-function commandOf(input: Input, inFlow: boolean): Command | null {
+function commandOf(input: Input, inFlow: boolean, flow: string | null = null): Command | null {
   if (input.kind === "choice" && (input.id === "edit" || input.id === "cancel")) return input.id;
   if (input.kind !== "text") return null;
   const cmd = COMMANDS[input.text.trim().toLowerCase().replace(/[.!]+$/, "")];
+  // "shop"/"orders" while filling in a form is probably an answer, not a command.
+  if (cmd && NAV_COMMANDS.has(cmd) && !NAV_FLOWS.has(flow)) return null;
   // A greeting in the middle of a flow is probably an answer-less "hi" -- treat it as menu only outside flows.
   if (cmd === "menu" && inFlow && input.text.trim().toLowerCase() !== "menu" && input.text.trim().toLowerCase() !== "main menu") return null;
   return cmd ?? null;
@@ -112,6 +135,14 @@ async function runCommand(cmd: Command, ctx: Ctx, conv: Conversation): Promise<v
   switch (cmd) {
     case "help":
       await sendText(ctx.phone, HELP);
+      return;
+    case "shop":
+      await startFlow(ctx, conv, "shop");
+      return;
+    case "orders":
+    case "store_orders":
+      if (flow) { await saveConversation(ctx.phone, emptyConversation()); conv.flow = null; }
+      await handleMenuChoice(cmd === "orders" ? "menu:orders" : "menu:store_orders", ctx, conv);
       return;
     case "menu": {
       if (flow) {
@@ -185,13 +216,28 @@ async function handleMenuChoice(id: string, ctx: Ctx, conv: Conversation): Promi
     case "menu:seller": await startFlow(ctx, conv, "seller"); return true;
     case "menu:question": await startFlow(ctx, conv, "question"); return true;
     case "menu:continue": await runCommand("continue", ctx, conv); return true;
-    case "menu:shop": await sendText(ctx.phone, `🛍️ Browse everything on Ballylife — delivery included:\n${SITE()}/catalog`, { previewUrl: true }); return true;
-    case "menu:orders": await sendText(ctx.phone, `📦 Your orders and tracking:\n${SITE()}/orders\n\n(Order tracking right here in WhatsApp is coming soon.)`); return true;
+    case "menu:shop": await startFlow(ctx, conv, "shop"); return true;
+    case "menu:orders":
+      if (ctx.userId) await sendMyOrders(ctx.phone, ctx.userId);
+      else await sendText(ctx.phone, `To track orders here, connect your account: tap *I'm a customer* and use the email you shop with. You can also track orders at ${SITE()}/track-order`);
+      return true;
+    case "menu:store_orders":
+    case "menu:products":
+    case "menu:add_product": {
+      const seller = await activeSellerFor(ctx.userId);
+      if (seller?.status !== "active") { await sendText(ctx.phone, "Seller tools are for approved Ballylife sellers. Type *menu* to see your options."); return true; }
+      if (id === "menu:store_orders") await sendSellerOrders(ctx.phone, seller.id);
+      else if (id === "menu:products") await startFlow(ctx, conv, "seller_products");
+      else if (cjOnlyCatalog()) await sendText(ctx.phone, "Adding your own products is paused on Ballylife right now — we'll let you know when it opens again. You can still update stock in *My products*.");
+      else await startFlow(ctx, conv, "add_product");
+      return true;
+    }
     case "menu:signin":
       if (ctx.userId) await sendSignInLink(ctx.phone, ctx.userId, "Here's your sign-in link.");
       else await sendMainMenu(ctx, false);
       return true;
   }
+  if (id.startsWith("order:") && ctx.userId) { await sendOrderDetail(ctx.phone, ctx.userId, id.slice(6)); return true; }
   return false;
 }
 
@@ -218,6 +264,15 @@ async function runStep(input: Input, ctx: Ctx, conv: Conversation): Promise<void
   if (!result.ok) {
     await sendText(ctx.phone, result.retry);
     if (result.reask) await step.ask(ctx);
+    return;
+  }
+  if (result.startFlow) {
+    Object.assign(conv.data, result.set ?? {});
+    await startFlow(ctx, conv, result.startFlow);
+    return;
+  }
+  if (result.done) {
+    await saveConversation(ctx.phone, emptyConversation());
     return;
   }
   if (result.cancel) {
@@ -267,7 +322,7 @@ function describeInput(input: Input): string {
 
 const queues = new Map<string, Promise<void>>();
 const recent = new Map<string, number[]>();
-const FLOOD_PER_MINUTE = 20;
+const FLOOD_PER_MINUTE = Number(process.env.WHATSAPP_FLOOD_PER_MINUTE ?? 30);
 
 /** Handles one incoming message; messages from the same number run in order. */
 export function handleIncoming(msg: { phone: string; profileName: string | null; wamid: string; input: Input }): Promise<void> {
@@ -292,11 +347,15 @@ async function handleOne({ phone, profileName, wamid, input }: { phone: string; 
   const step = conv.flow ? FLOWS[conv.flow]?.steps.find(s => s.id === conv.step) : undefined;
   await setInboundBody(wamid, step?.sensitive && input.kind === "text" ? "[hidden: personal details]" : describeInput(input)).catch(() => undefined);
 
-  const cmd = commandOf(input, Boolean(conv.flow));
+  const cmd = commandOf(input, Boolean(conv.flow), conv.flow);
   if (contact.opted_out && cmd !== "start") return; // they asked us to stop
 
   try {
     if (cmd) { await runCommand(cmd, ctx, conv); return; }
+    if (conv.flow && NAV_FLOWS.has(conv.flow) && input.kind === "choice" && (input.id.startsWith("menu:") || input.id.startsWith("order:"))) {
+      await saveConversation(ctx.phone, emptyConversation());
+      if (await handleMenuChoice(input.id, ctx, emptyConversation())) return;
+    }
     if (conv.flow) { await runStep(input, ctx, conv); return; }
     if (input.kind === "choice" && await handleMenuChoice(input.id, ctx, conv)) return;
     await sendMainMenu(ctx, Boolean(conv.data.paused));

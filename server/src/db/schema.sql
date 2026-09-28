@@ -1255,3 +1255,13 @@ CREATE TABLE IF NOT EXISTS magic_login_tokens (
   used_at     TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- WhatsApp order alerts: what we last told each person about each order
+-- (customer status updates, and one "new order" alert per seller).
+CREATE TABLE IF NOT EXISTS wa_order_notifications (
+  order_id     UUID NOT NULL,
+  audience     TEXT NOT NULL,                 -- 'customer' or 'seller:<seller id>'
+  last_status  TEXT NOT NULL,
+  notified_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (order_id, audience)
+);

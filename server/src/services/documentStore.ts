@@ -48,6 +48,22 @@ export async function getDocument(key: string): Promise<Buffer> {
   return decryptBuffer(bytes);
 }
 
+/**
+ * Product photos sent by sellers on WhatsApp. Unlike ID documents these are
+ * public (they appear on the product page), so they are stored unencrypted
+ * and served through /api/whatsapp/photos/:id.
+ */
+export async function putProductPhoto(body: Buffer, mimeType: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await s3().send(new PutObjectCommand({ Bucket: bucket(), Key: `product-photos/${id}`, Body: body, ContentType: mimeType }));
+  return id;
+}
+
+export async function getProductPhoto(id: string): Promise<{ bytes: Buffer; mimeType: string }> {
+  const out = await s3().send(new GetObjectCommand({ Bucket: bucket(), Key: `product-photos/${id}` }));
+  return { bytes: Buffer.from(await out.Body!.transformToByteArray()), mimeType: out.ContentType ?? "image/jpeg" };
+}
+
 export async function deleteDocument(key: string): Promise<void> {
   await s3().send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));
 }

@@ -24,8 +24,9 @@ export async function createMagicToken(userId: string, purpose: "login" | "link_
   return token;
 }
 
-/** The website sign-in link for a login token. */
-export const magicLoginUrl = (token: string) => `${SITE()}/wa-login?t=${token}`;
+/** The website sign-in link for a login token; `next` opens a page after signing in (e.g. /checkout). */
+export const magicLoginUrl = (token: string, next?: string) =>
+  `${SITE()}/wa-login?t=${token}${next && next.startsWith("/") ? `&next=${encodeURIComponent(next)}` : ""}`;
 /** The confirm link (served by the backend) for linking WhatsApp to an existing account. */
 export const linkConfirmUrl = (token: string) => `${API()}/api/whatsapp/link?t=${encodeURIComponent(token)}`;
 
