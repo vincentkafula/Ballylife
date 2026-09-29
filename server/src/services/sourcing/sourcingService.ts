@@ -160,7 +160,10 @@ async function loadRaw(ref: string, who: Caller): Promise<RawProduct | null> {
   const { adapter: a, externalId } = opened;
   const states = await supplierStates();
   if (!states.some(s => s.key === a.key && s.enabled && s.configured)) throw new SourcingUnavailableError("This product isn't available right now.");
+  return loadRawById(a, externalId, who);
+}
 
+async function loadRawById(a: SupplierAdapter, externalId: string, who: Caller): Promise<RawProduct> {
   const product = await cached<SupplierProduct>(a, "getProduct", "product", { id: externalId }, who, () => a.getProduct(externalId));
   // Delivery quote for the cheapest variant (CJ quotes per variant).
   const cheapest = [...product.variants].sort((x, y) => x.cost - y.cost)[0];
@@ -238,4 +241,75 @@ export async function usageSummary(days = 7) {
 export async function pruneSourcingCache(): Promise<number> {
   const r = await pool!.query(`DELETE FROM sourcing_cache WHERE expires_at < $1`, [new Date()]);
   return r.rowCount ?? 0;
+}
+
+// ── Keeping sellers' sourced products current ──────────────────────────────
+// Ballylife's own catalogue jobs refresh the items they list; items sellers
+// added through Find products (added_via = 'seller_sourcing') are refreshed
+// here instead: supplier cost, options and delivery quote on the catalogue
+// item, and stock on the sellers' listings. Nothing is listed in the
+// Ballylife store, and sellers' prices are never changed -- a listing whose
+// price no longer covers cost is logged for the team.
+const REFRESH_AFTER_MS = 20 * 3600_000;
+const SYSTEM: Caller = { userId: null, sellerId: null };
+
+export async function refreshSellerSourcedProducts(limit = 20): Promise<{ checked: number; paused: number; resumed: number; belowCost: number }> {
+  const out = { checked: 0, paused: 0, resumed: 0, belowCost: 0 };
+  const states = await supplierStates();
+  const { rows } = await pool!.query(
+    `SELECT id, external_source, external_id FROM mkt_supplier_products
+     WHERE added_via = 'seller_sourcing' AND status = 'active' AND updated_at < $1 ORDER BY updated_at ASC LIMIT $2`,
+    [new Date(Date.now() - REFRESH_AFTER_MS), limit]);
+  const o = rows.length ? await priceOptions() : null;
+  for (const r of rows as { id: string; external_source: string; external_id: string }[]) {
+    const a = ADAPTERS.find(x => x.catalogue.source === r.external_source);
+    // Supplier switched off or not connected: try again next time, change nothing.
+    if (!a || !states.some(st => st.key === a.key && st.enabled && st.configured)) continue;
+    out.checked++;
+    try {
+      const { product: p, shipping } = await loadRawById(a, r.external_id, SYSTEM);
+      const inStock = p.variants.filter(v => v.stock > 0);
+      const available = p.available && inStock.length > 0 && shipping !== null;
+      const stock = available ? Math.min(MAX_LISTING_STOCK, inStock.reduce((n, v) => n + v.stock, 0)) : 0;
+      if (available) {
+        const cheapest = [...inStock].sort((x, y) => x.cost - y.cost)[0];
+        const variants: ExternalVariant[] = inStock.map(v => ({
+          vid: v.orderRef ?? v.externalSku, key: cleanTitle(v.label) || "Default", priceUsd: v.cost, ...(v.image && isSupplierImageUrl(v.image) ? { image: v.image } : {}),
+        }));
+        const base = normalizeProduct(a.key, p, shipping, o!).baseCostZar;
+        await pool!.query(
+          `UPDATE mkt_supplier_products SET cost_price = $2, external_variants = $3, est_shipping_usd = $4, retail_price = $5, updated_at = now() WHERE id = $1`,
+          [r.id, cheapest.cost, JSON.stringify(variants), shipping!.currency === "USD" ? shipping!.cost : null, base]);
+        const { rows: back } = await pool!.query(
+          `UPDATE mkt_products SET status = 'active', stock = $2, updated_at = now()
+           WHERE supplier_product_id = $1 AND fulfillment_type = 'imported' AND status = 'out_of_stock' RETURNING id`, [r.id, stock]);
+        await pool!.query(
+          `UPDATE mkt_products SET stock = $2, updated_at = now() WHERE supplier_product_id = $1 AND fulfillment_type = 'imported' AND status IN ('active','pending_review')`, [r.id, stock]);
+        out.resumed += back.length;
+        // Sellers set their own prices; flag any that no longer cover product + delivery + commission.
+        const { rows: low } = await pool!.query(
+          `SELECT p.id, p.price, s.commission_pct FROM mkt_products p JOIN mkt_sellers s ON s.id = p.seller_id
+           WHERE p.supplier_product_id = $1 AND p.fulfillment_type = 'imported' AND p.status IN ('active','pending_review')`, [r.id]);
+        for (const l of low as { id: string; price: string; commission_pct: string }[]) {
+          const pct = Number(l.commission_pct) || 8;
+          if (Number(l.price) < Math.ceil(base / (1 - pct / 100))) {
+            out.belowCost++;
+            logger.warn("sourcing.listing_below_cost", { productId: l.id, price: Number(l.price), baseCostZar: base });
+          }
+        }
+      } else {
+        const { rows: paused } = await pool!.query(
+          `UPDATE mkt_products SET status = 'out_of_stock', stock = 0, updated_at = now()
+           WHERE supplier_product_id = $1 AND fulfillment_type = 'imported' AND status = 'active' RETURNING id`, [r.id]);
+        await pool!.query(`UPDATE mkt_supplier_products SET updated_at = now() WHERE id = $1`, [r.id]);
+        out.paused += paused.length;
+      }
+    } catch (err) {
+      // Try again next cycle; a supplier hiccup shouldn't take listings down.
+      await pool!.query(`UPDATE mkt_supplier_products SET updated_at = now() WHERE id = $1`, [r.id]);
+      logger.warn("sourcing.refresh_failed", { supplierProductId: r.id, error: String((err as Error)?.message ?? err) });
+    }
+  }
+  if (out.checked) logger.info("sourcing.seller_products_refreshed", out);
+  return out;
 }

@@ -476,24 +476,10 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
   <script>
     (function(){
       var OFFICES = {
+        // Only real offices. Every other country shows "no dedicated office
+        // yet" and points to the Cape Town head office.
         "South Africa": [
-          { label:"Head Office", address:"8 Rose Street, State House Building, Cape Town, South Africa", phone:"+27 61 461 5035", email:"info@ballylife.com" },
-          { label:"Johannesburg Office", address:"14 Rivonia Road, Sandton, Johannesburg, South Africa", phone:"+27 11 234 5678", email:"southafrica@ballylife.com" }
-        ],
-        "Zambia": [
-          { label:"Zambia Office", address:"Lusaka, Zambia", phone:"+260 211 123 456", email:"zambia@ballylife.com" }
-        ],
-        "Kenya": [
-          { label:"Nairobi Office", address:"Westlands Business Park, Nairobi, Kenya", phone:"+254 20 123 4567", email:"kenya@ballylife.com" }
-        ],
-        "Nigeria": [
-          { label:"Lagos Office", address:"12 Adeola Odeku Street, Victoria Island, Lagos, Nigeria", phone:"+234 1 234 5678", email:"nigeria@ballylife.com" }
-        ],
-        "Ghana": [
-          { label:"Accra Office", address:"Ring Road Central, Accra, Ghana", phone:"+233 30 123 4567", email:"ghana@ballylife.com" }
-        ],
-        "Egypt": [
-          { label:"Cairo Office", address:"Nile Corniche, Cairo, Egypt", phone:"+20 2 1234 5678", email:"egypt@ballylife.com" }
+          { label:"Head Office", address:"8 Rose Street, State House Building, Cape Town, South Africa", phone:"+27 61 461 5035", email:"info@ballylife.com" }
         ]
       };
 

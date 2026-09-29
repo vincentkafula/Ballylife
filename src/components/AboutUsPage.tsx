@@ -113,7 +113,7 @@ const ABOUT_PAGE_HTML = String.raw`<!DOCTYPE html>
         <div class="hero-stat"><div class="num">2</div><div class="lbl">countries live today: Zambia &amp; South Africa</div></div>
         <div class="hero-stat"><div class="num">55</div><div class="lbl">African countries on our roadmap</div></div>
         <div class="hero-stat"><div class="num">6</div><div class="lbl">verified seller storefronts and growing</div></div>
-        <div class="hero-stat"><div class="num">60</div><div class="lbl">minute average delivery, where we operate</div></div>
+        <div class="hero-stat"><div class="num">10–20</div><div class="lbl">business days typical delivery for imported items, tracked to your door</div></div>
       </div>
     </div>
   </header>

@@ -234,6 +234,30 @@ describe("Seller sourcing (search, profit, import, plan limits)", () => {
     expect(approve.status).toBe(200);
   });
 
+  it("keeps the seller's listing in step with the supplier's stock, without touching their price", async () => {
+    const { refreshSellerSourcedProducts } = await import("../services/sourcing/sourcingService");
+    const age = () => pool.query(`UPDATE mkt_supplier_products SET updated_at = $1 WHERE external_source = 'aliexpress'`, [new Date(Date.now() - 48 * 3600_000)]);
+    const listing = async () => (await pool.query(`SELECT status, stock, price FROM mkt_products WHERE seller_id = $1`, [sellerId])).rows[0];
+    const original = fakeAe.getProduct;
+    const soldOut = async (id: string) => ({ ...(await original(id)), variants: (await original(id)).variants.map(v => ({ ...v, stock: 0 })) });
+
+    await pool.query(`DELETE FROM sourcing_cache`);
+    fakeAe.getProduct = soldOut;
+    await age();
+    expect((await refreshSellerSourcedProducts()).paused).toBe(1);
+    expect(await listing()).toMatchObject({ status: "out_of_stock", stock: 0 });
+
+    await pool.query(`DELETE FROM sourcing_cache`);
+    fakeAe.getProduct = original;
+    await age();
+    expect((await refreshSellerSourcedProducts()).resumed).toBe(1);
+    const back = await listing();
+    expect(back).toMatchObject({ status: "active", stock: 40 });
+    expect(Number(back.price)).toBe(399); // the seller's price is never changed
+    const { rows: house } = await pool.query(`SELECT COUNT(*)::int AS n FROM mkt_products WHERE seller_id = 'sel-ballylife'`);
+    expect(house[0].n).toBe(0);
+  });
+
   it("enforces the active-imports limit, and a manager can move the seller to a bigger plan", async () => {
     await setPlans({ starter: { activeImports: 1 } });
     const blocked = await request(app).post("/api/marketplace/sourcing/import").set(auth()).send({ ref, retailPrice: 399 });

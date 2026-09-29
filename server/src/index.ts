@@ -179,6 +179,8 @@ async function start() {
   startWhatsAppHousekeeping();
   void import("./services/dpoProcessor").then(m => m.startDpoWorker()).catch(() => undefined);
   setInterval(() => { void import("./services/sourcing/sourcingService").then(m => m.pruneSourcingCache()).catch(() => undefined); }, 6 * 3600_000).unref();
+  // Sellers' sourced products: price, options and stock from the supplier (never listed for Ballylife).
+  setInterval(() => { void import("./services/sourcing/sourcingService").then(m => m.refreshSellerSourcedProducts()).catch(() => undefined); }, 3600_000).unref();
   void import("./services/otpDelivery").then(m => m.startOtpReadinessCheck()).catch(() => undefined);
   logger.info("http.async_errors_caught", { routes: wrappedRoutes });
   app.listen(PORT, () => {

@@ -689,8 +689,8 @@ const TERMS_PAGE_HTML = String.raw`<!DOCTYPE html>
 
       <h3 id="t08-3"><span class="code">03</span>Company information</h3>
       <p>
-        Registered name: <em>[Ballylife legal entity name]</em><br>
-        Registration number: <em>[company registration number]</em><br>
+        Registered name: Ballylife Online (Pty) Ltd<br>
+        Registration number: 2026/719471/07<br>
         Main business: Online retail and marketplace<br>
         Email: legal@ballylife.com<br>
         Phone: +27 61 461 5035<br>
