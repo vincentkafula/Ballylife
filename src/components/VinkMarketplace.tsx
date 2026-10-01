@@ -11,7 +11,7 @@ import {
   SlidersHorizontal, Grid, List, Plus, Minus, Trash2,
   Package, Truck, CheckCircle, Tag, TrendingUp, BarChart3,
   Settings, Menu, Clock, Shield, Zap, RotateCcw, Loader2,
-  Home, Filter, MapPin, ChevronDown, User, LogOut, ShoppingBag,
+  Home, Filter, MapPin, ChevronDown, User, LogOut, ShoppingBag, Lock,
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import {
@@ -68,6 +68,31 @@ function ProductPhoto({ src, alt, className = "", eager = false }: { src: string
 // local fee (free over R500) and the shorter window. Mirrors utils/delivery.ts.
 const LOCAL_DELIVERY_WINDOW = "3–5 business days";
 const INTL_DELIVERY_WINDOW = "10–20 business days";
+
+/** "Wed, 14 Oct – Tue, 27 Oct": the delivery window as dates, counting business days from today. */
+function deliveryDateRange(p: R): string {
+  const d = p.deliveryDays as { min?: number; max?: number } | undefined;
+  const [min, max] = p.shippingIncluded ? [d?.min ?? 10, d?.max ?? 20] : [3, 5];
+  const addBusinessDays = (n: number) => {
+    const day = new Date();
+    let left = n;
+    while (left > 0) { day.setDate(day.getDate() + 1); if (day.getDay() !== 0 && day.getDay() !== 6) left--; }
+    return day;
+  };
+  const fmt = (x: Date) => x.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "short" });
+  return `${fmt(addBusinessDays(min))} – ${fmt(addBusinessDays(max))}`;
+}
+
+/** "About this item": up to six short points from the description (its own lines, else its sentences). */
+function aboutThisItem(description: string): string[] {
+  const clean = description.replace(/\r/g, "").trim();
+  if (!clean) return [];
+  // Section headings in supplier descriptions ("Product information", "Packing list") aren't features.
+  const heading = /^(product (information|details|description|images?|photos?|display)|packing list|package (list|includes|contents)|specifications?|features?|description|note)\s*:?$/i;
+  const lines = clean.split(/\n+/).map(l => l.replace(/^[\s•\-*·]+/, "").trim()).filter(l => l.length >= 12 && !heading.test(l));
+  const parts = lines.length >= 3 ? lines : clean.replace(/\s+/g, " ").split(/(?<=[.!?])\s+(?=[A-Z0-9])/).map(t => t.trim()).filter(t => t.length >= 12);
+  return parts.slice(0, 6).map(t => (t.length > 220 ? t.slice(0, 217).replace(/\s+\S*$/, "") + "…" : t));
+}
 
 function deliveryWindowFor(p: R): string {
   const d = p.deliveryDays as { min?: number; max?: number } | undefined;
@@ -1094,9 +1119,11 @@ function CatalogView({ categories, onProduct, onCart, wishlistIds, onWishlist, i
 }
 
 // ─── PRODUCT DETAIL ───────────────────────────────────────────────────────────
-function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist, authUser, onRequireAuth, onFooterLink }: {
+function ProductDetailView({ productId, onBack, onCart, onBuyNow, onOpenProduct, wishlistIds, onWishlist, authUser, onRequireAuth, onFooterLink }: {
   productId: string; onBack: () => void;
-  onCart: (p: R, variantId?: string) => void;
+  onCart: (p: R, variantId?: string, quantity?: number) => void;
+  onBuyNow: (p: R, variantId?: string, quantity?: number) => void;
+  onOpenProduct: (id: string) => void;
   wishlistIds: Set<string>; onWishlist: (id: string) => void;
   authUser: { id: string; name: string } | null; onRequireAuth: () => void; onFooterLink: (label: string) => void;
 }) {
@@ -1127,13 +1154,19 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
     } catch (err) { showLoadError(err); } finally { setSubmittingReview(false); }
   };
 
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const showTab = (t: "desc" | "reviews" | "seller") => { setTab(t); tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+
   useEffect(() => {
     setLoading(true);
     setShow3D(false);
+    setQty(1);
     mktProducts.get(productId)
       .then(res => {
         const d = res.data as typeof data;
         setData(d);
+        const firstOption = ((d?.product?.variants as R[]) ?? [])[0];
+        setSelVariant(firstOption ? String(firstOption.id) : "");
         addRecentlyViewed(productId);
         if (d?.product) {
           const name = String(d.product.name ?? "Product");
@@ -1160,6 +1193,11 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
   const discount   = p.compareAtPrice ? Math.round((1 - Number(p.price) / Number(p.compareAtPrice)) * 100) : 0;
   const variantTypes = [...new Set(variants.map(v => v.type as string))];
   const imgs = p.images as string[];
+  const chosenVariant = variants.find(v => v.id === selVariant);
+  const unitPrice = Number(p.price) + Number(chosenVariant?.additionalPrice ?? 0);
+  const needsOption = variants.length > 0 && !chosenVariant;
+  const aboutItems = aboutThisItem(String(p.description ?? ""));
+  const deliveryDates = deliveryDateRange(p);
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ background: "#F5F6F8" }}>
@@ -1172,137 +1210,209 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
         </button>
       </div>
 
-      <div className="grid xl:grid-cols-2">
-        {/* Image */}
-        <div>
-          {show3D ? (
-            <div>
-              <div className="flex items-center justify-between px-3 pt-2">
-                <button onClick={() => setShow3D(false)} className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900">
-                  <ArrowLeft className="w-3.5 h-3.5" /> Back to photos
-                </button>
+      {/* Breadcrumb */}
+      <nav aria-label="Breadcrumb" className="bg-white px-4 lg:px-6 pt-3 text-xs text-gray-500 flex items-center gap-1 flex-wrap">
+        <button onClick={onBack} className="hover:underline">Shop</button>
+        <ChevronRight className="w-3 h-3" />
+        <span>{p.categoryName as string}</span>
+        <ChevronRight className="w-3 h-3" />
+        <span className="text-gray-700 truncate max-w-[60ch]">{p.name as string}</span>
+      </nav>
+
+      <div className="bg-white">
+        <div className="grid gap-6 px-4 lg:px-6 py-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)] xl:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(250px,2.6fr)] max-w-[1500px] mx-auto">
+          {/* Photos (the hover zoom opens over the details column) */}
+          <div className="min-w-0">
+            {show3D ? (
+              <div>
+                <div className="flex items-center justify-between px-3 pt-2">
+                  <button onClick={() => setShow3D(false)} className="flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back to photos
+                  </button>
+                </div>
+                <Product3DViewer
+                  key={productId}
+                  emoji={p.emoji as string}
+                  colorA={productColors(imgs, "#1E7B4D", "#0F3D24")[0]}
+                  colorB={productColors(imgs, "#1E7B4D", "#0F3D24")[1]}
+                  brand={(p.brand as string) ?? ""}
+                  name={p.name as string}
+                  discount={discount}
+                  illustration={getProductIllustration(p)}
+                  photos={productPhotos(imgs)}
+                />
               </div>
-              <Product3DViewer
+            ) : (
+              <ProductPhotoGallery
                 key={productId}
                 emoji={p.emoji as string}
                 colorA={productColors(imgs, "#1E7B4D", "#0F3D24")[0]}
                 colorB={productColors(imgs, "#1E7B4D", "#0F3D24")[1]}
-                brand={(p.brand as string) ?? ""}
+                photos={productPhotos(imgs)}
                 name={p.name as string}
                 discount={discount}
                 illustration={getProductIllustration(p)}
-                photos={productPhotos(imgs)}
+                onOpen3DView={() => setShow3D(true)}
               />
-            </div>
-          ) : (
-            <ProductPhotoGallery
-              key={productId}
-              emoji={p.emoji as string}
-              colorA={productColors(imgs, "#1E7B4D", "#0F3D24")[0]}
-              colorB={productColors(imgs, "#1E7B4D", "#0F3D24")[1]}
-              photos={productPhotos(imgs)}
-              name={p.name as string}
-              discount={discount}
-              illustration={getProductIllustration(p)}
-              onOpen3DView={() => setShow3D(true)}
-            />
-          )}
-          {p.isFlashDeal && (
-            <div className="mx-4 my-3 flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
-              <Zap className="w-4 h-4 text-red-500 flex-shrink-0" />
-              <p className="text-xs text-red-700 font-semibold">Flash Deal! Limited time offer.</p>
-            </div>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="p-6 bg-white border-l border-gray-50 space-y-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">{p.categoryName as string}</span>
-              <span className="text-xs text-gray-500">{p.brand as string}</span>
-            </div>
-            <h1 className="font-serif text-2xl text-gray-900 leading-snug" style={{ fontWeight: 600 }}>{p.name as string}</h1>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Stars rating={Number(p.avgRating)} size={15} />
-            <span className="text-sm font-bold text-gray-700">{Number(p.avgRating).toFixed(1)}</span>
-            <span className="text-sm text-gray-500">({Number(p.reviewCount).toLocaleString()} reviews)</span>
-          </div>
-
-          <div className="flex items-baseline gap-3">
-            <span className="text-3xl font-black text-gray-900">{fmtZAR(Number(p.price))}</span>
-            {p.compareAtPrice && (
-              <>
-                <span className="text-lg text-gray-500 line-through">{fmtZAR(Number(p.compareAtPrice))}</span>
-                <span className="text-sm font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Save {discount}%</span>
-              </>
+            )}
+            {p.isFlashDeal && (
+              <div className="my-3 flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
+                <Zap className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <p className="text-xs text-red-700 font-semibold">Flash Deal! Limited time offer.</p>
+              </div>
             )}
           </div>
 
-          {/* Variants */}
-          {variantTypes.map(type => (
-            <div key={type}>
-              <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wider">{type}</p>
-              <div className="flex flex-wrap gap-2">
-                {variants.filter(v => v.type === type).map((v, i) => (
-                  <button key={i} onClick={() => setSelVariant(v.id as string)}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all"
-                    style={{
-                      background: selVariant === v.id ? "#1E7B4D" : "white",
-                      color: selVariant === v.id ? "white" : "#374151",
-                      borderColor: selVariant === v.id ? "#1E7B4D" : "#E5E7EB",
-                    }}>
-                    {v.value as string}
-                    {Number(v.additionalPrice) > 0 && <span className="ml-1 opacity-70">+{fmtZAR(Number(v.additionalPrice))}</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* Qty */}
-          <div>
-            <p className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wider">Quantity</p>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
-                <button onClick={() => setQty(q => Math.max(1, q - 1))} className="px-3 py-2 hover:bg-gray-50"><Minus className="w-3.5 h-3.5 text-gray-600" /></button>
-                <span className="px-4 text-sm font-bold">{qty}</span>
-                <button onClick={() => setQty(q => Math.min(Number(p.stock), q + 1))} className="px-3 py-2 hover:bg-gray-50"><Plus className="w-3.5 h-3.5 text-gray-600" /></button>
-              </div>
-              <span className="text-xs text-gray-500">{Number(p.stock)} in stock</span>
-            </div>
-          </div>
-
-          {p.japanPart && <JapanPartDisclosure part={p.japanPart as R} deliveryWindow={deliveryWindowFor(p)} soldOut={Number(p.stock) <= 0} />}
-
-          {/* Delivery */}
-          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-green-50 border border-green-100">
-            <Truck className="w-4 h-4 text-green-600 flex-shrink-0" />
-            <div>
-              <p className="text-xs font-semibold text-green-700">{p.shippingIncluded ? "Delivery included in the price" : Number(p.price) > 500 ? "Free delivery" : "R99 delivery"}</p>
-              <p className="text-[10px] text-green-600">Estimated {deliveryWindowFor(p)}{p.shippingIncluded ? " to your door" : ""}</p>
-            </div>
-          </div>
-
-          {/* CTAs */}
-          <div className="flex gap-3">
-            <button onClick={() => onCart(p, selVariant || undefined)} disabled={Number(p.stock) <= 0}
-              className="flex-1 py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:cursor-not-allowed"
-              style={{ background: Number(p.stock) <= 0 ? "#9CA3AF" : "#1E7B4D" }}>
-              <ShoppingCart className="w-4 h-4" />{Number(p.stock) <= 0 ? "Sold out" : "Add to Cart"}
+          {/* Details */}
+          <div className="min-w-0 space-y-3">
+            <h1 className="text-xl lg:text-2xl text-gray-900 leading-snug" style={{ fontWeight: 500 }}>{p.name as string}</h1>
+            {seller && (
+              <button onClick={() => showTab("seller")} className="text-sm text-[#17633D] hover:underline">Visit the {seller.storeName as string} store</button>
+            )}
+            <button onClick={() => showTab("reviews")} className="flex items-center gap-2 text-sm">
+              {Number(p.reviewCount) > 0 ? (
+                <>
+                  <span className="font-semibold text-gray-800">{Number(p.avgRating).toFixed(1)}</span>
+                  <Stars rating={Number(p.avgRating)} size={15} />
+                  <span className="text-[#17633D] hover:underline">({Number(p.reviewCount).toLocaleString()} {Number(p.reviewCount) === 1 ? "rating" : "ratings"})</span>
+                </>
+              ) : <span className="text-[#17633D] hover:underline">No ratings yet — be the first to review</span>}
             </button>
-            <button onClick={() => onWishlist(p.id as string)}
-              className={`px-4 rounded-2xl border transition-all ${inWishlist ? "bg-red-50 border-red-200" : "border-gray-200"}`}>
-              <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-500"}`} />
-            </button>
+
+            <div className="border-t border-gray-200 pt-3">
+              <div className="flex items-baseline gap-3 flex-wrap">
+                {discount > 0 && <span className="text-2xl font-light text-red-600">-{discount}%</span>}
+                <span className="text-3xl font-semibold text-gray-900">{fmtZAR(unitPrice)}</span>
+              </div>
+              {p.compareAtPrice && discount > 0 && (
+                <p className="text-xs text-gray-500 mt-1">Was: <span className="line-through">{fmtZAR(Number(p.compareAtPrice))}</span></p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">VAT is shown at checkout.</p>
+            </div>
+
+            {/* Delivery / returns / security at a glance */}
+            <div className="grid grid-cols-3 gap-2 py-2">
+              {[
+                { icon: <Truck className="w-5 h-5" />, label: p.shippingIncluded ? "Delivery included" : Number(p.price) > 500 ? "Free delivery" : "R99 delivery" },
+                { icon: <RotateCcw className="w-5 h-5" />, label: "30-day returns", onClick: () => onFooterLink("Returns Policy") },
+                { icon: <Lock className="w-5 h-5" />, label: "Secure transaction" },
+              ].map((f, i) => (
+                <button key={i} onClick={f.onClick} disabled={!f.onClick} className="flex flex-col items-center text-center gap-1.5 disabled:cursor-default">
+                  <span className="w-11 h-11 rounded-full flex items-center justify-center bg-gray-100 text-gray-600">{f.icon}</span>
+                  <span className="text-xs text-[#17633D] leading-tight">{f.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Options */}
+            {variantTypes.map(type => {
+              const chosen = variants.find(v => v.id === selVariant && v.type === type);
+              return (
+                <div key={type} className="border-t border-gray-200 pt-3">
+                  <p className="text-sm text-gray-700 mb-2"><span className="capitalize">{type}</span>: <span className="font-semibold text-gray-900">{(chosen?.value as string) ?? "Choose one"}</span></p>
+                  <div className="flex flex-wrap gap-2">
+                    {variants.filter(v => v.type === type).map((v, i) => (
+                      <button key={i} onClick={() => setSelVariant(v.id as string)}
+                        className="px-3 py-1.5 rounded-lg text-sm border transition-all"
+                        style={{
+                          background: selVariant === v.id ? "#EAF7EE" : "white",
+                          color: "#111827",
+                          borderColor: selVariant === v.id ? "#1E7B4D" : "#D1D5DB",
+                          boxShadow: selVariant === v.id ? "0 0 0 1px #1E7B4D" : "none",
+                        }}>
+                        {v.value as string}
+                        {Number(v.additionalPrice) > 0 && <span className="ml-1 text-gray-500">+{fmtZAR(Number(v.additionalPrice))}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Key facts */}
+            <table className="text-sm border-t border-gray-200 w-full">
+              <tbody>
+                {[["Brand", p.brand as string], ["Category", p.categoryName as string], ["Delivery", deliveryWindowFor(p)]]
+                  .filter(([, v]) => v).map(([k, v]) => (
+                    <tr key={k}><td className="py-1.5 pr-6 font-semibold text-gray-800 w-28">{k}</td><td className="py-1.5 text-gray-700">{v}</td></tr>
+                  ))}
+              </tbody>
+            </table>
+
+            {p.japanPart && <JapanPartDisclosure part={p.japanPart as R} deliveryWindow={deliveryWindowFor(p)} soldOut={Number(p.stock) <= 0} />}
+
+            {aboutItems.length > 0 && (
+              <div className="border-t border-gray-200 pt-3">
+                <h2 className="text-base font-bold text-gray-900 mb-2">About this item</h2>
+                <ul className="list-disc pl-5 space-y-1.5 text-sm text-gray-800">
+                  {aboutItems.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+                <button onClick={() => showTab("desc")} className="text-sm text-[#17633D] hover:underline mt-2">See full description</button>
+              </div>
+            )}
           </div>
+
+          {/* Buy box */}
+          <aside className="min-w-0 lg:col-span-2 xl:col-span-1 xl:self-start xl:sticky xl:top-16">
+            <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white">
+              <p className="text-3xl font-semibold text-gray-900">{fmtZAR(unitPrice)}</p>
+              <div className="text-sm text-gray-800">
+                <span className="font-semibold">{p.shippingIncluded || Number(p.price) > 500 ? "FREE delivery" : "Delivery R99"}</span>{" "}
+                <span className="font-semibold">{deliveryDates}</span>
+                <p className="text-xs text-gray-500 mt-0.5">Estimated · tracked to your door</p>
+              </div>
+              {Number(p.stock) <= 0
+                ? <p className="text-lg font-semibold text-red-600">Currently unavailable</p>
+                : Number(p.stock) < 10
+                  ? <p className="text-lg font-semibold text-orange-600">Only {Number(p.stock)} left in stock</p>
+                  : <p className="text-lg font-semibold text-green-700">In stock</p>}
+
+              {Number(p.stock) > 0 && (
+                <label className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 text-sm">
+                  <span className="text-gray-700">Quantity:</span>
+                  <select value={qty} onChange={e => setQty(Number(e.target.value))} className="bg-transparent outline-none font-semibold flex-1">
+                    {Array.from({ length: Math.min(10, Number(p.stock)) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+              )}
+
+              {needsOption && <p className="text-xs text-amber-700">Choose {variantTypes.join(" and ")} above first.</p>}
+              <button onClick={() => onCart(p, selVariant || undefined, qty)} disabled={Number(p.stock) <= 0 || needsOption}
+                className="w-full py-2.5 rounded-full text-sm font-semibold text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-95"
+                style={{ background: "#FFD814" }}>
+                Add to cart
+              </button>
+              <button onClick={() => onBuyNow(p, selVariant || undefined, qty)} disabled={Number(p.stock) <= 0 || needsOption}
+                className="w-full py-2.5 rounded-full text-sm font-semibold text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-95"
+                style={{ background: "#FFA41C" }}>
+                Buy now
+              </button>
+
+              <table className="text-xs w-full">
+                <tbody>
+                  <tr><td className="py-0.5 pr-3 text-gray-500 w-20">Ships from</td><td className="py-0.5 text-gray-800">Ballylife</td></tr>
+                  <tr><td className="py-0.5 pr-3 text-gray-500">Sold by</td><td className="py-0.5">
+                    <button onClick={() => showTab("seller")} className="text-xs text-[#17633D] hover:underline text-left">{(seller?.storeName as string) ?? "Ballylife"}</button>
+                  </td></tr>
+                  <tr><td className="py-0.5 pr-3 text-gray-500">Returns</td><td className="py-0.5">
+                    <button onClick={() => onFooterLink("Returns Policy")} className="text-xs text-[#17633D] hover:underline">30-day returns</button>
+                  </td></tr>
+                  <tr><td className="py-0.5 pr-3 text-gray-500">Payment</td><td className="py-0.5 text-gray-800 flex items-center gap-1"><Lock className="w-3 h-3" />Secure transaction</td></tr>
+                </tbody>
+              </table>
+
+              <button onClick={() => onWishlist(p.id as string)}
+                className="w-full py-2 rounded-lg border border-gray-300 text-sm text-gray-800 flex items-center justify-center gap-2 hover:bg-gray-50">
+                <Heart className={`w-4 h-4 ${inWishlist ? "fill-red-500 text-red-500" : "text-gray-500"}`} />
+                {inWishlist ? "Saved to wishlist" : "Add to wishlist"}
+              </button>
+            </div>
+          </aside>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-t border-gray-100 px-6">
+      <div ref={tabsRef} className="bg-white border-t border-gray-100 px-6 scroll-mt-16">
         <div className="flex border-b border-gray-100">
           {(["desc","reviews","seller"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
@@ -1413,7 +1523,7 @@ function ProductDetailView({ productId, onBack, onCart, wishlistIds, onWishlist,
           <h3 className="font-serif text-lg text-gray-900 my-4" style={{ fontWeight: 600 }}>Related Products</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {related.map((r, i) => (
-              <ProductCard key={i} p={r} onView={() => onCart(r)} onCart={() => onCart(r)}
+              <ProductCard key={i} p={r} onView={() => onOpenProduct(String(r.id))} onCart={() => onCart(r)}
                 wishlistIds={wishlistIds} onWishlist={() => onWishlist(String(r.id))} />
             ))}
           </div>
@@ -2117,13 +2227,17 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     setLocating(false);
     if (!ok) setLocateFailed(true);
   };
-  const [view, setView]           = useState<View>("home");
+  // Start on the page the URL asks for. Starting on "home" made the
+  // state->URL sync below rewrite a shared link (/product/:id, /terms...)
+  // to "/" before the URL->state sync could read it.
+  const [initialRoute] = useState(() => (typeof window !== "undefined" ? viewForPath(window.location.pathname) : { view: "home" as MarketplaceView }));
+  const [view, setView]           = useState<View>(initialRoute.view as View);
   const [categories, setCategories] = useState<R[]>([]);
   const [products, setProducts]   = useState<R[]>([]);
   const [cart, setCart]           = useState<R | null>(null);
   const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   const [addresses, setAddresses] = useState<R[]>([]);
-  const [selProductId, setSelProductId] = useState("");
+  const [selProductId, setSelProductId] = useState(initialRoute.productId ?? "");
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -2203,6 +2317,12 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     // users table, its own JWT, no bridging with Vink's main app login.
     const restored = mktAuth.restoreSession();
     if (restored) { setAuthUser(restored.user); setAuthSeller(restored.seller); setAuthSupplier(restored.supplier); setAuthAuthority(restored.authority); setAuthShipping(restored.shipping); setAuthCredit(restored.credit); }
+    // A link to an account-only page while signed out: show the shop and ask them to sign in.
+    else if (["admin", "seller", "supplier", "authority", "shipping", "credit", "account", "orders", "checkout", "cart", "wishlist"].includes(initialRoute.view)) {
+      setView("home");
+      setShowAuthModal(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -2339,19 +2459,20 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
-  const handleAddToCart = async (p: R, variantId?: string) => {
-    if (!authUser) { setShowAuthModal(true); return; }
+  const handleAddToCart = async (p: R, variantId?: string, quantity = 1): Promise<boolean> => {
+    if (!authUser) { setShowAuthModal(true); return false; }
     try {
-      const res = await mktCart.add(authUser.id, { productId: p.id, variantId: variantId ?? null, quantity: 1 });
+      const res = await mktCart.add(authUser.id, { productId: p.id, variantId: variantId ?? null, quantity });
       if (!res.success) {
         toast.error(res.error ?? "Couldn't add that to your cart.");
         // Quick-add from a card can't pick a colour/size -- take them to the product page to choose.
         if (res.code === "VARIANT_REQUIRED") { setSelProductId(String(p.id)); setView("product"); }
-        return;
+        return false;
       }
       setCart(res.data as R);
       track("AddToCart", ttProduct(p));
-    } catch (err) { showLoadError(err); }
+      return true;
+    } catch (err) { showLoadError(err); return false; }
   };
 
   const handleUpdateQty = async (productId: string, qty: number) => {
@@ -2731,7 +2852,9 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             <ProductDetailView
               productId={selProductId}
               onBack={() => setView("catalog")}
-              onCart={(p, v) => { handleAddToCart(p, v); setView("cart"); }}
+              onCart={(p, v, q) => { void handleAddToCart(p, v, q); setView("cart"); }}
+              onBuyNow={async (p, v, q) => { if (await handleAddToCart(p, v, q)) setView("checkout"); }}
+              onOpenProduct={id => { setSelProductId(id); setView("product"); }}
               wishlistIds={wishlistIds} onWishlist={handleWishlist}
               authUser={authUser} onRequireAuth={() => setShowAuthModal(true)}
               onFooterLink={handleFooterLink}
