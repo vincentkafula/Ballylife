@@ -39,7 +39,11 @@ router.get("/social/oauth/:platform/callback", async (req: Request, res: Respons
   const back = (result: string, reason?: string) => res.redirect(`${SITE()}/admin?social=${encodeURIComponent(platform)}&result=${result}${reason ? `&reason=${encodeURIComponent(reason.slice(0, 200))}` : ""}`);
   if (!c) { res.sendStatus(404); return; }
   const { code, state, error, error_description } = req.query as Record<string, string | undefined>;
-  if (error) { back("error", error_description || error); return; }
+  if (error) {
+    logger.warn("social.oauth_refused", { platform, error, description: error_description ?? null });
+    back("error", error_description || error);
+    return;
+  }
   const { consumeState } = await import("../services/social/oauth");
   if (!code || !(await consumeState(String(state ?? ""), platform))) { back("error", "The sign-in expired — please try Connect again."); return; }
   try {
