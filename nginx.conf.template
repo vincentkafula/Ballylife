@@ -6,6 +6,11 @@ server {
     index index.html index.htm;
     server_tokens off;
 
+    # Never build redirects from nginx's own host/port: behind Railway that's
+    # the internal :8080, which produced broken http://www.ballylife.com:8080/... links.
+    absolute_redirect off;
+    port_in_redirect off;
+
     # Security headers (HSTS, CSP, frame/sniff protection) -- see
     # security-headers.conf. Repeated inside every location below that sets
     # its own add_header, since those don't inherit server-level headers.
@@ -55,7 +60,9 @@ server {
     # SPA fallback — all routes served by index.html
     location / {
         include /etc/nginx/security-headers.conf;
-        try_files $uri $uri/ /index.html;
+        # Prerendered pages live at <path>/index.html (e.g. /product/<id>/index.html):
+        # serve them directly rather than redirecting to add a trailing slash.
+        try_files $uri $uri/index.html /index.html;
         add_header Cache-Control "no-cache";
     }
 
