@@ -29,6 +29,7 @@ function fakeApis() {
     if (url.endsWith("/content/init/")) return json({ data: { publish_id: "p_pub_1" }, error: { code: "ok" } });
     // LinkedIn
     if (url === "https://www.linkedin.com/oauth/v2/accessToken") return json({ access_token: "li-access", expires_in: 5184000, refresh_token: "li-refresh", refresh_token_expires_in: 31536000 });
+    if (url === "https://api.linkedin.com/v2/userinfo") return json({ sub: "abc123XYZ", name: "Vincent Kafula" });
     if (url.includes("/rest/organizationAcls")) return json({ elements: [{ organization: "urn:li:organization:777", role: "ADMINISTRATOR" }] });
     if (url.includes("/rest/organizations/777")) return json({ localizedName: "Ballylife" });
     if (url.includes("/rest/images?action=initializeUpload")) return json({ value: { uploadUrl: "https://upload.linkedin.test/img", image: "urn:li:image:ABC" } });
@@ -45,6 +46,7 @@ const product = (images: string[]) => ({ id: "p1", name: "Wireless Earbuds Pro",
 beforeAll(async () => {
   Object.assign(process.env, {
     TIKTOK_CLIENT_KEY: "tt-key", TIKTOK_CLIENT_SECRET: "tt-secret", LINKEDIN_CLIENT_ID: "li-id", LINKEDIN_CLIENT_SECRET: "li-secret",
+    LINKEDIN_POST_AS: "organization", // the company-page flow; personal-profile posting is tested at the end
     PUBLIC_API_URL: "https://api.test", MARKETPLACE_PUBLIC_URL: "https://shop.test",
     TIKTOK_VERIFY_FILENAME: "tiktokABC123.txt", TIKTOK_VERIFY_CONTENT: "tiktok-developers-site-verification=ABC123",
   });
@@ -143,5 +145,30 @@ describe("TikTok photo address verification", () => {
     expect(r.status).toBe(200);
     expect(r.text).toBe("tiktok-developers-site-verification=ABC123");
     expect((await request(app).get("/api/marketplace/media/other.txt")).status).toBe(404);
+  });
+});
+
+describe("LinkedIn as a personal profile (until the company-page API is approved)", () => {
+  it("asks for the self-service permissions and posts as the person who connected", async () => {
+    process.env.LINKEDIN_POST_AS = "member";
+    const { linkedinAuthorizeUrl, linkedinPoster, postToLinkedIn } = await import("./linkedin");
+    const u = new URL(await linkedinAuthorizeUrl());
+    expect(u.searchParams.get("scope")).toBe("openid profile w_member_social");
+
+    // Still connected as the company page: refuse rather than post somewhere unexpected.
+    const { NonRetryable } = await import("./index");
+    await expect(postToLinkedIn({ product: product(["https://api.test/api/marketplace/media/p/p1/0"]), caption: "x" })).rejects.toBeInstanceOf(NonRetryable);
+
+    const { newState } = await import("../oauth");
+    const r = await request(app).get("/api/marketplace/social/oauth/linkedin/callback").query({ code: "ghi", state: await newState("linkedin") });
+    expect(r.headers.location).toBe("https://shop.test/admin?social=linkedin&result=connected");
+    expect(await linkedinPoster.describe!()).toBe("Profile: Vincent Kafula");
+
+    calls = [];
+    const posted = await postToLinkedIn({ product: product(["https://api.test/api/marketplace/media/p/p1/0"]), caption: "New at Ballylife" });
+    expect(posted.externalId).toBe("urn:li:share:999");
+    expect(calls.find(c => c.url.includes("initializeUpload"))!.body).toEqual({ initializeUploadRequest: { owner: "urn:li:person:abc123XYZ" } });
+    expect(calls.find(c => c.url.endsWith("/rest/posts"))!.body).toMatchObject({ author: "urn:li:person:abc123XYZ", visibility: "PUBLIC" });
+    process.env.LINKEDIN_POST_AS = "organization";
   });
 });
