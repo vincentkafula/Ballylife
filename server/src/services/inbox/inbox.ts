@@ -19,6 +19,7 @@ import { pool } from "../../db/pool";
 import { logger } from "../../utils/logger";
 import { sendEmail } from "../emailService";
 import { isDocumentStoreConfigured, putDocument } from "../documentStore";
+import { canUseMailbox, type MailboxAccess } from "../departments";
 
 export const DOMAIN = (process.env.INBOX_DOMAIN?.trim() || "ballylife.com").toLowerCase();
 
@@ -302,8 +303,20 @@ async function maybeAutoReply(threadId: string, mailbox: string, fromEmail: stri
   }
 }
 
-// ── Manager actions ────────────────────────────────────────────────────────
-export async function replyToThread(threadId: string, text: string, managerId: string): Promise<void> {
+// ── Manager actions (scoped to the manager's departments) ──────────────────
+// Every action takes the caller's MailboxAccess: the super admin uses every
+// address; other managers only their departments' addresses. A conversation
+// outside their access behaves as if it doesn't exist.
+
+async function threadFor(threadId: string, access: MailboxAccess): Promise<any> {
+  const { rows } = await pool!.query(`SELECT * FROM email_threads WHERE id = $1`, [threadId]);
+  const t = rows[0];
+  if (!t || !canUseMailbox(access, t.mailbox)) throw new InboxError("Conversation not found", 404);
+  return t;
+}
+
+export async function replyToThread(threadId: string, text: string, managerId: string, access: MailboxAccess): Promise<void> {
+  await threadFor(threadId, access);
   if (!text.trim()) throw new InboxError("Write a reply first.");
   if (text.length > 20_000) throw new InboxError("That reply is too long.");
   await sendInThread(threadId, { text, sentBy: managerId });
@@ -311,9 +324,10 @@ export async function replyToThread(threadId: string, text: string, managerId: s
 }
 
 /** A new email from one of our mailboxes to anyone (starts a conversation). */
-export async function composeEmail(input: { mailbox: string; to: string; subject: string; text: string }, managerId: string): Promise<string> {
+export async function composeEmail(input: { mailbox: string; to: string; subject: string; text: string }, managerId: string, access: MailboxAccess): Promise<string> {
   const mailbox = input.mailbox.trim().toLowerCase();
   if (!mailbox.endsWith(`@${DOMAIN}`) || !/^[a-z0-9._+-]+@/.test(mailbox)) throw new InboxError(`Send from an @${DOMAIN} address.`);
+  if (!canUseMailbox(access, mailbox)) throw new InboxError(`Your department can't send from ${mailbox}.`, 403);
   const to = parseAddress(input.to).email;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new InboxError("Enter a valid email address to send to.");
   const subject = input.subject.trim().slice(0, 200);
@@ -326,22 +340,30 @@ export async function composeEmail(input: { mailbox: string; to: string; subject
   return rows[0].id;
 }
 
-export async function mailboxSummary() {
+/** Mailboxes this manager can use, with unread/open counts. */
+export async function mailboxSummary(access: MailboxAccess) {
   const { rows } = await pool!.query(
     `SELECT mailbox, COUNT(*)::int AS total, SUM(CASE WHEN unread THEN 1 ELSE 0 END)::int AS unread, SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END)::int AS open
      FROM email_threads GROUP BY mailbox`);
   const by = new Map(rows.map((r: { mailbox: string }) => [r.mailbox, r]));
-  const known = MAILBOXES.map(m => ({ ...m, unread: Number((by.get(m.address) as any)?.unread ?? 0), open: Number((by.get(m.address) as any)?.open ?? 0) }));
-  const others = rows.filter((r: { mailbox: string }) => !MAILBOXES.some(m => m.address === r.mailbox))
-    .map((r: any) => ({ address: r.mailbox, label: labelFor(r.mailbox), unread: Number(r.unread), open: Number(r.open) }));
-  return [...known, ...others];
+  const counts = (address: string) => ({ unread: Number((by.get(address) as any)?.unread ?? 0), open: Number((by.get(address) as any)?.open ?? 0) });
+  const addresses = access.all
+    ? [...MAILBOXES.map(m => m.address), ...rows.map((r: { mailbox: string }) => r.mailbox)]
+    : [...MAILBOXES.map(m => m.address).filter(a => access.mailboxes.includes(a)), ...access.mailboxes];
+  return [...new Set(addresses)].map(address => ({ address, label: labelFor(address), ...counts(address) }));
 }
 
-export async function listThreads(filter: { mailbox?: string; status?: string; q?: string }) {
+export async function listThreads(filter: { mailbox?: string; status?: string; q?: string }, access: MailboxAccess) {
   const where: string[] = [];
   const params: unknown[] = [];
   const p = (v: unknown) => { params.push(v); return `$${params.length}`; };
-  if (filter.mailbox) where.push(`mailbox = ${p(filter.mailbox.toLowerCase())}`);
+  if (filter.mailbox) {
+    if (!canUseMailbox(access, filter.mailbox)) return [];
+    where.push(`mailbox = ${p(filter.mailbox.toLowerCase())}`);
+  } else if (!access.all) {
+    if (!access.mailboxes.length) return [];
+    where.push(`mailbox IN (${access.mailboxes.map(m => p(m)).join(",")})`);
+  }
   if (filter.status === "open" || filter.status === "closed") where.push(`status = ${p(filter.status)}`);
   if (filter.q?.trim()) {
     const like = p(`%${filter.q.trim().toLowerCase()}%`);
@@ -355,11 +377,28 @@ export async function listThreads(filter: { mailbox?: string; status?: string; q
   }));
 }
 
-export async function getThread(threadId: string) {
-  const { rows } = await pool!.query(`SELECT * FROM email_threads WHERE id = $1`, [threadId]);
-  const t = rows[0];
-  if (!t) throw new InboxError("Conversation not found", 404);
+const FINAL_DELIVERY = new Set(["delivered", "bounced", "complained", "failed", "canceled"]);
+
+/** Resend's latest delivery event for emails we sent (Delivered, Bounced...), saved once final. */
+async function refreshDeliveryStatus(msgs: any[]): Promise<void> {
+  const pending = msgs.filter(m => m.direction === "out" && m.provider_id && !FINAL_DELIVERY.has(String(m.delivery_status ?? ""))
+    && Date.now() - new Date(m.created_at).getTime() < 7 * 24 * 3600_000).slice(0, 10);
+  for (const m of pending) {
+    try {
+      const e = await resendGet(`/emails/${encodeURIComponent(m.provider_id)}`);
+      const status = String(e.last_event ?? "").toLowerCase() || null;
+      if (status && status !== m.delivery_status) {
+        await pool!.query(`UPDATE email_messages SET delivery_status = $2 WHERE id = $1`, [m.id, status]);
+        m.delivery_status = status;
+      }
+    } catch { /* show what we have */ }
+  }
+}
+
+export async function getThread(threadId: string, access: MailboxAccess) {
+  const t = await threadFor(threadId, access);
   const { rows: msgs } = await pool!.query(`SELECT * FROM email_messages WHERE thread_id = $1 ORDER BY created_at ASC`, [threadId]);
+  await refreshDeliveryStatus(msgs);
   const ids = msgs.map((m: { id: string }) => m.id);
   const { rows: atts } = ids.length
     ? await pool!.query(`SELECT id, message_id, filename, content_type, size, storage_key FROM email_attachments WHERE message_id IN (${ids.map((_: string, i: number) => `$${i + 1}`).join(",")})`, ids)
@@ -371,24 +410,34 @@ export async function getThread(threadId: string) {
     messages: msgs.map((m: any) => ({
       id: m.id, direction: m.direction, from: m.from_addr, to: m.to_addrs, cc: m.cc_addrs, subject: m.subject,
       text: m.text_body, html: m.html_body, autoReply: m.auto_reply, createdAt: m.created_at,
+      deliveryStatus: m.direction === "out" ? (m.delivery_status ?? null) : null,
       senderVerified: m.direction === "in" ? (m.auth_result ? String((m.auth_result as any).dmarc ?? (m.auth_result as any).dkim ?? "") === "pass" : null) : null,
       attachments: atts.filter((a: any) => a.message_id === m.id).map((a: any) => ({ id: a.id, filename: a.filename, contentType: a.content_type, size: a.size, available: Boolean(a.storage_key) })),
     })),
   };
 }
 
-export async function setThreadStatus(threadId: string, status: "open" | "closed"): Promise<void> {
-  const r = await pool!.query(`UPDATE email_threads SET status = $2 WHERE id = $1`, [threadId, status]);
-  if (!r.rowCount) throw new InboxError("Conversation not found", 404);
+export async function setThreadStatus(threadId: string, status: "open" | "closed", access: MailboxAccess): Promise<void> {
+  await threadFor(threadId, access);
+  await pool!.query(`UPDATE email_threads SET status = $2 WHERE id = $1`, [threadId, status]);
 }
 
-export async function attachmentFor(id: string): Promise<{ filename: string; contentType: string; storageKey: string } | null> {
-  const { rows } = await pool!.query(`SELECT filename, content_type, storage_key FROM email_attachments WHERE id = $1`, [id]);
+export async function attachmentFor(id: string, access: MailboxAccess): Promise<{ filename: string; contentType: string; storageKey: string } | null> {
+  const { rows } = await pool!.query(
+    `SELECT a.filename, a.content_type, a.storage_key, t.mailbox FROM email_attachments a
+     JOIN email_messages m ON m.id = a.message_id JOIN email_threads t ON t.id = m.thread_id WHERE a.id = $1`, [id]);
   const a = rows[0];
-  return a?.storage_key ? { filename: a.filename, contentType: a.content_type, storageKey: a.storage_key } : null;
+  if (!a || !canUseMailbox(access, a.mailbox)) return null;
+  return a.storage_key ? { filename: a.filename, contentType: a.content_type, storageKey: a.storage_key } : null;
 }
 
-export async function unreadCount(): Promise<number> {
-  const { rows } = await pool!.query(`SELECT COUNT(*)::int AS n FROM email_threads WHERE unread = true`);
+export async function unreadCount(access: MailboxAccess): Promise<number> {
+  if (access.all) {
+    const { rows } = await pool!.query(`SELECT COUNT(*)::int AS n FROM email_threads WHERE unread = true`);
+    return Number(rows[0]?.n ?? 0);
+  }
+  if (!access.mailboxes.length) return 0;
+  const { rows } = await pool!.query(
+    `SELECT COUNT(*)::int AS n FROM email_threads WHERE unread = true AND mailbox IN (${access.mailboxes.map((_, i) => `$${i + 1}`).join(",")})`, access.mailboxes);
   return Number(rows[0]?.n ?? 0);
 }

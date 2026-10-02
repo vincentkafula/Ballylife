@@ -7,6 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { mktAdmin, mktSellers, mktCategories, getMktToken, type MktAuthUser, type CjSyncJob, type CjSweepJob, type CjSourcingJob } from "../services/marketplaceApi";
 import { toast } from "sonner";
 import { SuperAdminManagersCard } from "./SuperAdminPanel";
+import { DepartmentsCard } from "./DepartmentsCard";
 import { mktSuperAdmin } from "../services/marketplaceApi";
 import { ProgrammesAdminPanel } from "./MembershipPanels";
 import { JapanPartsAdminPanel } from "./JapanParts";
@@ -431,6 +432,7 @@ function UserManagementPanel({ customers, sellers, isSuperAdmin }: { customers: 
   return (
     <div className="space-y-4">
       {isSuperAdmin && <SuperAdminManagersCard onChanged={load} />}
+      {isSuperAdmin && <DepartmentsCard />}
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm font-bold text-gray-900">Customers ({customers.length})</span></div>

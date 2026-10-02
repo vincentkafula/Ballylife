@@ -6,7 +6,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
+import { ArrowLeft, Building2, Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
+import { DepartmentsCard } from "./DepartmentsCard";
 import { mktInbox, getMktToken, ApiConnectionError } from "../services/marketplaceApi";
 import { API_BASE } from "../services/config";
 
@@ -51,6 +52,8 @@ async function downloadAttachment(id: string, filename: string) {
 export function EmailInboxPanel() {
   const [mailboxes, setMailboxes] = useState<R[]>([]);
   const [receiving, setReceiving] = useState(true);
+  const [access, setAccess] = useState<{ all: boolean; departments: string[]; isSuperAdmin: boolean } | null>(null);
+  const [showDepartments, setShowDepartments] = useState(false);
   const [mailbox, setMailbox] = useState<string>("");          // "" = all
   const [status, setStatus] = useState<"open" | "closed" | "">("open");
   const [q, setQ] = useState("");
@@ -81,7 +84,7 @@ export function EmailInboxPanel() {
   const receivingOn = recv?.receiving === "enabled" && (!recv?.mx || String(recv.mx.status).toLowerCase() === "verified");
 
   const loadMailboxes = useCallback(async () => {
-    try { const r = await mktInbox.mailboxes(); if (r.success) { setMailboxes(r.data.mailboxes); setReceiving(r.data.receiving); } }
+    try { const r = await mktInbox.mailboxes(); if (r.success) { setMailboxes(r.data.mailboxes); setReceiving(r.data.receiving); setAccess(r.data.access ?? null); } }
     catch (err) { toast.error(errMessage(err, "Couldn't load the mailboxes.")); }
   }, []);
   const loadThreads = useCallback(async () => {
@@ -148,10 +151,23 @@ export function EmailInboxPanel() {
           Receiving isn't switched on yet: add RESEND_WEBHOOK_SECRET on the backend and point ballylife.com's MX record to Resend. Replies and new emails already work.
         </div>
       )}
+      {access && (access.isSuperAdmin || !access.all) && (
+        <div className="px-4 py-2 text-xs border-b border-gray-100 flex items-center gap-2 flex-wrap bg-gray-50">
+          <Building2 className="w-3.5 h-3.5 text-gray-500" />
+          {access.isSuperAdmin
+            ? <span className="flex-1 text-gray-600">Super admin: you can use every address. Managers only see their department's addresses.</span>
+            : access.departments.length
+              ? <span className="flex-1 text-gray-600">Your department{access.departments.length > 1 ? "s" : ""}: <b>{access.departments.join(", ")}</b> — you can only use these addresses.</span>
+              : <span className="flex-1 text-amber-700">You're not in a department yet, so no email addresses are available to you. Ask the super admin to add you to one.</span>}
+          {access.isSuperAdmin && (
+            <button onClick={() => setShowDepartments(true)} className="px-3 py-1 rounded-lg text-xs font-semibold border border-gray-200 bg-white">Manage departments</button>
+          )}
+        </div>
+      )}
       <div className="grid lg:grid-cols-[220px_minmax(0,320px)_minmax(0,1fr)] min-h-[620px]">
         {/* Mailboxes */}
         <aside className={`border-r border-gray-100 p-3 space-y-1 ${openId ? "hidden lg:block" : ""}`}>
-          <button onClick={() => setComposing(true)} className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-2 rounded-lg text-sm font-semibold text-white" style={{ background: "#14110D" }}>
+          <button onClick={() => setComposing(true)} disabled={!mailboxes.length} className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-2 rounded-lg text-sm font-semibold text-white disabled:opacity-40" style={{ background: "#14110D" }}>
             <PenSquare className="w-4 h-4" /> New email
           </button>
           {[{ address: "", label: "All mailboxes", unread: totalUnread }, ...mailboxes].map(m => (
@@ -227,7 +243,10 @@ export function EmailInboxPanel() {
                             <span className="text-gray-500"> · {m.from}</span>
                             {m.direction === "in" && m.senderVerified === false && <span className="ml-2 text-amber-700">⚠ sender not verified — be careful with links</span>}
                           </span>
-                          <span className="text-gray-500 shrink-0">{new Date(m.createdAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}</span>
+                          <span className="text-gray-500 shrink-0 flex items-center gap-2">
+                            {m.direction === "out" && <DeliveryBadge status={m.deliveryStatus} />}
+                            {new Date(m.createdAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
+                          </span>
                         </div>
                         <div className="px-3 py-2">
                           {m.direction === "in" && m.html ? <EmailHtml html={m.html} /> : <p className="text-sm text-gray-800 whitespace-pre-wrap">{m.text}</p>}
@@ -260,10 +279,31 @@ export function EmailInboxPanel() {
         </section>
       </div>
 
-      {composing && <ComposeDialog mailboxes={mailboxes} defaultMailbox={mailbox || "info@ballylife.com"} onClose={() => setComposing(false)}
+      {showDepartments && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { setShowDepartments(false); void loadMailboxes(); }}>
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-end mb-2"><button onClick={() => { setShowDepartments(false); void loadMailboxes(); }} className="p-1.5 rounded-full bg-white" aria-label="Close"><X className="w-4 h-4" /></button></div>
+            <DepartmentsCard />
+          </div>
+        </div>
+      )}
+      {composing && <ComposeDialog mailboxes={mailboxes} defaultMailbox={mailbox || String(mailboxes[0]?.address ?? "info@ballylife.com")} onClose={() => setComposing(false)}
         onSent={t => { setComposing(false); setOpenId(t.id); setThread(t); void loadThreads(); }} />}
     </div>
   );
+}
+
+const DELIVERY: Record<string, { label: string; cls: string }> = {
+  delivered: { label: "Delivered", cls: "bg-emerald-50 text-emerald-700" },
+  sent: { label: "Sent", cls: "bg-gray-100 text-gray-600" },
+  delivery_delayed: { label: "Delayed", cls: "bg-amber-50 text-amber-700" },
+  bounced: { label: "Bounced — not delivered", cls: "bg-red-50 text-red-700" },
+  complained: { label: "Marked as spam", cls: "bg-red-50 text-red-700" },
+  failed: { label: "Failed", cls: "bg-red-50 text-red-700" },
+};
+function DeliveryBadge({ status }: { status: string | null }) {
+  const d = status ? DELIVERY[status] ?? { label: status, cls: "bg-gray-100 text-gray-600" } : { label: "Sending…", cls: "bg-gray-100 text-gray-500" };
+  return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${d.cls}`}>{d.label}</span>;
 }
 
 function ComposeDialog({ mailboxes, defaultMailbox, onClose, onSent }: { mailboxes: R[]; defaultMailbox: string; onClose: () => void; onSent: (t: R) => void }) {

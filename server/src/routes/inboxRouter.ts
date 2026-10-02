@@ -6,6 +6,7 @@ import {
   verifyResendSignature, ingestReceivedEmail, mailboxSummary, listThreads, getThread, replyToThread, composeEmail,
   setThreadStatus, attachmentFor, unreadCount, InboxError, receivingStatus, enableReceiving, syncReceivedEmails,
 } from "../services/inbox/inbox";
+import { mailboxAccess, listDepartments, createDepartment, updateDepartment, deleteDepartment, DepartmentError } from "../services/departments";
 
 /**
  * Email inbox.
@@ -15,9 +16,11 @@ import {
 export const inboundRouter: ReturnType<typeof Router> = Router();
 export const inboxAdminRouter: ReturnType<typeof Router> = Router();
 const manager = [requireAuth, requireRole("marketplace_admin", "super_admin")];
+const superAdminOnly = [requireAuth, requireRole("super_admin")];
+const access = (req: Request) => mailboxAccess(req.user!);
 
 const fail = (res: Response, err: unknown, fallback: string) => {
-  if (err instanceof InboxError) { res.status(err.status).json({ success: false, error: err.message }); return; }
+  if (err instanceof InboxError || err instanceof DepartmentError) { res.status(err.status).json({ success: false, error: err.message }); return; }
   logger.error("inbox.request_failed", { error: err instanceof Error ? err.message : String(err) });
   res.status(500).json({ success: false, error: fallback });
 };
@@ -44,7 +47,13 @@ inboundRouter.post("/inbound", async (req: Request, res: Response): Promise<void
 });
 
 inboxAdminRouter.get("/admin/inbox/mailboxes", ...manager, async (_req: Request, res: Response): Promise<void> => {
-  try { res.json({ success: true, data: { mailboxes: await mailboxSummary(), unread: await unreadCount(), receiving: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()) } }); }
+  try {
+    const a = await access(_req);
+    res.json({ success: true, data: {
+      mailboxes: await mailboxSummary(a), unread: await unreadCount(a), receiving: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()),
+      access: { all: a.all, departments: a.departments, isSuperAdmin: _req.user!.role === "super_admin" },
+    } });
+  }
   catch (err) { fail(res, err, "Couldn't load the mailboxes."); }
 });
 
@@ -66,40 +75,63 @@ inboxAdminRouter.post("/admin/inbox/sync", ...manager, async (_req: Request, res
 
 inboxAdminRouter.get("/admin/inbox/threads", ...manager, async (req: Request, res: Response): Promise<void> => {
   const q = req.query as Record<string, string>;
-  try { res.json({ success: true, data: await listThreads({ mailbox: q.mailbox, status: q.status, q: q.q }) }); }
+  try { res.json({ success: true, data: await listThreads({ mailbox: q.mailbox, status: q.status, q: q.q }, await access(req)) }); }
   catch (err) { fail(res, err, "Couldn't load the conversations."); }
 });
 
 inboxAdminRouter.get("/admin/inbox/threads/:id", ...manager, async (req: Request, res: Response): Promise<void> => {
-  try { res.json({ success: true, data: await getThread(req.params.id) }); }
+  try { res.json({ success: true, data: await getThread(req.params.id, await access(req)) }); }
   catch (err) { fail(res, err, "Couldn't load the conversation."); }
 });
 
 inboxAdminRouter.post("/admin/inbox/threads/:id/reply", ...manager, async (req: Request, res: Response): Promise<void> => {
   try {
-    await replyToThread(req.params.id, String(req.body?.text ?? ""), req.user!.userId);
-    res.json({ success: true, data: await getThread(req.params.id) });
+    const a = await access(req);
+    await replyToThread(req.params.id, String(req.body?.text ?? ""), req.user!.userId, a);
+    res.json({ success: true, data: await getThread(req.params.id, a) });
   } catch (err) { fail(res, err, "Couldn't send the reply."); }
 });
 
 inboxAdminRouter.patch("/admin/inbox/threads/:id", ...manager, async (req: Request, res: Response): Promise<void> => {
   const status = req.body?.status;
   if (status !== "open" && status !== "closed") { res.status(400).json({ success: false, error: "status must be open or closed" }); return; }
-  try { await setThreadStatus(req.params.id, status); res.json({ success: true }); }
+  try { await setThreadStatus(req.params.id, status, await access(req)); res.json({ success: true }); }
   catch (err) { fail(res, err, "Couldn't update the conversation."); }
 });
 
 inboxAdminRouter.post("/admin/inbox/compose", ...manager, async (req: Request, res: Response): Promise<void> => {
   const b = req.body ?? {};
   try {
-    const id = await composeEmail({ mailbox: String(b.mailbox ?? ""), to: String(b.to ?? ""), subject: String(b.subject ?? ""), text: String(b.text ?? "") }, req.user!.userId);
-    res.json({ success: true, data: await getThread(id) });
+    const a = await access(req);
+    const id = await composeEmail({ mailbox: String(b.mailbox ?? ""), to: String(b.to ?? ""), subject: String(b.subject ?? ""), text: String(b.text ?? "") }, req.user!.userId, a);
+    res.json({ success: true, data: await getThread(id, a) });
   } catch (err) { fail(res, err, "Couldn't send the email."); }
+});
+
+// ── Departments (super admin) ──────────────────────────────────────────────
+inboxAdminRouter.get("/admin/departments", ...superAdminOnly, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await listDepartments() }); }
+  catch (err) { fail(res, err, "Couldn't load departments."); }
+});
+inboxAdminRouter.post("/admin/departments", ...superAdminOnly, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const d = await createDepartment(req.body ?? {}, req.user!);
+    const withMembers = req.body?.memberIds !== undefined ? await updateDepartment(d.id, { memberIds: req.body.memberIds }, req.user!) : d;
+    res.status(201).json({ success: true, data: withMembers });
+  } catch (err) { fail(res, err, "Couldn't create the department."); }
+});
+inboxAdminRouter.patch("/admin/departments/:id", ...superAdminOnly, async (req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await updateDepartment(req.params.id, req.body ?? {}, req.user!) }); }
+  catch (err) { fail(res, err, "Couldn't update the department."); }
+});
+inboxAdminRouter.delete("/admin/departments/:id", ...superAdminOnly, async (req: Request, res: Response): Promise<void> => {
+  try { await deleteDepartment(req.params.id, req.user!); res.json({ success: true }); }
+  catch (err) { fail(res, err, "Couldn't delete the department."); }
 });
 
 inboxAdminRouter.get("/admin/inbox/attachments/:id", ...manager, async (req: Request, res: Response): Promise<void> => {
   try {
-    const a = await attachmentFor(req.params.id);
+    const a = await attachmentFor(req.params.id, await access(req));
     if (!a) { res.status(404).json({ success: false, error: "Attachment not available" }); return; }
     const bytes = await getDocument(a.storageKey);
     // Always a download, never rendered in our page (attachments are untrusted).

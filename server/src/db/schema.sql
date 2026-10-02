@@ -1463,3 +1463,18 @@ CREATE TABLE IF NOT EXISTS email_attachments (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_email_attachments_message ON email_attachments(message_id);
+
+-- Manager departments: which @ballylife.com addresses each department handles, and its managers.
+CREATE TABLE IF NOT EXISTS mkt_departments (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        TEXT NOT NULL,
+  mailboxes   JSONB NOT NULL DEFAULT '[]',   -- e.g. ["info@ballylife.com","orders@ballylife.com"]
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS mkt_department_members (
+  department_id  UUID NOT NULL REFERENCES mkt_departments(id),
+  user_id        TEXT NOT NULL,
+  PRIMARY KEY (department_id, user_id)
+);
+-- Resend's latest delivery event for emails we sent from the inbox (delivered, bounced...).
+ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS delivery_status TEXT;

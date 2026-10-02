@@ -31,6 +31,7 @@ function fakeResend(url: string, init?: { body?: string; method?: string }) {
   if (m && m[2]) return json({ data: [] });
   if (m) return received.has(m[1]) ? json(received.get(m[1])) : json({ message: "not found" }, 404);
   if (url === "https://api.resend.com/emails") { sent.push(JSON.parse(String(init?.body))); return json({ id: `sent_${++sentCount}` }); }
+  if (/\/emails\/sent_\d+$/.test(url)) return json({ object: "email", last_event: "delivered" });
   return json({ message: `unexpected ${url}` }, 404);
 }
 
@@ -187,5 +188,71 @@ describe("Safety net when a webhook notice never arrives", () => {
     expect(again.body.data.imported).toBe(0);
     const { rows } = await pool.query(`SELECT counterpart_email FROM email_threads WHERE subject = 'Bulk order'`);
     expect(rows).toEqual([{ counterpart_email: "thandi@example.com" }]);
+  });
+});
+
+describe("Departments: managers only use their department's addresses", () => {
+  let superToken: string, ordersToken: string, ordersManagerId: string, deptId: string;
+  const as = (t: string) => ({ Authorization: `Bearer ${t}` });
+
+  beforeAll(async () => {
+    const hash = await bcrypt.hash("Passw0rd!23", 10);
+    await pool.query(`INSERT INTO users (username, password_hash, role, name, email) VALUES
+      ('boss','${hash}','super_admin','Boss','boss@example.com'), ('ordersmgr','${hash}','marketplace_admin','Orders Person','orders.person@example.com')`);
+    superToken = (await request(app).post("/api/auth/login").send({ username: "boss", password: "Passw0rd!23" })).body.data.token;
+    ordersToken = (await request(app).post("/api/auth/login").send({ username: "ordersmgr", password: "Passw0rd!23" })).body.data.token;
+    ordersManagerId = (await pool.query(`SELECT id FROM users WHERE username = 'ordersmgr'`)).rows[0].id;
+  });
+
+  it("only the super admin can create departments, with valid @ballylife.com addresses", async () => {
+    expect((await request(app).post("/api/marketplace/admin/departments").set(auth()).send({ name: "Orders", mailboxes: ["orders@ballylife.com"] })).status).toBe(403);
+    expect((await request(app).post("/api/marketplace/admin/departments").set(as(superToken)).send({ name: "Orders", mailboxes: ["orders@gmail.com"] })).status).toBe(400);
+    const r = await request(app).post("/api/marketplace/admin/departments").set(as(superToken))
+      .send({ name: "Customer Service", mailboxes: ["orders@ballylife.com", "Support@ballylife.com"], memberIds: [ordersManagerId] });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({ name: "Customer Service", mailboxes: ["orders@ballylife.com", "support@ballylife.com"], members: [{ username: "ordersmgr" }] });
+    deptId = r.body.data.id;
+  });
+
+  it("a department manager sees and uses only the department's addresses", async () => {
+    const mb = await request(app).get("/api/marketplace/admin/inbox/mailboxes").set(as(ordersToken));
+    expect(mb.body.data.mailboxes.map((m: { address: string }) => m.address)).toEqual(["orders@ballylife.com", "support@ballylife.com"]);
+    expect(mb.body.data.access).toEqual({ all: false, departments: ["Customer Service"], isSuperAdmin: false });
+
+    const list = await request(app).get("/api/marketplace/admin/inbox/threads?status=").set(as(ordersToken));
+    expect(list.body.data.length).toBeGreaterThan(0);
+    expect(list.body.data.every((t: { mailbox: string }) => t.mailbox === "orders@ballylife.com")).toBe(true);
+    expect((await request(app).get("/api/marketplace/admin/inbox/threads?mailbox=legal@ballylife.com").set(as(ordersToken))).body.data).toEqual([]);
+
+    const { rows: legal } = await pool.query(`SELECT id FROM email_threads WHERE mailbox = 'legal@ballylife.com' LIMIT 1`);
+    expect((await request(app).get(`/api/marketplace/admin/inbox/threads/${legal[0].id}`).set(as(ordersToken))).status).toBe(404);
+    expect((await request(app).post(`/api/marketplace/admin/inbox/threads/${legal[0].id}/reply`).set(as(ordersToken)).send({ text: "x" })).status).toBe(404);
+    expect((await request(app).post("/api/marketplace/admin/inbox/compose").set(as(ordersToken))
+      .send({ mailbox: "legal@ballylife.com", to: "a@b.co", subject: "x", text: "x" })).status).toBe(403);
+    expect((await request(app).post("/api/marketplace/admin/inbox/compose").set(as(ordersToken))
+      .send({ mailbox: "support@ballylife.com", to: "a@b.co", subject: "Hello", text: "Hi" })).status).toBe(200);
+  });
+
+  it("managers outside every department see nothing once departments exist; the super admin sees everything", async () => {
+    const outsider = await request(app).get("/api/marketplace/admin/inbox/mailboxes").set(auth());
+    expect(outsider.body.data.mailboxes).toEqual([]);
+    expect((await request(app).get("/api/marketplace/admin/inbox/threads?status=").set(auth())).body.data).toEqual([]);
+    const boss = await request(app).get("/api/marketplace/admin/inbox/mailboxes").set(as(superToken));
+    expect(boss.body.data.access.all).toBe(true);
+    expect(boss.body.data.mailboxes.map((m: { address: string }) => m.address)).toEqual(expect.arrayContaining(["info@ballylife.com", "legal@ballylife.com", "orders@ballylife.com"]));
+  });
+
+  it("shows Resend's delivery status for emails we sent", async () => {
+    const { rows } = await pool.query(`SELECT t.id FROM email_threads t JOIN email_messages m ON m.thread_id = t.id WHERE m.auto_reply = true LIMIT 1`);
+    const t = await request(app).get(`/api/marketplace/admin/inbox/threads/${rows[0].id}`).set(as(superToken));
+    expect(t.body.data.messages.find((m: { autoReply: boolean }) => m.autoReply).deliveryStatus).toBe("delivered");
+  });
+
+  it("the super admin can move people and addresses, or delete the department", async () => {
+    const r = await request(app).patch(`/api/marketplace/admin/departments/${deptId}`).set(as(superToken)).send({ mailboxes: ["legal@ballylife.com"], memberIds: [] });
+    expect(r.body.data).toMatchObject({ mailboxes: ["legal@ballylife.com"], members: [] });
+    expect((await request(app).delete(`/api/marketplace/admin/departments/${deptId}`).set(as(superToken))).status).toBe(200);
+    // No departments left: managers have full access again.
+    expect((await request(app).get("/api/marketplace/admin/inbox/mailboxes").set(auth())).body.data.access.all).toBe(true);
   });
 });

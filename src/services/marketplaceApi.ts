@@ -155,6 +155,14 @@ export const mktInbox = {
   compose:   (body: { mailbox: string; to: string; subject: string; text: string }) => api<InboxRes>(`/api/marketplace/admin/inbox/compose`, { method: "POST", body: JSON.stringify(body) }),
 };
 
+// ── Manager departments (super admin) ──
+export const mktDepartments = {
+  list:   () => api<InboxRes>(`/api/marketplace/admin/departments`),
+  create: (body: { name: string; mailboxes: string[]; memberIds: string[] }) => api<InboxRes>(`/api/marketplace/admin/departments`, { method: "POST", body: JSON.stringify(body) }),
+  update: (id: string, body: { name?: string; mailboxes?: string[]; memberIds?: string[] }) => api<InboxRes>(`/api/marketplace/admin/departments/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  remove: (id: string) => api<InboxRes>(`/api/marketplace/admin/departments/${encodeURIComponent(id)}`, { method: "DELETE" }),
+};
+
 export const mktAdmin = {
   emailStatus: () => api<{ success: boolean; data: { configured: boolean; provider: "resend" | "smtp" | null; from: string; replyTo: string | null }; error?: string }>(`/api/marketplace/admin/email/status`),
   emailTest: () => api<{ success: boolean; data?: { to: string }; error?: string }>(`/api/marketplace/admin/email/test`, { method: "POST" }),
