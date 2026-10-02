@@ -2668,8 +2668,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
                 <p className="pt-1.5 text-[10px] text-red-600">Couldn't get your location — check your browser's location permission and try again.</p>
               )}
               <p className="pt-2 text-[10px] text-gray-500 leading-snug">
-                Orders are charged in South African rand (ZAR). {currency.ratesStale ? "Using the last known exchange rate. " : ""}
-                <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline">Rates by Exchange Rate API</a>
+                Orders are charged in South African rand (ZAR). {currency.ratesStale ? "Using the last known exchange rate." : ""}
               </p>
             </div>
           )}
