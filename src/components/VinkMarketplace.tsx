@@ -149,7 +149,7 @@ import { ManagerDashboard } from "./ManagerDashboard";
 import { Product3DViewer } from "./Product3DViewer";
 import { ProductPhotoGallery } from "./ProductPhotoGallery";
 import { Footer } from "./Footer";
-import { formatZAR, useCurrency, useLiveLocation, setCountryManually, isShowingConvertedPrices } from "../services/currencyStore";
+import { formatZAR, useCurrency, useLiveLocation, isShowingConvertedPrices } from "../services/currencyStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type View = "morePlans" | "home" | "catalog" | "product" | "cart" | "checkout" | "orders" | "wishlist" | "seller" | "supplier" | "authority" | "shipping" | "credit" | "admin" | "account" | "trackOrder" | "contactPage" | "termsPage" | "humanRightsPage" | "disclosurePage" | "speakUpPage" | "advertisingPage" | "creditRewardsPage" | "businessTermsPage" | "privacyPolicyPage" | "returnsPolicyPage" | "ballylifeMorePage" | "aboutUsPage";
@@ -2649,16 +2649,8 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
             <div role="dialog" aria-label="Country and currency"
               className="absolute left-0 top-full mt-1 w-72 max-w-[calc(100vw-1.5rem)] bg-white rounded-lg shadow-2xl border border-gray-200 p-3 z-40 text-gray-800">
               <p className="text-[11px] text-gray-600 leading-relaxed mb-2">
-                {currency.loading ? "Detecting your location…" : <>Showing prices in <b>{currency.country.name} ({currency.country.code})</b>{currency.country.code !== "ZAR" ? ", converted from South African rand at today's rate." : "."}</>}
+                {currency.loading ? "Detecting your location…" : <>Delivering to <b>{currency.country.name ?? currency.country.countryCode}</b>, prices shown in <b>{currency.country.code}</b>{currency.country.code !== "ZAR" ? ", converted from South African rand at today's rate." : "."}</>}
               </p>
-              <label className="block text-[11px] font-semibold text-gray-700 mb-1" htmlFor="country-select">Country / currency</label>
-              <select id="country-select" value={currency.country.countryCode}
-                onChange={e => { setCountryManually(e.target.value); setCountryMenuOpen(false); }}
-                className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-xs mb-2 bg-white">
-                {[...currency.countries].sort((a, b) => (a.country ?? a.countryCode).localeCompare(b.country ?? b.countryCode)).map(c => (
-                  <option key={c.countryCode} value={c.countryCode}>{c.country ?? c.countryCode} · {c.code}</option>
-                ))}
-              </select>
               <button onClick={handleUseLiveLocation} disabled={locating}
                 className="w-full text-left px-2.5 py-1.5 text-xs rounded-md hover:bg-gray-50 flex items-center gap-1.5 font-semibold disabled:opacity-50"
                 style={{ color: "#17633D", background: "#E9F5EE" }}>
