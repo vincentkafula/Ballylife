@@ -6,13 +6,14 @@ import nodemailer, { type Transporter } from "nodemailer";
  * call site here goes through this one interface rather than talking to
  * an SMTP library directly.
  *
- * Required env vars to actually send mail:
- *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS — from whichever provider
- *     you choose (SendGrid, Mailgun, AWS SES, Resend's SMTP endpoint,
- *     even a plain Gmail app password for early testing)
- *   EMAIL_FROM — the From: address, e.g. "Ballylife <orders@ballylife.co.za>"
+ * Sending, in order of preference:
+ *   RESEND_API_KEY — Resend's HTTP API (resend.com). Railway only, never in code.
+ *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS — any SMTP provider, as a fallback.
+ *   EMAIL_FROM — the From: address, on a domain verified with the provider,
+ *     e.g. "Ballylife <orders@ballylife.com>"
+ *   EMAIL_REPLY_TO — optional; where customer replies go (e.g. info@ballylife.com)
  *
- * Without those, send() logs the email to the console instead of sending
+ * Without either, send() logs the email to the console instead of sending
  * it — so nothing in the order/auth flow breaks or throws while email
  * isn't configured yet, it just doesn't reach anyone's inbox. Check the
  * Railway deploy logs for "[email] Would send" lines to see what's not
@@ -23,15 +24,43 @@ const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587;
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
-const EMAIL_FROM = process.env.EMAIL_FROM ?? "Ballylife <no-reply@ballylife.example>";
+const EMAIL_FROM = process.env.EMAIL_FROM ?? "Ballylife <orders@ballylife.com>";
+const REPLY_TO = process.env.EMAIL_REPLY_TO?.trim() || undefined;
+const resendKey = () => process.env.RESEND_API_KEY?.trim() || "";
+
+const smtpConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 
 export function isEmailConfigured(): boolean {
-  return Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+  return Boolean(resendKey()) || smtpConfigured();
+}
+
+/** Sends through Resend's HTTP API. */
+async function sendViaResend(req: SendEmailRequest): Promise<{ sent: boolean; error?: string }> {
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${resendKey()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: EMAIL_FROM, to: [req.to], subject: req.subject, html: req.html,
+        text: req.text ?? req.html.replace(/<[^>]+>/g, ""),
+        ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.ok) return { sent: true };
+    const j = await res.json().catch(() => ({})) as { message?: string; name?: string };
+    // e.g. 403 "The ballylife.com domain is not verified" -- add Resend's DNS records.
+    console.error(`[email] Resend refused (HTTP ${res.status}): ${j.message ?? j.name ?? "unknown error"}`);
+    return { sent: false, error: j.message ?? `Resend HTTP ${res.status}` };
+  } catch (err) {
+    console.error("[email] Resend send failed:", err instanceof Error ? err.message : err);
+    return { sent: false, error: err instanceof Error ? err.message : "Send failed" };
+  }
 }
 
 let transporter: Transporter | null = null;
 function getTransporter(): Transporter | null {
-  if (!isEmailConfigured()) return null;
+  if (!smtpConfigured()) return null;
   if (!transporter) {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_PORT === 465,
@@ -49,13 +78,14 @@ export interface SendEmailRequest {
 }
 
 export async function sendEmail(req: SendEmailRequest): Promise<{ sent: boolean; error?: string }> {
+  if (resendKey()) return sendViaResend(req);
   const t = getTransporter();
   if (!t) {
-    console.log(`[email] Would send "${req.subject}" to ${req.to} — SMTP not configured, see emailService.ts for required env vars.`);
+    console.log(`[email] Would send "${req.subject}" to ${req.to} — email not configured (set RESEND_API_KEY), see emailService.ts.`);
     return { sent: false, error: "Email is not configured" };
   }
   try {
-    await t.sendMail({ from: EMAIL_FROM, to: req.to, subject: req.subject, html: req.html, text: req.text ?? req.html.replace(/<[^>]+>/g, "") });
+    await t.sendMail({ from: EMAIL_FROM, to: req.to, subject: req.subject, html: req.html, text: req.text ?? req.html.replace(/<[^>]+>/g, ""), ...(REPLY_TO ? { replyTo: REPLY_TO } : {}) });
     return { sent: true };
   } catch (err) {
     console.error("[email] Send failed:", err);
