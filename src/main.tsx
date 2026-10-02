@@ -3,6 +3,24 @@ import { createRoot } from "react-dom/client";
 import "./styles/index.css";
 import App from "./App";
 import { initCurrency } from "./services/currencyStore";
+import { registerSW } from "virtual:pwa-register";
+
+// The site works offline through a service worker, which used to keep
+// showing the previous release until the visit after a deploy. Now: check
+// for a new release when the page opens and whenever its tab comes back
+// into view; when one is found it installs and the page reloads into it
+// (autoUpdate). Checks only happen on open/return -- never in the middle
+// of someone typing at checkout.
+const updateSW = registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    if (!registration) return;
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void registration.update().catch(() => undefined);
+    });
+  },
+});
+void updateSW;
 
 // After every deployment, this build's chunk files get replaced with new
 // ones under new hashed filenames. Anyone who already had the site open

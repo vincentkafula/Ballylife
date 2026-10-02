@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        // Registered from main.tsx (virtual:pwa-register) so a new release
+        // takes over as soon as it's found, instead of on the visit after.
+        injectRegister: false,
         includeAssets: ['favicon.png', 'apple-touch-icon.png'],
         manifest: {
           id: '/',
