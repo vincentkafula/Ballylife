@@ -77,7 +77,8 @@ export function EmailInboxPanel() {
     } catch (err) { toast.error(errMessage(err, "Couldn't reach the server.")); }
     finally { setRecvBusy(false); }
   };
-  const receivingOn = recv?.receiving === "enabled";
+  // Fully on only when Resend has receiving enabled AND has verified the MX record.
+  const receivingOn = recv?.receiving === "enabled" && (!recv?.mx || String(recv.mx.status).toLowerCase() === "verified");
 
   const loadMailboxes = useCallback(async () => {
     try { const r = await mktInbox.mailboxes(); if (r.success) { setMailboxes(r.data.mailboxes); setReceiving(r.data.receiving); } }

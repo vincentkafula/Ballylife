@@ -115,6 +115,11 @@ export async function receivingStatus(): Promise<{ domainId: string; status: str
   const one = await resendCall("GET", `/domains/${encodeURIComponent(d.id)}`);
   const info = one.ok ? one.json : d;
   const recv = ((info.records ?? []) as any[]).find(r => String(r.type).toUpperCase() === "MX" && (r.record === "Receiving" || /inbound/i.test(String(r.value))));
+  // DNS records are public anyway; logging them shows exactly what Resend expects.
+  logger.info("inbox.receiving_status", {
+    domainStatus: info.status ?? null, receiving: info.capabilities?.receiving ?? null,
+    records: ((info.records ?? []) as any[]).map(r => ({ record: r.record, type: r.type, name: r.name, value: r.value, priority: r.priority ?? null, status: r.status })),
+  });
   return {
     domainId: d.id, status: String(info.status ?? d.status ?? ""),
     receiving: info.capabilities?.receiving ?? d.capabilities?.receiving ?? null,
