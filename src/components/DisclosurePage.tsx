@@ -88,7 +88,7 @@ const DISCLOSURE_PAGE_HTML = String.raw`<!DOCTYPE html>
   }
   @media (max-width: 900px){ .topbar nav{ display: none; } }
 
-  .hero{
+  .hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
     background:
       radial-gradient(900px 460px at 10% -25%, rgba(176,135,63,0.22), transparent 60%),
       radial-gradient(700px 420px at 100% 10%, rgba(64,89,74,0.35), transparent 55%),
@@ -97,6 +97,8 @@ const DISCLOSURE_PAGE_HTML = String.raw`<!DOCTYPE html>
     position: relative;
     overflow: hidden;
   }
+  @media (min-width:640px){ .hero{min-height:400px;} }
+
   .hero-grid-lines{
     position: absolute; inset: 0; opacity: 0.07;
     background-image:

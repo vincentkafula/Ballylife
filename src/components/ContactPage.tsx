@@ -39,7 +39,7 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
     .bl-contact ul{list-style:none; margin:0; padding:0;}
     .bl-contact button{font-family:inherit; cursor:pointer;}
     .bl-wrap{max-width:1440px; margin:0 auto; padding:0 60px;}
-    .bl-hero{
+    .bl-hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
       position:relative;
       background:
         linear-gradient(100deg, rgba(11,30,26,.82) 0%, rgba(11,30,26,.55) 40%, rgba(11,30,26,.15) 75%),
@@ -49,6 +49,8 @@ const CONTACT_PAGE_HTML = String.raw`<!DOCTYPE html>
       overflow:hidden;
       color:#fff;
     }
+  @media (min-width:640px){ .bl-hero{min-height:400px;} }
+
     .bl-hero-inner{position:relative; z-index:2; max-width:640px;}
     .bl-eyebrow{
       display:flex; align-items:center; gap:10px;

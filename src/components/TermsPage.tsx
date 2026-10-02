@@ -59,13 +59,15 @@ const TERMS_PAGE_HTML = String.raw`<!DOCTYPE html>
   .progress-fill{height:100%; width:0%; background:var(--amber); transition:width 0.1s linear;}
 
   /* ===== HERO ===== */
-  .hero{
+  .hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
     background:var(--ink);
     color:var(--paper);
     padding:5rem 6vw 4.5rem;
     position:relative;
     overflow:hidden;
   }
+  @media (min-width:640px){ .hero{min-height:400px;} }
+
   .hero-inner{
     max-width:760px;
     position:relative;

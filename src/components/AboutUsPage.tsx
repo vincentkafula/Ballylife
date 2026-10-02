@@ -38,7 +38,7 @@ const ABOUT_PAGE_HTML = String.raw`<!DOCTYPE html>
   h1, h2, h3, h4{ font-family: 'Fraunces', serif; color: var(--pine); margin: 0; font-weight: 500; }
   a{ color: var(--pine); }
 
-  .hero{
+  .hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
     background:
       radial-gradient(900px 460px at 12% -25%, rgba(176,135,63,0.20), transparent 60%),
       radial-gradient(700px 420px at 100% 0%, rgba(64,89,74,0.35), transparent 55%),
@@ -46,6 +46,8 @@ const ABOUT_PAGE_HTML = String.raw`<!DOCTYPE html>
     color: var(--paper);
     position: relative; overflow: hidden;
   }
+  @media (min-width:640px){ .hero{min-height:400px;} }
+
   .hero-inner{ max-width: var(--page-max); margin: 0 auto; padding: 88px 32px; position: relative; }
   .kicker{ font-family: var(--mono); font-size: 13px; letter-spacing: 0.03em; color: var(--gold-soft); margin-bottom: 20px; display: block; }
   .hero h1{ color: var(--paper); font-size: clamp(32px, 5vw, 52px); line-height: 1.12; max-width: 16ch; }

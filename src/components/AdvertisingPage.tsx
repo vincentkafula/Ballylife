@@ -76,7 +76,7 @@ const ADVERTISING_PAGE_HTML = String.raw`<!DOCTYPE html>
   }
   @media (max-width: 900px){ .topbar nav{ display: none; } }
 
-  .hero{
+  .hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
     background:
       radial-gradient(900px 460px at 12% -25%, rgba(176,135,63,0.20), transparent 60%),
       radial-gradient(700px 420px at 100% 0%, rgba(64,89,74,0.35), transparent 55%),
@@ -85,6 +85,8 @@ const ADVERTISING_PAGE_HTML = String.raw`<!DOCTYPE html>
     position: relative;
     overflow: hidden;
   }
+  @media (min-width:640px){ .hero{min-height:400px;} }
+
   .hero-inner{ max-width: var(--page-max); margin: 0 auto; padding: 88px 32px 0; position: relative; }
   .hero-marks{ position: absolute; right: 0; top: 0; width: 300px; height: 300px; opacity: 0.5; pointer-events: none; }
   .hero-marks circle{ fill: none; stroke: rgba(246,243,234,0.16); }

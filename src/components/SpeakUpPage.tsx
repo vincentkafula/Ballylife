@@ -52,13 +52,15 @@ const SPEAK_UP_PAGE_HTML = String.raw`<!DOCTYPE html>
     color:var(--amber);
   }
 
-  .hero{
+  .hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
     background:var(--ink);
     color:var(--paper);
     padding:5rem 6vw 3.5rem;
     position:relative;
     overflow:hidden;
   }
+  @media (min-width:640px){ .hero{min-height:400px;} }
+
   .hero-inner{max-width:720px; position:relative; z-index:2;}
   .hero .brand{
     font-family:'JetBrains Mono',monospace;

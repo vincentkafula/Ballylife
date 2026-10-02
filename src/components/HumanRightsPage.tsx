@@ -113,7 +113,7 @@ const HUMAN_RIGHTS_PAGE_HTML = String.raw`<!DOCTYPE html>
     .topbar nav{ display: none; }
   }
 
-  .hero{
+  .hero{min-height:340px;display:flex;flex-direction:column;justify-content:center;
     background:
       radial-gradient(900px 420px at 15% -15%, rgba(169,191,166,0.30), transparent 60%),
       radial-gradient(700px 500px at 100% 0%, rgba(176,135,63,0.16), transparent 55%),
@@ -122,6 +122,8 @@ const HUMAN_RIGHTS_PAGE_HTML = String.raw`<!DOCTYPE html>
     position: relative;
     overflow: hidden;
   }
+  @media (min-width:640px){ .hero{min-height:400px;} }
+
 
   .hero-inner{
     max-width: var(--page-max);
