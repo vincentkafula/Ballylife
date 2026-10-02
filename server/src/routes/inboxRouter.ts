@@ -4,7 +4,7 @@ import { logger } from "../utils/logger";
 import { getDocument } from "../services/documentStore";
 import {
   verifyResendSignature, ingestReceivedEmail, mailboxSummary, listThreads, getThread, replyToThread, composeEmail,
-  setThreadStatus, attachmentFor, unreadCount, InboxError, receivingStatus, enableReceiving,
+  setThreadStatus, attachmentFor, unreadCount, InboxError, receivingStatus, enableReceiving, syncReceivedEmails,
 } from "../services/inbox/inbox";
 
 /**
@@ -56,6 +56,12 @@ inboxAdminRouter.get("/admin/inbox/receiving", ...manager, async (_req: Request,
 inboxAdminRouter.post("/admin/inbox/receiving", ...manager, async (_req: Request, res: Response): Promise<void> => {
   try { res.json({ success: true, data: await enableReceiving() }); }
   catch (err) { fail(res, err, "Couldn't switch receiving on."); }
+});
+
+// "Check for new mail": pull anything Resend received that hasn't arrived yet.
+inboxAdminRouter.post("/admin/inbox/sync", ...manager, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await syncReceivedEmails() }); }
+  catch (err) { fail(res, err, "Couldn't check for new mail."); }
 });
 
 inboxAdminRouter.get("/admin/inbox/threads", ...manager, async (req: Request, res: Response): Promise<void> => {

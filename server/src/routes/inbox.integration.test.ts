@@ -26,6 +26,7 @@ function fakeResend(url: string, init?: { body?: string; method?: string }) {
   if (url === "https://api.resend.com/domains/dom_1") return json({ id: "dom_1", status: "verified", capabilities: { receiving: receivingOn ? "enabled" : "disabled" },
     records: [{ record: "Receiving", type: "MX", value: "inbound-smtp.eu-west-1.amazonaws.com", priority: 10, status: receivingOn ? "verified" : "not_started" }] });
   if (url === "https://api.resend.com/domains/dom_1/verify") return json({ id: "dom_1" });
+  if (url.startsWith("https://api.resend.com/emails/receiving?")) return json({ object: "list", has_more: false, data: [...received.values()].map(e => ({ id: e.id, created_at: new Date().toISOString() })).reverse() });
   const m = url.match(/\/emails\/receiving\/([^/?]+)(\/attachments)?/);
   if (m && m[2]) return json({ data: [] });
   if (m) return received.has(m[1]) ? json(received.get(m[1])) : json({ message: "not found" }, 404);
@@ -173,5 +174,18 @@ describe("Switching on receiving in Resend", () => {
     const r = await request(app).post("/api/marketplace/admin/inbox/receiving").set(auth());
     expect(r.status).toBe(200);
     expect(r.body.data).toMatchObject({ receiving: "enabled", mx: { status: "verified" } });
+  });
+});
+
+describe("Safety net when a webhook notice never arrives", () => {
+  it("'Check for new mail' pulls in received emails we don't have yet, once", async () => {
+    received.set("in_missed", { id: "in_missed", object: "email", from: "Thandi <thandi@example.com>", to: ["info@ballylife.com"], subject: "Bulk order", text: "Hi", headers: {}, attachments: [] });
+    const r = await request(app).post("/api/marketplace/admin/inbox/sync").set(auth());
+    expect(r.status).toBe(200);
+    expect(r.body.data.imported).toBe(1);
+    const again = await request(app).post("/api/marketplace/admin/inbox/sync").set(auth());
+    expect(again.body.data.imported).toBe(0);
+    const { rows } = await pool.query(`SELECT counterpart_email FROM email_threads WHERE subject = 'Bulk order'`);
+    expect(rows).toEqual([{ counterpart_email: "thandi@example.com" }]);
   });
 });

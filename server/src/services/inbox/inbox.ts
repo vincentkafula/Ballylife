@@ -137,6 +137,41 @@ export async function enableReceiving(): Promise<Awaited<ReturnType<typeof recei
   return receivingStatus();
 }
 
+// ── Safety net: pull received emails the webhook didn't deliver ────────────
+const SYNC_WINDOW_MS = 7 * 24 * 3600_000;
+let syncing = false;
+
+/** Asks Resend for recently received emails and files any we don't have yet. Safe to run often. */
+export async function syncReceivedEmails(): Promise<{ checked: number; imported: number }> {
+  if (syncing || !process.env.RESEND_API_KEY?.trim()) return { checked: 0, imported: 0 };
+  syncing = true;
+  try {
+    const list = await resendGet("/emails/receiving?limit=100");
+    const recent = ((list.data ?? []) as { id: string; created_at?: string }[])
+      .filter(e => e.id && (!e.created_at || Date.now() - new Date(e.created_at).getTime() < SYNC_WINDOW_MS));
+    if (!recent.length) return { checked: 0, imported: 0 };
+    const ids = recent.map(e => e.id);
+    const { rows } = await pool!.query(`SELECT provider_id FROM email_messages WHERE provider_id IN (${ids.map((_, i) => `$${i + 1}`).join(",")})`, ids);
+    const have = new Set(rows.map((r: { provider_id: string }) => r.provider_id));
+    let imported = 0;
+    // Oldest first, so conversations build up in order.
+    for (const e of [...recent].reverse()) {
+      if (have.has(e.id)) continue;
+      try { if (await ingestReceivedEmail(e.id)) imported++; }
+      catch (err) { logger.warn("inbox.sync_item_failed", { error: err instanceof Error ? err.message : String(err) }); }
+    }
+    if (imported) logger.info("inbox.synced", { checked: recent.length, imported });
+    return { checked: recent.length, imported };
+  } finally { syncing = false; }
+}
+
+export function startInboxSync(intervalMs = 2 * 60_000): NodeJS.Timeout {
+  const t = setInterval(() => { void syncReceivedEmails().catch(err => logger.warn("inbox.sync_failed", { error: err instanceof Error ? err.message : String(err) })); }, intervalMs);
+  t.unref();
+  setTimeout(() => { void syncReceivedEmails().catch(() => undefined); }, 15_000).unref();
+  return t;
+}
+
 // ── Receiving ──────────────────────────────────────────────────────────────
 /** Fetches a received email from Resend and files it. Idempotent: the same email id is stored once. */
 export async function ingestReceivedEmail(emailId: string): Promise<{ threadId: string; isNew: boolean; autoReplied: boolean } | null> {

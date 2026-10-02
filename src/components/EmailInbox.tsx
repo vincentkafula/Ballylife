@@ -179,7 +179,10 @@ export function EmailInboxPanel() {
                   {s === "" ? "All" : s === "open" ? "Open" : "Closed"}
                 </button>
               ))}
-              <button onClick={() => { void loadThreads(); void loadMailboxes(); }} aria-label="Refresh" className="ml-auto p-1.5 rounded-lg hover:bg-gray-100"><RefreshCw className="w-3.5 h-3.5 text-gray-500" /></button>
+              <button onClick={async () => {
+                try { const r = await mktInbox.sync(); if (r.success && r.data?.imported) toast.success(`${r.data.imported} new email${r.data.imported === 1 ? "" : "s"}`); } catch { /* still refresh below */ }
+                void loadThreads(); void loadMailboxes();
+              }} aria-label="Check for new mail" title="Check for new mail" className="ml-auto p-1.5 rounded-lg hover:bg-gray-100"><RefreshCw className="w-3.5 h-3.5 text-gray-500" /></button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
