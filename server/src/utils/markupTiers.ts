@@ -1,14 +1,14 @@
 /**
- * Sliding markup on landed cost (goods + shipping, in rand): cheap items
- * carry a higher percentage, pricier ones a lower one, so the shop stays
- * competitive where shoppers compare prices most. Set HOUSE_MARKUP_TIERS in
- * Railway to change it, e.g. "150:40,400:30,1000:25,*:20" means
- *   landed cost up to R150 -> +40%, up to R400 -> +30%, up to R1000 -> +25%, above -> +20%.
- * A single "*:35" gives a flat 35%. (Replaces the old flat CJ_MARKUP_PCT.)
+ * Markup on landed cost (goods + shipping, in rand). Currently a flat 25%
+ * ("*:25" -- a single tier covering every price). This can still be set
+ * as a genuine sliding scale instead: HOUSE_MARKUP_TIERS=
+ * "150:40,400:30,1000:25,*:20" means landed cost up to R150 -> +40%, up
+ * to R400 -> +30%, up to R1000 -> +25%, above -> +20%. One place
+ * (this env var) controls it either way -- never hardcoded per call site.
  */
 export interface MarkupTier { upToZar: number; pct: number }
 
-export const DEFAULT_MARKUP_TIERS = "150:40,400:30,1000:25,*:20";
+export const DEFAULT_MARKUP_TIERS = "*:25";
 
 export function parseMarkupTiers(spec: string | undefined): MarkupTier[] {
   const tiers = String(spec ?? "").split(",").map(part => {

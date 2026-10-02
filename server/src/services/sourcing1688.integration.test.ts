@@ -112,7 +112,7 @@ describe("1688 research", () => {
 
     const o = await offer("617247852601");
     expect(o).toMatchObject({ status: "new", moq: 2, supplier_years: 8, product_class: "electronics" });
-    expect(o.estimate).toMatchObject({ unitZar: 74.81, resaleZar: 237, unitUsd: 3.54 }); // incl. 5% agent fee + ¥3 China shipping, sliding markup
+    expect(o.estimate).toMatchObject({ unitZar: 74.81, resaleZar: 228, unitUsd: 3.54 }); // incl. 5% agent fee + ¥3 China shipping, flat +25% markup
     expect(o).toMatchObject({ direct_product_id: null, not_listed_reason: "MOQ 2 is above 1" }); // we sell one at a time
   });
 

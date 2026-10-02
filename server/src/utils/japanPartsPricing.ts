@@ -58,7 +58,7 @@ export const DEFAULT_JAPAN_PARTS_SETTINGS: JapanPartsSettings = {
   ],
   maxItemsPerKeyword: 20,
   refreshHours: 24,
-  markupPct: 30,
+  markupPct: 25,
   forwarderFeeZar: 150,
   dutyPct: 20, // SARS tariff heading 87.08 (parts of motor vehicles)
   vatPct: 15,

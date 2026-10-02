@@ -59,13 +59,13 @@ describe("estimate1688", () => {
     expect(estimate1688(25.5, "electronics", 2.5, 18, withAgent).unitUsd).toBe(3.54); // CJ target stays the bare goods price
   });
 
-  it("uses the store's sliding markup by default", () => {
+  it("uses the store's markup (currently a flat 25%) by default", () => {
     const tiered = normalise1688Settings(DEFAULT_1688_SETTINGS);
     const e = estimate1688(25.5, "electronics", 2.5, 18, tiered);
-    // unit 74.81 + freight 70 + duty 15% x 144.81 = 21.72 + VAT 15% x (82.29 + 21.72) = 15.60 -> landed 182.13; R151-R400 tier +30%
+    // unit 74.81 + freight 70 + duty 15% x 144.81 = 21.72 + VAT 15% x (82.29 + 21.72) = 15.60 -> landed 182.13; flat +25%
     expect(e.landedZar).toBe(182.14);
-    expect(e.resaleZar).toBe(237);
-    expect(e.markupPct).toBe(30);
+    expect(e.resaleZar).toBe(228); // 182.14 x 1.25 = 227.675 -> rounds up to 228
+    expect(e.markupPct).toBe(25);
   });
 
   it("charges apparel the 45% clothing duty", () => {

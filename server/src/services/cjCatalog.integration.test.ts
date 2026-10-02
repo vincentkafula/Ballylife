@@ -135,11 +135,11 @@ describe("First-boot catalogue fill", () => {
     expect(p.name).toBe("Wireless Earbuds"); // branding scrubbed
     expect(p.status).toBe("active");
     expect(p.category_id).toBe("cat-01");
-    // (10 USD goods + 5 USD cheapest shipping) * 18.5 = R277.50 landed; R151-R400 tier: +30% = 360.75 -> 361
-    expect(Number(p.price)).toBe(361);
+    // (10 USD goods + 5 USD cheapest shipping) * 18.5 = R277.50 landed; flat +25% = 346.875 -> 347
+    expect(Number(p.price)).toBe(347);
     expect(p.stock).toBe(60);
     const white = p.variants.find((v: { value: string }) => v.value === "White");
-    expect(white.additionalPrice).toBe(48); // White: (12 + 5) * 18.5 = 314.50 +30% -> 409, minus the 361 base
+    expect(white.additionalPrice).toBe(47); // White: (12 + 5) * 18.5 = 314.50 +25% -> 394, minus the 347 base
     expect(white.id).toMatch(/^v_/);
 
     const { rows: sp } = await pool.query(`SELECT * FROM mkt_supplier_products WHERE external_id = 'pid-earbuds'`);
@@ -203,7 +203,7 @@ describe("Sourcing list (market-research products, searched on CJ)", () => {
     const job = await catalog.getSourcingJob();
     expect(job!.status).toBe("done");
     const earbuds = job!.totals.byKeyword["wireless earbuds"];
-    expect(earbuds).toMatchObject({ cjMatches: 2, listed: 1, withVideo: 1, priceMinZar: 361, priceMaxZar: 361 });
+    expect(earbuds).toMatchObject({ cjMatches: 2, listed: 1, withVideo: 1, priceMinZar: 347, priceMaxZar: 347 });
 
     const { rows } = await pool.query(`SELECT videos FROM mkt_supplier_products WHERE external_id = 'pid-earbuds'`);
     expect(rows[0].videos).toEqual(["https://cc-west-usa.oss-us-west-1.aliyuncs.com/earbuds-demo.mp4"]);

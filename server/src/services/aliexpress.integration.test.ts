@@ -159,8 +159,8 @@ describe("Importing products", () => {
     expect(res.status).toBe(200);
     const r = res.body.data[0];
     expect(r).toMatchObject({ productId: "1005006349486340", listed: true });
-    // (10.00 goods + 3.50 cheapest shipping) x R18 = R243 landed; R151-R400 tier +30% = 315.9 -> 316
-    expect(r.priceZar).toBe(316);
+    // (10.00 goods + 3.50 cheapest shipping) x R18 = R243 landed; flat +25% = 303.75 -> 304
+    expect(r.priceZar).toBe(304);
     listingId = r.storeProductId;
 
     const get = lastCall("aliexpress.ds.product.get")!;

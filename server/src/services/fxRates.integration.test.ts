@@ -43,8 +43,8 @@ describe("refreshFxRates", () => {
 
     expect(r.repriced).toBe(1);
     const { rows: p } = await pool.query(`SELECT seller_id, price, variants FROM mkt_products ORDER BY seller_id`);
-    expect(Number(p[0].price)).toBe(318);  // (10 + 5) * 16.3 = R244.50 landed, +30% = 317.85 -> 318
-    expect(p[0].variants.find((v: any) => v.value === "White").additionalPrice).toBe(43); // (12 + 5) * 16.3 = 277.10 +30% -> 361, minus the 318 base
+    expect(Number(p[0].price)).toBe(306);  // (10 + 5) * 16.3 = R244.50 landed, +25% = 305.625 -> 306
+    expect(p[0].variants.find((v: any) => v.value === "White").additionalPrice).toBe(41); // (12 + 5) * 16.3 = 277.10 +25% -> 347, minus the 306 base
     expect(Number(p[1].price)).toBe(599);  // a seller's own price is theirs, never touched
   });
 

@@ -83,7 +83,7 @@ export const DEFAULT_1688_SETTINGS: Sourcing1688Settings = {
   filters: { sortType: "normal", merchantType: "any", supplierYears: "5", fastShippingOnly: false, maxMoq: 1, priceMinCny: null, priceMaxCny: null },
   estimate: {
     markupMode: "tiered",
-    markupPct: 30,
+    markupPct: 25,
     vatPct: 15,
     vatUpliftPct: 10,
     agentFeePct: 5,
