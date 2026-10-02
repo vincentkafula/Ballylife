@@ -141,6 +141,17 @@ export const mktSellers = {
   supplierOrders: (sellerId: string) => api<{ success: boolean; data: unknown[]; meta: unknown }>(`/api/marketplace/sellers/${sellerId}/supplier-orders`),
 };
 
+// ── Email inbox (managers) ──
+type InboxRes = { success: boolean; data: any; error?: string };
+export const mktInbox = {
+  mailboxes: () => api<InboxRes>(`/api/marketplace/admin/inbox/mailboxes`),
+  threads:   (p: Record<string, string>) => api<InboxRes>(`/api/marketplace/admin/inbox/threads?${new URLSearchParams(p)}`),
+  thread:    (id: string) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}`),
+  reply:     (id: string, text: string) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}/reply`, { method: "POST", body: JSON.stringify({ text }) }),
+  setStatus: (id: string, status: "open" | "closed") => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  compose:   (body: { mailbox: string; to: string; subject: string; text: string }) => api<InboxRes>(`/api/marketplace/admin/inbox/compose`, { method: "POST", body: JSON.stringify(body) }),
+};
+
 export const mktAdmin = {
   emailStatus: () => api<{ success: boolean; data: { configured: boolean; provider: "resend" | "smtp" | null; from: string; replyTo: string | null }; error?: string }>(`/api/marketplace/admin/email/status`),
   emailTest: () => api<{ success: boolean; data?: { to: string }; error?: string }>(`/api/marketplace/admin/email/test`, { method: "POST" }),

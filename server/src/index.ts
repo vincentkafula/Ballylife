@@ -16,6 +16,7 @@ import japanPartsRouter from "./routes/japanPartsRouter";
 import sourcing1688Router from "./routes/sourcing1688Router";
 import sourcingRouter from "./routes/sourcingRouter";
 import dpoRouter from "./routes/dpoRouter";
+import { inboundRouter, inboxAdminRouter } from "./routes/inboxRouter";
 import superAdminRouter from "./routes/superAdminRouter";
 import aliexpressRouter from "./routes/aliexpressRouter";
 import socialRouter from "./routes/socialRouter";
@@ -67,7 +68,7 @@ app.use(cors({ origin: (origin, cb) => cb(null, isAllowedOrigin(origin)), creden
 // WhatsApp webhooks are signed over the exact bytes Meta sent, so keep them for that route.
 app.use(express.json({
   limit: "2mb",
-  verify: (req, _res, buf) => { if ((req as express.Request).originalUrl?.startsWith("/api/whatsapp/")) (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf); },
+  verify: (req, _res, buf) => { if ((req as express.Request).originalUrl?.startsWith("/api/whatsapp/") || (req as express.Request).originalUrl?.startsWith("/api/email/")) (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf); },
 }));
 // PayFast's ITN webhook posts form-urlencoded, not JSON, and its own
 // validate callback (payfastProcessor.confirmWithPayfast) needs the exact
@@ -123,6 +124,8 @@ app.use("/api/marketplace", japanPartsRouter);
 app.use("/api/marketplace", sourcing1688Router);
 app.use("/api/marketplace", sourcingRouter);
 app.use("/api/marketplace", dpoRouter);
+app.use("/api/marketplace", inboxAdminRouter);
+app.use("/api/email", inboundRouter);
 app.use("/api/marketplace", superAdminRouter);
 app.use("/api/marketplace", aliexpressRouter);
 app.use("/api/marketplace", socialRouter);

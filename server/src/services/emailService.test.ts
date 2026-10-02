@@ -17,7 +17,7 @@ describe("email via Resend", () => {
     const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ id: "email_1" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
     expect(isEmailConfigured()).toBe(true);
-    expect(await sendEmail({ to: "buyer@example.com", subject: "Order confirmed", html: "<p>Thanks <b>Mwila</b></p>" })).toEqual({ sent: true });
+    expect(await sendEmail({ to: "buyer@example.com", subject: "Order confirmed", html: "<p>Thanks <b>Mwila</b></p>" })).toEqual({ sent: true, providerId: "email_1" });
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.resend.com/emails");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer re_test_key");

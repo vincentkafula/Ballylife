@@ -1415,3 +1415,51 @@ ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS charged_currency TEXT;
 -- Which DPO merchant account took the payment ('main', or a country code
 -- such as 'ZM' for the DPO Zambia account that settles kwacha locally).
 ALTER TABLE mkt_pay_transactions ADD COLUMN IF NOT EXISTS processor_account TEXT;
+
+-- ── Email inbox: all @ballylife.com mail, answered from the manager dashboard ──
+CREATE TABLE IF NOT EXISTS email_threads (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ref_no            SERIAL,                           -- shown as BL-<ref_no>; also in reply subjects
+  mailbox           TEXT NOT NULL,                    -- our address, e.g. info@ballylife.com
+  subject           TEXT NOT NULL DEFAULT '',
+  counterpart_email TEXT NOT NULL,                    -- the customer / sender
+  counterpart_name  TEXT,
+  status            TEXT NOT NULL DEFAULT 'open',     -- open | closed
+  unread            BOOLEAN NOT NULL DEFAULT true,
+  last_message_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_threads_mailbox ON email_threads(mailbox, status, last_message_at);
+CREATE INDEX IF NOT EXISTS idx_email_threads_counterpart ON email_threads(counterpart_email);
+
+CREATE TABLE IF NOT EXISTS email_messages (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id     UUID NOT NULL REFERENCES email_threads(id),
+  direction     TEXT NOT NULL,                        -- in | out
+  provider_id   TEXT UNIQUE,                          -- Resend's id (received or sent)
+  message_id    TEXT,                                 -- RFC 5322 Message-ID, for threading
+  in_reply_to   TEXT,
+  from_addr     TEXT NOT NULL,
+  to_addrs      JSONB NOT NULL DEFAULT '[]',
+  cc_addrs      JSONB NOT NULL DEFAULT '[]',
+  subject       TEXT NOT NULL DEFAULT '',
+  text_body     TEXT,
+  html_body     TEXT,
+  auto_reply    BOOLEAN NOT NULL DEFAULT false,
+  sent_by       TEXT,                                 -- manager user id for replies
+  auth_result   JSONB,                                -- SPF / DKIM / DMARC for received mail
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_messages_thread ON email_messages(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_email_messages_msgid ON email_messages(message_id);
+
+CREATE TABLE IF NOT EXISTS email_attachments (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id    UUID NOT NULL REFERENCES email_messages(id),
+  filename      TEXT NOT NULL,
+  content_type  TEXT NOT NULL,
+  size          INTEGER NOT NULL DEFAULT 0,
+  storage_key   TEXT,                                 -- encrypted copy in the documents bucket
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_attachments_message ON email_attachments(message_id);

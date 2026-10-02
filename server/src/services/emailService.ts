@@ -41,19 +41,24 @@ export function emailStatus(): { configured: boolean; provider: "resend" | "smtp
 }
 
 /** Sends through Resend's HTTP API. */
-async function sendViaResend(req: SendEmailRequest): Promise<{ sent: boolean; error?: string }> {
+async function sendViaResend(req: SendEmailRequest): Promise<SendEmailResult> {
   try {
+    const replyTo = req.replyTo ?? REPLY_TO;
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey()}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: EMAIL_FROM, to: [req.to], subject: req.subject, html: req.html,
+        from: req.from ?? EMAIL_FROM, to: [req.to], subject: req.subject, html: req.html,
         text: req.text ?? req.html.replace(/<[^>]+>/g, ""),
-        ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(req.headers && Object.keys(req.headers).length ? { headers: req.headers } : {}),
       }),
       signal: AbortSignal.timeout(20_000),
     });
-    if (res.ok) return { sent: true };
+    if (res.ok) {
+      const j = await res.json().catch(() => ({})) as { id?: string };
+      return { sent: true, ...(j.id ? { providerId: j.id } : {}) };
+    }
     const j = await res.json().catch(() => ({})) as { message?: string; name?: string };
     // e.g. 403 "The ballylife.com domain is not verified" -- add Resend's DNS records.
     console.error(`[email] Resend refused (HTTP ${res.status}): ${j.message ?? j.name ?? "unknown error"}`);
@@ -81,9 +86,17 @@ export interface SendEmailRequest {
   subject: string;
   html: string;
   text?: string;
+  /** Overrides EMAIL_FROM, e.g. "Ballylife <legal@ballylife.com>" for inbox replies. */
+  from?: string;
+  /** Overrides EMAIL_REPLY_TO. */
+  replyTo?: string;
+  /** Extra headers, e.g. Message-ID / In-Reply-To / References for threading. */
+  headers?: Record<string, string>;
 }
 
-export async function sendEmail(req: SendEmailRequest): Promise<{ sent: boolean; error?: string }> {
+export interface SendEmailResult { sent: boolean; error?: string; providerId?: string }
+
+export async function sendEmail(req: SendEmailRequest): Promise<SendEmailResult> {
   if (resendKey()) return sendViaResend(req);
   const t = getTransporter();
   if (!t) {
@@ -91,7 +104,8 @@ export async function sendEmail(req: SendEmailRequest): Promise<{ sent: boolean;
     return { sent: false, error: "Email is not configured" };
   }
   try {
-    await t.sendMail({ from: EMAIL_FROM, to: req.to, subject: req.subject, html: req.html, text: req.text ?? req.html.replace(/<[^>]+>/g, ""), ...(REPLY_TO ? { replyTo: REPLY_TO } : {}) });
+    const replyTo = req.replyTo ?? REPLY_TO;
+    await t.sendMail({ from: req.from ?? EMAIL_FROM, to: req.to, subject: req.subject, html: req.html, text: req.text ?? req.html.replace(/<[^>]+>/g, ""), ...(replyTo ? { replyTo } : {}), ...(req.headers ? { headers: req.headers } : {}) });
     return { sent: true };
   } catch (err) {
     console.error("[email] Send failed:", err);
