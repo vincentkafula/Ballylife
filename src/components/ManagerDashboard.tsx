@@ -525,6 +525,38 @@ function UserManagementPanel({ customers, sellers, isSuperAdmin }: { customers: 
   );
 }
 
+function EmailDeliveryCard() {
+  const [status, setStatus] = useState<{ configured: boolean; provider: string | null; from: string; replyTo: string | null } | null>(null);
+  const [sending, setSending] = useState(false);
+  useEffect(() => { mktAdmin.emailStatus().then(r => { if (r.success) setStatus(r.data); }).catch(() => undefined); }, []);
+  const test = async () => {
+    setSending(true);
+    try {
+      const r = await mktAdmin.emailTest();
+      if (r.success) toast.success(`Test email sent to ${r.data?.to}. Check your inbox (and spam).`);
+      else toast.error(r.error ?? "The test email wasn't sent.");
+    } catch { toast.error("Couldn't reach the server — please try again."); }
+    finally { setSending(false); }
+  };
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm font-bold text-gray-900">Email delivery</p>
+          {!status ? <p className="text-xs text-gray-500 mt-1">Checking…</p>
+            : status.configured
+              ? <p className="text-xs text-gray-600 mt-1"><span className="text-green-700 font-semibold">On</span> · via {status.provider === "resend" ? "Resend" : "SMTP"} · from {status.from}{status.replyTo ? ` · replies to ${status.replyTo}` : ""}</p>
+              : <p className="text-xs text-red-600 mt-1">Off — emails (order confirmations, password resets, verification) are only logged. Add RESEND_API_KEY on the backend in Railway.</p>}
+        </div>
+        <button onClick={test} disabled={sending || !status?.configured}
+          className="px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-40" style={{ background: "#14110D" }}>
+          {sending ? "Sending…" : "Send a test email to me"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SecurityAndAuditPanel() {
   const [entries, setEntries] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
@@ -540,6 +572,7 @@ function SecurityAndAuditPanel() {
 
   return (
     <div className="space-y-4">
+      <EmailDeliveryCard />
       <div className="bg-white rounded-xl border border-gray-100 p-5">
         <div className="flex items-center gap-2 mb-3"><Shield className="w-5 h-5 text-gray-500" /><p className="text-sm font-bold text-gray-900">Security & Fraud Monitoring</p></div>
         <p className="text-sm text-gray-500 mb-4">Live fraud detection and IP-based anomaly monitoring aren't built yet — that needs real traffic/behavioural data and dedicated infrastructure this platform doesn't have at its current scale. What's genuinely enforced right now:</p>

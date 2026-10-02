@@ -34,6 +34,12 @@ export function isEmailConfigured(): boolean {
   return Boolean(resendKey()) || smtpConfigured();
 }
 
+/** For the manager dashboard: which provider sends, and from which address (no secrets). */
+export function emailStatus(): { configured: boolean; provider: "resend" | "smtp" | null; from: string; replyTo: string | null } {
+  const provider = resendKey() ? "resend" : smtpConfigured() ? "smtp" : null;
+  return { configured: provider !== null, provider, from: EMAIL_FROM, replyTo: REPLY_TO ?? null };
+}
+
 /** Sends through Resend's HTTP API. */
 async function sendViaResend(req: SendEmailRequest): Promise<{ sent: boolean; error?: string }> {
   try {

@@ -6,7 +6,7 @@ import { pool } from "../db/pool";
 import { requireAuth, requireRole, JWT_SECRET, JWT_EXPIRES } from "../middleware/auth";
 import { submitOrderPayment, getOrderTransactions, refundOrder } from "../services/mktPay";
 import { verifyItnSignature, confirmWithPayfast, isPayfastConfigured, payfastIsSandbox } from "../services/payfastProcessor";
-import { sendOrderConfirmationEmail } from "../services/emailService";
+import { sendOrderConfirmationEmail, sendEmail, emailStatus } from "../services/emailService";
 import { parseCsv } from "../utils/csv";
 import { calculateVat, convertToZar, calculatePercentageDuty, calculateZmVehicleDuty, calculatePlatformFee, calculateSellerPayout, zmVehicleAgeBand, round2 } from "../utils/pricing";
 import { logger } from "../utils/logger";
@@ -1486,6 +1486,27 @@ router.patch("/sellers/:id", requireAuth, requireSellerOwner, async (req: Reques
 });
 
 // ── ADMIN ─────────────────────────────────────────────────────────────────────
+// ── Email delivery (manager check) ─────────────────────────────────────────
+router.get("/admin/email/status", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
+  res.json({ success: true, data: emailStatus() });
+});
+
+// Sends a test email to the signed-in manager's own address -- never anyone else's.
+router.post("/admin/email/test", requireAuth, requireRole(...MANAGER_ROLES), async (req: Request, res: Response): Promise<void> => {
+  const { rows } = await pool!.query(`SELECT email, name FROM users WHERE id = $1`, [req.user!.userId]);
+  const to = rows[0]?.email as string | undefined;
+  if (!to) { res.status(400).json({ success: false, error: "Your account has no email address." }); return; }
+  const status = emailStatus();
+  if (!status.configured) { res.status(503).json({ success: false, error: "Email isn't switched on: RESEND_API_KEY isn't set on the backend." }); return; }
+  const r = await sendEmail({
+    to, subject: "Ballylife test email",
+    html: `<p>Hi ${String(rows[0]?.name ?? "").split(" ")[0] || "there"},</p><p>This is a test from the Ballylife manager dashboard. If you're reading it, order confirmations, password resets and verification emails can reach customers.</p><p>Sent from ${status.from} via ${status.provider === "resend" ? "Resend" : "SMTP"}.</p>`,
+  });
+  logger.info("email.test_sent", { sent: r.sent, provider: status.provider, error: r.error ?? null });
+  if (!r.sent) { res.status(502).json({ success: false, error: `Not sent: ${r.error ?? "unknown error"}` }); return; }
+  res.json({ success: true, data: { to } });
+});
+
 router.get("/admin/stats", requireAuth, requireRole(...MANAGER_ROLES), async (_req: Request, res: Response): Promise<void> => {
   const [{ rows: p }, { rows: s }, { rows: o }, { rows: rev }, { rows: pr }, { rows: ps }] = await Promise.all([
     pool!.query(`SELECT COUNT(*)::int AS n FROM mkt_products WHERE status = 'active'`),

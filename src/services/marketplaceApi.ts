@@ -142,6 +142,8 @@ export const mktSellers = {
 };
 
 export const mktAdmin = {
+  emailStatus: () => api<{ success: boolean; data: { configured: boolean; provider: "resend" | "smtp" | null; from: string; replyTo: string | null }; error?: string }>(`/api/marketplace/admin/email/status`),
+  emailTest: () => api<{ success: boolean; data?: { to: string }; error?: string }>(`/api/marketplace/admin/email/test`, { method: "POST" }),
   stats: () => api<{ success: boolean; data: unknown }>("/api/marketplace/admin/stats"),
   orders: (status?: string) => api<{ success: boolean; data: unknown[] }>(`/api/marketplace/admin/orders${status ? `?status=${status}` : ""}`),
   updateOrderStatus: (id: string, body: unknown) => api<{ success: boolean; data: unknown }>(`/api/marketplace/admin/orders/${id}/status`, { method: "PATCH", body: JSON.stringify(body) }),
