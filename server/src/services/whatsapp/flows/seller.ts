@@ -20,6 +20,7 @@ import { putDocument, deleteDocument, isDocumentStoreConfigured, ALLOWED_DOCUMEN
 import { computeAccountStatus, sendEmailVerification } from "../../accountVerification";
 import { sendEmail } from "../../emailService";
 import { uniqueUsername } from "./customer";
+import { newAccountPassword, sendLoginDetails } from "../loginDetails";
 import { CONSENT_VERSION, type Flow, type Input, type Ctx, type StepResult } from "../types";
 
 const SITE = () => (process.env.MARKETPLACE_PUBLIC_URL || "https://www.ballylife.com").replace(/\/$/, "");
@@ -232,15 +233,15 @@ export const sellerFlow: Flow = {
   async finish(ctx) {
     const d = ctx.data;
     const client = await pool!.connect();
-    let userId: string, sellerId: string;
+    let userId: string, sellerId: string, password: string, passwordHash: string;
     try {
       await client.query("BEGIN");
       const username = await uniqueUsername(d.email);
-      const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+      ({ password, passwordHash } = await newAccountPassword());
       const status = computeAccountStatus(false, true, true);
       const { rows } = await client.query(
-        `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status)
-         VALUES ($1, $2, 'seller', $3, $4, $5, false, true, $6) RETURNING id`,
+        `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status, must_change_password)
+         VALUES ($1, $2, 'seller', $3, $4, $5, false, true, $6, true) RETURNING id`,
         [username, passwordHash, d.name, d.email, `+${ctx.phone}`, status]);
       userId = rows[0].id;
       sellerId = `sel-${userId.slice(0, 8)}`;
@@ -279,5 +280,6 @@ export const sellerFlow: Flow = {
     }
     logger.info("whatsapp.seller_applied", { sellerId });
     await sendText(ctx.phone, `✅ Application received! Your reference is *${sellerId.toUpperCase()}*.\n\nWe review applications within 1–2 business days and will message you here with the result. We've also emailed you a link to confirm your email address.`);
+    await sendLoginDetails(ctx.phone, userId, "Confirm your email, then you can also sign in on a computer to follow your application:", password);
   },
 };

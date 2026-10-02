@@ -114,6 +114,7 @@ describe("webhook security", () => {
 
 describe("customer registration", () => {
   let signInToken = "";
+  let tempPassword = "";
 
   it("greets a new number with Customer / Seller / Question", async () => {
     await text("Hi");
@@ -149,9 +150,45 @@ describe("customer registration", () => {
     const link = lastText().match(/wa-login\?t=([\w-]+)/);
     expect(link).toBeTruthy();
     signInToken = link![1];
-    // the sign-in link is never written to the message log
+    // website login details: username and a temporary password
+    expect(lastText()).toMatch(/Username: \*thandi\.m\*/);
+    tempPassword = lastText().match(/Temporary password: \*([\w-]+)\*/)![1];
+    expect(tempPassword).toMatch(/^[\w]{4}-[\w]{4}-[\w]{4}$/);
+    // neither the sign-in link nor the password is ever written to the message log
     const { rows: log } = await pool.query(`SELECT body FROM wa_messages WHERE direction = 'out'`);
-    expect(log.some((r: { body: string }) => r.body?.includes(signInToken))).toBe(false);
+    expect(log.some((r: { body: string }) => r.body?.includes(signInToken) || r.body?.includes(tempPassword))).toBe(false);
+  });
+
+  it("the same login works on the website by username, email or phone, and asks for a new password first", async () => {
+    // (they confirm their email from the link we emailed)
+    await pool.query(`UPDATE users SET email_verified = true, account_status = 'active' WHERE email = 'thandi.m@example.com'`);
+    for (const id of ["thandi.m", "Thandi.M@example.com", "082 123 4567", "+27821234567"]) {
+      const r = await request(app).post("/api/auth/login").send({ username: id, password: tempPassword });
+      expect(r.status).toBe(200);
+      expect(r.body.data.user).toMatchObject({ username: "thandi.m", mustChangePassword: true, temporaryPassword: true });
+    }
+    expect((await request(app).post("/api/auth/login").send({ username: "thandi.m", password: "wrong-pass-1" })).status).toBe(401);
+    const token = (await request(app).post("/api/auth/login").send({ username: "thandi.m", password: tempPassword })).body.data.token;
+    const ch = await request(app).post("/api/auth/change-password").set("Authorization", `Bearer ${token}`).send({ currentPassword: tempPassword, newPassword: "Sunflower-Road-88" });
+    expect(ch.status).toBe(200);
+    const again = await request(app).post("/api/auth/login").send({ username: "thandi.m@example.com", password: "Sunflower-Road-88" });
+    expect(again.status).toBe(200);
+    expect(again.body.data.user.mustChangePassword).toBeUndefined();
+  });
+
+  it("login on WhatsApp shows the username without changing the password; new password replaces it", async () => {
+    await text("login");
+    expect(lastText()).toMatch(/Username: \*thandi\.m\*[\s\S]*Type \*new password\*/);
+    expect((await request(app).post("/api/auth/login").send({ username: "thandi.m", password: "Sunflower-Road-88" })).status).toBe(200);
+
+    await text("new password");
+    const fresh = lastText().match(/Temporary password: \*([\w-]+)\*/)![1];
+    expect((await request(app).post("/api/auth/login").send({ username: "thandi.m", password: "Sunflower-Road-88" })).status).toBe(401);
+    const r = await request(app).post("/api/auth/login").send({ username: "thandi.m", password: fresh });
+    expect(r.status).toBe(200);
+    expect(r.body.data.user.temporaryPassword).toBe(true);
+    const { rows: log } = await pool.query(`SELECT body FROM wa_messages WHERE direction = 'out'`);
+    expect(log.some((x: { body: string }) => x.body?.includes(fresh))).toBe(false);
   });
 
   it("the magic link signs in once, and only once", async () => {
@@ -224,7 +261,7 @@ describe("seller application", () => {
     // bank details and ID number never reach the message log
     const { rows: log } = await pool.query(`SELECT body FROM wa_messages`);
     expect(log.some((r: any) => /62812345678|8001015009087/.test(r.body ?? ""))).toBe(false);
-    expect(lastText()).toMatch(/Application received/);
+    expect(sent.map(s => s.text ?? "").join("\n")).toMatch(/Application received[\s\S]*Username: \*lerato\*[\s\S]*Temporary password/);
 
     // admin approves -> the seller gets a sign-in link on WhatsApp
     const { notifySellerDecision } = await import("./notifications");

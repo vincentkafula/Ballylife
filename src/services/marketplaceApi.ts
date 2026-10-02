@@ -353,7 +353,7 @@ export const mktCustomer = {
 };
 
 // ── Marketplace auth (separate from the site's admin login) ─────────────────
-export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; phone?: string | null; emailVerified?: boolean; phoneVerified?: boolean; accountStatus?: string; mustChangePassword?: boolean; }
+export interface MktAuthUser { id: string; username: string; name: string; email: string; role: string; phone?: string | null; emailVerified?: boolean; phoneVerified?: boolean; accountStatus?: string; mustChangePassword?: boolean; temporaryPassword?: boolean; }
 
 // The shape login/register/verify-*/google/facebook all return when the
 // account isn't active yet -- carried through to the caller (rather than

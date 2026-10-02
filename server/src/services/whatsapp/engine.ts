@@ -15,7 +15,8 @@ import { pool } from "../../db/pool";
 import { logger } from "../../utils/logger";
 import { sendText, sendButtons, sendList } from "./client";
 import { touchContact, updateContact, loadConversation, saveConversation, setInboundBody, type Conversation } from "./store";
-import { customerFlow, sendSignInLink } from "./flows/customer";
+import { customerFlow } from "./flows/customer";
+import { resetToTemporaryPassword, sendLoginDetails } from "./loginDetails";
 import { sellerFlow } from "./flows/seller";
 import { questionFlow, humanFlow } from "./flows/question";
 import { answerQuestion, isAssistantConfigured } from "./assistant";
@@ -43,6 +44,7 @@ const HELP =
   "• *menu* — main menu\n• *back* — previous question\n• *edit* — change an answer\n" +
   "• *cancel* — stop and delete your answers\n• *continue* — carry on where you left off\n" +
   "• *shop* — search products\n• *orders* — track your orders\n• *my details* — change your address or email\n" +
+  "• *login* — your username for the website\n• *new password* — get a new website password\n" +
   "• *deals* — get new arrivals on WhatsApp (*stop deals* to stop)\n• *STOP* — stop receiving messages";
 
 // ---------------------------------------------------------------- helpers
@@ -86,7 +88,7 @@ export async function sendMainMenu(ctx: Ctx, paused: boolean): Promise<void> {
         ...sellerRows,
         { id: "menu:shop", title: "🛍️ Shop products", description: "Search Ballylife" },
         { id: "menu:orders", title: "📦 My orders", description: "Track your orders" },
-        { id: "menu:signin", title: "🔐 Sign-in link", description: seller?.status === "active" ? "Open your seller dashboard" : "Sign in on ballylife.com" },
+        { id: "menu:signin", title: "🔐 Website login", description: seller?.status === "active" ? "Username, password, seller dashboard" : "Username and password for ballylife.com" },
         { id: "menu:question", title: "❓ Ask a question", description: "Delivery, returns, products…" },
         { id: "menu:human", title: "👩‍💼 Talk to a person", description: "Our team replies here" },
         { id: "menu:details", title: "👤 My details", description: "Change your address or email" },
@@ -118,7 +120,7 @@ async function askCurrent(ctx: Ctx, conv: Conversation): Promise<void> {
 
 // ---------------------------------------------------------------- commands
 
-type Command = "menu" | "back" | "edit" | "cancel" | "continue" | "help" | "stop" | "start" | "shop" | "orders" | "store_orders" | "deals" | "stop_deals" | "details";
+type Command = "menu" | "back" | "edit" | "cancel" | "continue" | "help" | "stop" | "start" | "shop" | "orders" | "store_orders" | "deals" | "stop_deals" | "details" | "login" | "new_password";
 const NAV_COMMANDS = new Set<Command>(["shop", "orders", "store_orders", "deals", "details"]);
 const COMMANDS: Record<string, Command> = {
   menu: "menu", "main menu": "menu", hi: "menu", hello: "menu", hey: "menu",
@@ -126,6 +128,8 @@ const COMMANDS: Record<string, Command> = {
   help: "help", stop: "stop", unsubscribe: "stop", start: "start", subscribe: "start",
   shop: "shop", search: "shop", orders: "orders", "my orders": "orders", "track order": "orders", "store orders": "store_orders",
   deals: "deals", "stop deals": "stop_deals", "my details": "details", details: "details",
+  login: "login", "log in": "login", "sign in": "login", "login details": "login", username: "login", "my username": "login",
+  "new password": "new_password", "reset password": "new_password", "forgot password": "new_password",
 };
 
 function commandOf(input: Input, inFlow: boolean, flow: string | null = null): Command | null {
@@ -157,6 +161,16 @@ async function runCommand(cmd: Command, ctx: Ctx, conv: Conversation): Promise<v
     case "details":
       await handleMenuChoice("menu:details", ctx, conv);
       return;
+    case "login":
+      await handleMenuChoice("menu:signin", ctx, conv);
+      return;
+    case "new_password": {
+      if (!ctx.userId) { await sendText(ctx.phone, "You don't have a Ballylife account on this number yet. Type *menu* and choose *I'm a customer* to create one."); return; }
+      const password = await resetToTemporaryPassword(ctx.userId);
+      if (!password) { await sendText(ctx.phone, "We can't reset this account's password on WhatsApp. Use *Forgot password* on the website sign-in page."); return; }
+      await sendLoginDetails(ctx.phone, ctx.userId, "Here's a new password. Your old one no longer works, and you've been signed out on other devices.", password);
+      return;
+    }
     case "orders":
     case "store_orders":
       if (flow) { await saveConversation(ctx.phone, emptyConversation()); conv.flow = null; }
@@ -259,7 +273,7 @@ async function handleMenuChoice(id: string, ctx: Ctx, conv: Conversation): Promi
       return true;
     }
     case "menu:signin":
-      if (ctx.userId) await sendSignInLink(ctx.phone, ctx.userId, "Here's your sign-in link.");
+      if (ctx.userId) await sendLoginDetails(ctx.phone, ctx.userId, "Here are your login details.");
       else await sendMainMenu(ctx, false);
       return true;
   }

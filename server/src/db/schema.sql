@@ -1478,3 +1478,6 @@ CREATE TABLE IF NOT EXISTS mkt_department_members (
 );
 -- Resend's latest delivery event for emails we sent from the inbox (delivered, bounced...).
 ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS delivery_status TEXT;
+
+-- Accounts made on WhatsApp start with a temporary password; the website asks for a new one at first sign-in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;

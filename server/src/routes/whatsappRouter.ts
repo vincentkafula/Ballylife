@@ -21,7 +21,7 @@ import { logger } from "../utils/logger";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { handleIncoming } from "../services/whatsapp/engine";
 import { recordInbound, recordStatus, updateContact } from "../services/whatsapp/store";
-import { sendSignInLink } from "../services/whatsapp/flows/customer";
+import { sendLoginDetails } from "../services/whatsapp/loginDetails";
 import { consumeMagicToken } from "../services/magicLink";
 import { computeAccountStatus } from "../services/accountVerification";
 import { getDocument, getProductPhoto } from "../services/documentStore";
@@ -123,7 +123,7 @@ whatsappRouter.get("/link", async (req: Request, res: Response): Promise<void> =
     `UPDATE users SET phone = COALESCE(phone, $2), email_verified = true, phone_verified = true, account_status = CASE WHEN account_status = 'active' THEN 'active' ELSE $3 END WHERE id = $1`,
     [user.id, `+${used.phone}`, status]);
   await updateContact(used.phone, { user_id: user.id });
-  await sendSignInLink(used.phone, String(user.id), `✅ Your WhatsApp is now connected to your Ballylife account, ${String(user.name).split(" ")[0]}!`).catch(() => undefined);
+  await sendLoginDetails(used.phone, String(user.id), `✅ Your WhatsApp is now connected to your Ballylife account, ${String(user.name).split(" ")[0]}! It's the same account as on the website.`).catch(() => undefined);
   logger.info("whatsapp.account_linked", { userId: user.id });
   res.type("html").send(page("WhatsApp connected ✅", "Your WhatsApp number is now linked to your Ballylife account. You can close this page and go back to WhatsApp."));
 });

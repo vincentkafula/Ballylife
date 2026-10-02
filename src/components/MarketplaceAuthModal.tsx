@@ -236,7 +236,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
 
   const handleSignIn = async () => {
     setError(null);
-    if (!siUsername || !siPassword) { setError("Enter your username and password."); return; }
+    if (!siUsername || !siPassword) { setError("Enter your username (or email or phone) and password."); return; }
     setLoading(true);
     const r = await mktAuth.login(siUsername, siPassword);
     setLoading(false);
@@ -376,7 +376,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
           {tab === "signin" && (
             <div>
               {oauthButtons}
-              <Field label="Username" value={siUsername} onChange={setSiUsername} />
+              <Field label="Username, email or phone" value={siUsername} onChange={setSiUsername} placeholder="Same login as on WhatsApp" />
               <Field label="Password" value={siPassword} onChange={setSiPassword} type="password" />
               <button onClick={handleSignIn} disabled={loading}
                 className="w-full mt-2 py-2.5 rounded-lg font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-60"

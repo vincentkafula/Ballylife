@@ -2619,6 +2619,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#EAEDED]" style={{ fontFamily: "'Amazon Ember', Arial, sans-serif" }}>
+      {view !== "admin" && <DefaultPasswordBanner user={authUser} />}
       {/* ── Tier 1: dark top strip ── */}
       <header className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#1E7B4D" }}>
         <button

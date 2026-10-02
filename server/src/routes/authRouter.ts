@@ -149,7 +149,7 @@ async function respondWithSessionOrVerificationNeeded(user: any, res: Response):
   }
   await pool!.query(`UPDATE users SET last_login = now() WHERE id = $1`, [user.id]);
   const token = jwt.sign({ userId: user.id, username: user.username, role: user.role, tokenVersion: user.token_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  res.json({ success: true, data: { token, user: { ...mapUser(user), ...(user.must_change_password ? { mustChangePassword: true } : {}) } } });
+  res.json({ success: true, data: { token, user: { ...mapUser(user), ...(user.password_banner ? { mustChangePassword: true } : {}), ...(user.password_banner === "temporary" ? { temporaryPassword: true } : {}) } } });
 }
 
 // One-time sign-in link sent over WhatsApp (services/magicLink.ts). The
@@ -277,6 +277,27 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── Login ───────────────────────────────────────────────────────────────
+/**
+ * The same account signs in by username, email or phone number, whether it
+ * was made on the website or on WhatsApp. Email and phone only count when
+ * exactly one account has them.
+ */
+async function findLoginUser(identifier: string): Promise<any | null> {
+  const id = identifier.trim();
+  const { rows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [id]);
+  if (rows[0]) return rows[0];
+  if (id.includes("@")) {
+    const { rows: byEmail } = await pool!.query(`SELECT * FROM users WHERE LOWER(email) = $1 AND account_status <> 'removed'`, [id.toLowerCase()]);
+    return byEmail.length === 1 ? byEmail[0] : null;
+  }
+  let digits = id.replace(/[\s()+-]/g, "");
+  if (!/^\d{9,15}$/.test(digits)) return null;
+  if (/^0\d{9}$/.test(digits)) digits = `27${digits.slice(1)}`; // local South African number
+  const { rows: byPhone } = await pool!.query(
+    `SELECT * FROM users WHERE phone IN ($1, $2) AND account_status <> 'removed'`, [`+${digits}`, digits]);
+  return byPhone.length === 1 ? byPhone[0] : null;
+}
+
 router.post("/login", async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body ?? {};
   if (!username || !password) {
@@ -284,30 +305,32 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const lockedFor = loginLockedFor(username);
+  const user = await findLoginUser(String(username));
+  // Lockout counts against the account, however they typed it (username, email or phone).
+  const lockKey = user ? String(user.username) : String(username);
+  const lockedFor = loginLockedFor(lockKey);
   if (lockedFor > 0) {
     res.status(429).json({ success: false, error: `Too many failed attempts for this account. Try again in ${Math.ceil(lockedFor / 60)} minute(s), or reset your password.` });
     return;
   }
 
-  const { rows } = await pool!.query(`SELECT * FROM users WHERE username = $1`, [username]);
-  const user = rows[0];
   // Unknown usernames still pay for a bcrypt comparison, so timing doesn't
   // reveal which accounts exist; failures count against the username
   // whatever IP they come from.
   const ok = user ? await bcrypt.compare(password, user.password_hash) : (await compareAgainstDummy(password), false);
   if (!ok) {
-    recordLoginFailure(username);
+    recordLoginFailure(lockKey);
     res.status(401).json({ success: false, error: "Invalid username or password" });
     return;
   }
-  recordLoginSuccess(username);
+  recordLoginSuccess(lockKey);
   if (needsRehash(user.password_hash)) {
     user.password_hash = await hashPassword(password); // transparent upgrade to the current work factor
     await pool!.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [user.password_hash, user.id]);
   }
-  // Still on the public demo password: the frontend nags until it's changed.
-  user.must_change_password = password === DEMO_DEFAULT_PASSWORD;
+  // Signed in with a temporary password (sent on WhatsApp), or still the public
+  // demo password: the frontend asks them to choose their own.
+  user.password_banner = user.must_change_password ? "temporary" : password === DEMO_DEFAULT_PASSWORD ? "demo" : null;
 
   // Credentials being correct but the account not yet active gets a
   // 403 (not 401) inside the shared helper below, deliberately distinct
@@ -521,7 +544,7 @@ router.post("/change-password", requireAuth, async (req: Request, res: Response)
   // session doesn't get logged out from under the user for the same
   // reason; only sessions elsewhere are affected.
   const { rows: updatedRows } = await pool!.query(
-    `UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2 RETURNING *`,
+    `UPDATE users SET password_hash = $1, must_change_password = false, token_version = token_version + 1 WHERE id = $2 RETURNING *`,
     [passwordHash, user.id]
   );
   const updatedUser = updatedRows[0];
@@ -591,7 +614,7 @@ router.post("/reset-password", async (req: Request, res: Response): Promise<void
   // Bumps token_version too -- a forgot-password reset is exactly the
   // case where any existing session (possibly the compromised one that
   // prompted the reset) should stop working, not just the password.
-  await pool!.query(`UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2`, [passwordHash, resetRow.user_id]);
+  await pool!.query(`UPDATE users SET password_hash = $1, must_change_password = false, token_version = token_version + 1 WHERE id = $2`, [passwordHash, resetRow.user_id]);
   await pool!.query(`UPDATE password_reset_tokens SET used_at = now() WHERE id = $1`, [resetRow.id]);
   res.json({ success: true, message: "Password reset successfully — you can now sign in with your new password." });
 });

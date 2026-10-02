@@ -17,6 +17,7 @@ import { createMagicToken, magicLoginUrl, linkConfirmUrl, MAGIC_LINK_MINUTES } f
 import { sendEmail } from "../../emailService";
 import { computeAccountStatus, sendEmailVerification } from "../../accountVerification";
 import { CONSENT_VERSION, type Flow } from "../types";
+import { newAccountPassword, sendLoginDetails } from "../loginDetails";
 
 const SITE = () => (process.env.MARKETPLACE_PUBLIC_URL || "https://www.ballylife.com").replace(/\/$/, "");
 export const consentText = () =>
@@ -115,16 +116,16 @@ export const customerFlow: Flow = {
     }
 
     const client = await pool!.connect();
-    let userId: string;
+    let userId: string, password: string, passwordHash: string;
     try {
       await client.query("BEGIN");
       const username = await uniqueUsername(d.email);
-      // Nobody ever types this password: sign-in is by one-time links (or a password they set later).
-      const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+      // A temporary password, sent on WhatsApp below; the website makes them choose their own at first sign-in.
+      ({ password, passwordHash } = await newAccountPassword());
       const status = computeAccountStatus(false, true, true); // the WhatsApp number is proven; the email isn't yet
       const { rows } = await client.query(
-        `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status)
-         VALUES ($1, $2, 'customer', $3, $4, $5, false, true, $6) RETURNING id`,
+        `INSERT INTO users (username, password_hash, role, name, email, phone, email_verified, phone_verified, account_status, must_change_password)
+         VALUES ($1, $2, 'customer', $3, $4, $5, false, true, $6, true) RETURNING id`,
         [username, passwordHash, d.name, d.email, `+${ctx.phone}`, status]);
       userId = rows[0].id;
       const [first, ...rest] = String(d.name).split(" ");
@@ -142,6 +143,6 @@ export const customerFlow: Flow = {
     await updateContact(ctx.phone, { user_id: userId, consent_at: d.consentAt ?? new Date().toISOString(), consent_version: CONSENT_VERSION });
     await sendEmailVerification(userId, d.email).catch(err => logger.warn("whatsapp.verify_email_failed", { error: String(err) }));
     logger.info("whatsapp.customer_registered", { userId });
-    await sendSignInLink(ctx.phone, userId, `🎉 Your Ballylife account is ready, ${String(d.name).split(" ")[0]}!\nWe've also emailed you a link to confirm your email address.`);
+    await sendLoginDetails(ctx.phone, userId, `🎉 Your Ballylife account is ready, ${String(d.name).split(" ")[0]}!\nWe've emailed you a link to confirm your email address. Confirm it, then sign in on any computer with the details below.`, password);
   },
 };
