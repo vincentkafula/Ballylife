@@ -93,6 +93,45 @@ async function resendGet(path: string): Promise<any> {
   return j;
 }
 
+// ── Domain receiving switch (Resend) ───────────────────────────────────────
+async function resendCall(method: "GET" | "PATCH" | "POST", path: string, body?: unknown): Promise<{ ok: boolean; status: number; json: any }> {
+  const key = process.env.RESEND_API_KEY?.trim();
+  if (!key) throw new InboxError("RESEND_API_KEY isn't set.", 503);
+  const res = await fetch(`${RESEND_API}${path}`, {
+    method, headers: { Authorization: `Bearer ${key}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(20_000),
+  });
+  return { ok: res.ok, status: res.status, json: await res.json().catch(() => ({})) };
+}
+
+const keyPermissionHint = "Your Resend API key only has sending access, which can't change domain settings. Either switch on Receiving for ballylife.com in Resend's dashboard, or put a Full access key in RESEND_API_KEY.";
+
+/** What Resend says about ballylife.com: sending/receiving on, and the receiving record's status. */
+export async function receivingStatus(): Promise<{ domainId: string; status: string; receiving: string | null; mx: { value: string; priority: number | null; status: string } | null }> {
+  const list = await resendCall("GET", "/domains");
+  if (!list.ok) throw new InboxError(list.status === 401 || list.status === 403 ? keyPermissionHint : `Resend: ${list.json?.message ?? `HTTP ${list.status}`}`, 502);
+  const d = ((list.json.data ?? []) as any[]).find(x => String(x.name).toLowerCase() === DOMAIN);
+  if (!d) throw new InboxError(`${DOMAIN} isn't in this Resend account.`, 404);
+  const one = await resendCall("GET", `/domains/${encodeURIComponent(d.id)}`);
+  const info = one.ok ? one.json : d;
+  const recv = ((info.records ?? []) as any[]).find(r => String(r.type).toUpperCase() === "MX" && (r.record === "Receiving" || /inbound/i.test(String(r.value))));
+  return {
+    domainId: d.id, status: String(info.status ?? d.status ?? ""),
+    receiving: info.capabilities?.receiving ?? d.capabilities?.receiving ?? null,
+    mx: recv ? { value: String(recv.value), priority: recv.priority ?? null, status: String(recv.status ?? "") } : null,
+  };
+}
+
+export async function enableReceiving(): Promise<Awaited<ReturnType<typeof receivingStatus>>> {
+  const s = await receivingStatus();
+  const r = await resendCall("PATCH", `/domains/${encodeURIComponent(s.domainId)}`, { capabilities: { receiving: "enabled" } });
+  if (!r.ok) throw new InboxError(r.status === 401 || r.status === 403 ? keyPermissionHint : `Resend didn't switch it on: ${r.json?.message ?? `HTTP ${r.status}`}`, 502);
+  logger.info("inbox.receiving_enabled", { domain: DOMAIN });
+  // Ask Resend to check the MX record now (it's already in DNS).
+  await resendCall("POST", `/domains/${encodeURIComponent(s.domainId)}/verify`).catch(() => undefined);
+  return receivingStatus();
+}
+
 // ── Receiving ──────────────────────────────────────────────────────────────
 /** Fetches a received email from Resend and files it. Idempotent: the same email id is stored once. */
 export async function ingestReceivedEmail(emailId: string): Promise<{ threadId: string; isNew: boolean; autoReplied: boolean } | null> {

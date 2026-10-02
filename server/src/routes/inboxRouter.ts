@@ -4,7 +4,7 @@ import { logger } from "../utils/logger";
 import { getDocument } from "../services/documentStore";
 import {
   verifyResendSignature, ingestReceivedEmail, mailboxSummary, listThreads, getThread, replyToThread, composeEmail,
-  setThreadStatus, attachmentFor, unreadCount, InboxError,
+  setThreadStatus, attachmentFor, unreadCount, InboxError, receivingStatus, enableReceiving,
 } from "../services/inbox/inbox";
 
 /**
@@ -46,6 +46,16 @@ inboundRouter.post("/inbound", async (req: Request, res: Response): Promise<void
 inboxAdminRouter.get("/admin/inbox/mailboxes", ...manager, async (_req: Request, res: Response): Promise<void> => {
   try { res.json({ success: true, data: { mailboxes: await mailboxSummary(), unread: await unreadCount(), receiving: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()) } }); }
   catch (err) { fail(res, err, "Couldn't load the mailboxes."); }
+});
+
+inboxAdminRouter.get("/admin/inbox/receiving", ...manager, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await receivingStatus() }); }
+  catch (err) { fail(res, err, "Couldn't ask Resend."); }
+});
+
+inboxAdminRouter.post("/admin/inbox/receiving", ...manager, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await enableReceiving() }); }
+  catch (err) { fail(res, err, "Couldn't switch receiving on."); }
 });
 
 inboxAdminRouter.get("/admin/inbox/threads", ...manager, async (req: Request, res: Response): Promise<void> => {

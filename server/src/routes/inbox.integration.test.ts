@@ -15,9 +15,17 @@ vi.mock("../db/pool", () => ({ pool, hasDb: true }));
 // ── Simulated Resend ───────────────────────────────────────────────────────
 const received = new Map<string, Record<string, unknown>>();
 let sentCount = 0; // Resend ids are unique across the whole run
+let receivingOn = false, domainsForbidden = false;
 let sent: { from: string; to: string[]; subject: string; text: string; headers?: Record<string, string>; reply_to?: string }[] = [];
-function fakeResend(url: string, init?: { body?: string }) {
+function fakeResend(url: string, init?: { body?: string; method?: string }) {
   const json = (b: unknown, s = 200) => Promise.resolve(new Response(JSON.stringify(b), { status: s }));
+  if (url === "https://api.resend.com/domains") return domainsForbidden
+    ? json({ message: "This API key is restricted to only send emails" }, 401)
+    : json({ data: [{ id: "dom_1", name: "ballylife.com", status: "verified", capabilities: { sending: "enabled", receiving: receivingOn ? "enabled" : "disabled" } }] });
+  if (url === "https://api.resend.com/domains/dom_1" && init?.method === "PATCH") { receivingOn = JSON.parse(String(init.body)).capabilities?.receiving === "enabled"; return json({ id: "dom_1" }); }
+  if (url === "https://api.resend.com/domains/dom_1") return json({ id: "dom_1", status: "verified", capabilities: { receiving: receivingOn ? "enabled" : "disabled" },
+    records: [{ record: "Receiving", type: "MX", value: "inbound-smtp.eu-west-1.amazonaws.com", priority: 10, status: receivingOn ? "verified" : "not_started" }] });
+  if (url === "https://api.resend.com/domains/dom_1/verify") return json({ id: "dom_1" });
   const m = url.match(/\/emails\/receiving\/([^/?]+)(\/attachments)?/);
   if (m && m[2]) return json({ data: [] });
   if (m) return received.has(m[1]) ? json(received.get(m[1])) : json({ message: "not found" }, 404);
@@ -147,5 +155,23 @@ describe("Receiving @ballylife.com email", () => {
       const r = await request(app).get(path).set({ Authorization: `Bearer ${customerToken}` });
       expect([401, 403]).toContain(r.status);
     }
+  });
+});
+
+describe("Switching on receiving in Resend", () => {
+  it("explains when the API key isn't allowed to change domain settings", async () => {
+    domainsForbidden = true;
+    const r = await request(app).post("/api/marketplace/admin/inbox/receiving").set(auth());
+    expect(r.status).toBe(502);
+    expect(r.body.error).toMatch(/sending access/);
+    domainsForbidden = false;
+  });
+
+  it("switches receiving on for ballylife.com and reports the MX record", async () => {
+    const before = await request(app).get("/api/marketplace/admin/inbox/receiving").set(auth());
+    expect(before.body.data).toMatchObject({ receiving: "disabled", mx: { value: "inbound-smtp.eu-west-1.amazonaws.com", status: "not_started" } });
+    const r = await request(app).post("/api/marketplace/admin/inbox/receiving").set(auth());
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ receiving: "enabled", mx: { status: "verified" } });
   });
 });

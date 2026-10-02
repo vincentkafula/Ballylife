@@ -149,6 +149,8 @@ export const mktInbox = {
   thread:    (id: string) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}`),
   reply:     (id: string, text: string) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}/reply`, { method: "POST", body: JSON.stringify({ text }) }),
   setStatus: (id: string, status: "open" | "closed") => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  receiving: () => api<InboxRes>(`/api/marketplace/admin/inbox/receiving`),
+  enableReceiving: () => api<InboxRes>(`/api/marketplace/admin/inbox/receiving`, { method: "POST" }),
   compose:   (body: { mailbox: string; to: string; subject: string; text: string }) => api<InboxRes>(`/api/marketplace/admin/inbox/compose`, { method: "POST", body: JSON.stringify(body) }),
 };
 

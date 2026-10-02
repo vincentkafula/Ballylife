@@ -60,6 +60,24 @@ export function EmailInboxPanel() {
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [recv, setRecv] = useState<R | null>(null);
+  const [recvError, setRecvError] = useState<string | null>(null);
+  const [recvBusy, setRecvBusy] = useState(false);
+  const loadReceiving = useCallback(async () => {
+    try { const r = await mktInbox.receiving(); if (r.success) { setRecv(r.data); setRecvError(null); } else setRecvError(r.error ?? null); }
+    catch { /* shown as unknown */ }
+  }, []);
+  useEffect(() => { void loadReceiving(); }, [loadReceiving]);
+  const switchOnReceiving = async () => {
+    setRecvBusy(true);
+    try {
+      const r = await mktInbox.enableReceiving();
+      if (r.success) { setRecv(r.data); setRecvError(null); toast.success("Receiving is switched on in Resend."); }
+      else { setRecvError(r.error ?? "Resend didn't switch it on."); toast.error(r.error ?? "Resend didn't switch it on."); }
+    } catch (err) { toast.error(errMessage(err, "Couldn't reach the server.")); }
+    finally { setRecvBusy(false); }
+  };
+  const receivingOn = recv?.receiving === "enabled";
 
   const loadMailboxes = useCallback(async () => {
     try { const r = await mktInbox.mailboxes(); if (r.success) { setMailboxes(r.data.mailboxes); setReceiving(r.data.receiving); } }
@@ -110,6 +128,19 @@ export function EmailInboxPanel() {
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      {(!receivingOn || recvError) && (
+        <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-900 border-b border-amber-100 flex items-center gap-3 flex-wrap">
+          <ShieldAlert className="w-4 h-4 shrink-0" />
+          <span className="flex-1 min-w-[200px]">
+            {recvError ? recvError
+              : recv ? <>Resend isn't accepting mail for ballylife.com yet (receiving: <b>{String(recv.receiving ?? "off")}</b>{recv.mx ? <>, MX record {recv.mx.value}: <b>{recv.mx.status}</b></> : null}), so emails to our addresses bounce.</>
+                : "Checking whether Resend accepts mail for ballylife.com…"}
+          </span>
+          <button onClick={switchOnReceiving} disabled={recvBusy} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-40" style={{ background: "#14110D" }}>
+            {recvBusy ? "Switching on…" : "Switch on receiving"}
+          </button>
+        </div>
+      )}
       {!receiving && (
         <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-800 border-b border-amber-100 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 shrink-0" />
