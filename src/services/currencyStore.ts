@@ -13,6 +13,27 @@ export interface CountryOption {
 
 const ZM_DEFAULT: CountryOption = { countryCode: "ZM", country: "Zambia", code: "ZMW", symbol: "K", name: "Zambian Kwacha" };
 
+// Both a manual country pick and "use my live location" used to write
+// the country straight to localStorage with no timestamp at all, which
+// then permanently skipped IP re-detection on every future visit from
+// that browser forever, regardless of how the visitor's actual location
+// changed afterward -- the real cause behind currency staying stuck on
+// one country indefinitely. Re-validated every 24h now instead.
+const SAVED_TTL_MS = 24 * 60 * 60 * 1000;
+interface SavedCountry { country: CountryOption; savedAt: number }
+function readSavedCountry(): CountryOption | null {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as SavedCountry;
+    if (!parsed.savedAt || Date.now() - parsed.savedAt > SAVED_TTL_MS) return null; // stale -- re-detect
+    return parsed.country;
+  } catch { return null; } // corrupt or pre-TTL-format value -- re-detect rather than trust it
+}
+function writeSavedCountry(country: CountryOption): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ country, savedAt: Date.now() } satisfies SavedCountry));
+}
+
 interface CurrencyState {
   loading: boolean;
   country: CountryOption;
@@ -74,23 +95,30 @@ export async function initCurrency(): Promise<void> {
     if (r.success) setState({ countries: r.data });
   }).catch(() => {});
 
-  // Resolve the country first (manual override > IP geolocation > ZA default),
-  // then fetch rates using that final country code — avoids a race where the
-  // rate lookup runs against whichever country happened to be set first.
-  let resolvedCountry = ZM_DEFAULT;
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    try { resolvedCountry = JSON.parse(saved) as CountryOption; }
-    catch { /* corrupt saved value — fall through to IP detection */ }
-  }
-  if (resolvedCountry === ZM_DEFAULT) {
+  // Resolve the country first (recent saved value > IP geolocation > ZM
+  // default), then fetch rates using that final country code — avoids a
+  // race where the rate lookup runs against whichever country happened
+  // to be set first. A saved value older than SAVED_TTL_MS is treated as
+  // absent, so IP detection re-runs and keeps the result current rather
+  // than trusting a pick (manual or live-location) from a day or more
+  // ago forever — see readSavedCountry's comment for why that mattered.
+  let resolvedCountry = readSavedCountry();
+  let freshlyDetected = false;
+  if (!resolvedCountry) {
+    resolvedCountry = ZM_DEFAULT;
     try {
       const r = await fetch(`${BASE}/api/geo/detect`).then(res => res.json());
-      if (r.success) resolvedCountry = r.data;
+      if (r.success) { resolvedCountry = r.data; freshlyDetected = true; }
     } catch {
       // Silent — ZM_DEFAULT remains active
     }
   }
+  // Persist a fresh detection too (not just manual/live-location picks),
+  // so the next page load within the TTL window doesn't re-fetch -- but
+  // only once it's genuinely known, not the ZM_DEFAULT fallback from a
+  // failed lookup, which should keep retrying on the next load instead
+  // of locking in a guess.
+  if (freshlyDetected) writeSavedCountry(resolvedCountry);
   setState({ country: resolvedCountry, loading: false });
 
   try {
@@ -105,7 +133,7 @@ export async function initCurrency(): Promise<void> {
 export function setCountryManually(countryCode: string): void {
   const match = state.countries.find(c => c.countryCode === countryCode);
   if (!match) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(match));
+  writeSavedCountry(match);
   setState({ country: match, rate: null });
   // Re-fetch/resolve the rate for the newly selected currency.
   fetch(`${BASE}/api/currency/rates`).then(r => r.json()).then(r => {
@@ -134,7 +162,7 @@ export function useLiveLocation(): Promise<boolean> {
           }).then(r => r.json());
           if (!res.success) { resolve(false); return; }
           const match: CountryOption = res.data;
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(match));
+          writeSavedCountry(match);
           setState({ country: match });
           const ratesRes = await fetch(`${BASE}/api/currency/rates`).then(r => r.json());
           if (ratesRes.success) {
