@@ -2105,7 +2105,7 @@ function VehicleDutyZmManagement({ rates, onChanged }: { rates: R[]; onChanged: 
 // it doesn't move money itself.
 function SettlementsPayouts() {
   const [settlements, setSettlements] = useState<R[]>([]);
-  const [totals, setTotals] = useState({ platformFeeTotal: 0, sellerOwedTotal: 0, supplierOwedTotal: 0 });
+  const [totals, setTotals] = useState({ platformFeeTotal: 0, sellerOwedTotal: 0, sellerReadyTotal: 0, supplierOwedTotal: 0 });
   const [fxRates, setFxRates] = useState<R[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{ supplierPayoutStatus?: string; sellerPayoutStatus?: string }>({});
@@ -2177,14 +2177,19 @@ function SettlementsPayouts() {
         </div>
       )}
 
-      <div className="grid sm:grid-cols-3 gap-3 mb-4">
+      <p className="text-xs text-gray-600 bg-white border border-gray-100 rounded-lg px-3 py-2 mb-3">
+        Every order is paid out in this order: <b>1. Supplier</b> (CJ / AliExpress, paid from your supplier balance — marked paid automatically when they show it paid)
+        → <b>2. Ballylife</b> keeps its commission → <b>3. Seller</b>, whose share becomes <b>ready to pay</b> once the supplier is paid and the order was delivered past the return window.
+      </p>
+      <div className="grid sm:grid-cols-4 gap-3 mb-4">
+        <StatCard label="Ready to pay sellers now" value={fmtZAR(totals.sellerReadyTotal ?? 0)} icon={<Users className="w-4 h-4" />} accent="#1E7B4D" />
         <StatCard label="Platform fee earned" value={fmtZAR(totals.platformFeeTotal)} icon={<DollarSign className="w-4 h-4" />} accent="#059669" />
         <StatCard label="Owed to sellers (pending)" value={fmtZAR(totals.sellerOwedTotal)} icon={<Users className="w-4 h-4" />} accent="#2563EB" />
         <StatCard label="Owed to suppliers (pending, ZAR-equiv)" value={fmtZAR(totals.supplierOwedTotal)} icon={<Globe2 className="w-4 h-4" />} accent="#B8862E" />
       </div>
 
       <div className="flex gap-2 mb-3">
-        {[{ key: "sellerPayoutStatus", val: "pending", label: "Sellers owed" }, { key: "supplierPayoutStatus", val: "pending", label: "Suppliers owed" }, { key: "", val: "", label: "All" }].map(f => (
+        {[{ key: "sellerPayoutStatus", val: "ready", label: "Ready to pay sellers" }, { key: "sellerPayoutStatus", val: "pending", label: "Sellers waiting" }, { key: "supplierPayoutStatus", val: "pending", label: "Suppliers owed" }, { key: "", val: "", label: "All" }].map(f => (
           <button key={f.label} onClick={() => setFilter(f.key ? { [f.key]: f.val } : {})}
             className="text-xs font-semibold px-3 py-1.5 rounded-lg border"
             style={{ background: (f.key && (filter as R)[f.key] === f.val) || (!f.key && !filter.sellerPayoutStatus && !filter.supplierPayoutStatus) ? "#14110D" : "white", color: (f.key && (filter as R)[f.key] === f.val) || (!f.key && !filter.sellerPayoutStatus && !filter.supplierPayoutStatus) ? "white" : "#374151", borderColor: "#E5E7EB" }}>
@@ -2215,8 +2220,12 @@ function SettlementsPayouts() {
                       <span className="text-gray-700 font-medium">{fmtZAR(Number(s.sellerPayoutAmount))}</span>
                       {s.sellerPayoutStatus === "paid" ? (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">Paid{s.sellerPayoutReference ? ` · ${String(s.sellerPayoutReference)}` : ""}</span>
+                      ) : s.sellerPayoutStatus === "ready" ? (
+                        <button onClick={() => markPaid(String(s.id), "seller")} disabled={busyId === s.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#1E7B4D" }}>Ready · Mark paid</button>
                       ) : (
-                        <button onClick={() => markPaid(String(s.id), "seller")} disabled={busyId === s.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full text-white disabled:opacity-50" style={{ background: "#B8862E" }}>Mark paid</button>
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                          {s.sellerPayoutStage === "refunded" ? "Refunded" : s.sellerPayoutStage === "waiting_supplier" ? "Waiting: supplier payment" : "Waiting: delivery + return window"}
+                        </span>
                       )}
                       {refEdit?.id === s.id && refEdit.field === "seller" ? (
                         <span className="flex items-center gap-1">

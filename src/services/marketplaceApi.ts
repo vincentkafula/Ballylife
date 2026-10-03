@@ -254,7 +254,7 @@ export const mktAdmin = {
     create: (body: unknown) => api<{ success: boolean; data: unknown; error?: string }>("/api/marketplace/admin/fx-rates", { method: "POST", body: JSON.stringify(body) }),
   },
   settlements: {
-    list:   (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { total: number; totals: { platformFeeTotal: number; sellerOwedTotal: number; supplierOwedTotal: number } } }>(`/api/marketplace/admin/settlements?${new URLSearchParams(params)}`),
+    list:   (params?: Record<string, string>) => api<{ success: boolean; data: unknown[]; meta: { total: number; totals: { platformFeeTotal: number; sellerOwedTotal: number; sellerReadyTotal: number; supplierOwedTotal: number } } }>(`/api/marketplace/admin/settlements?${new URLSearchParams(params)}`),
     update: (id: string, body: unknown) => api<{ success: boolean; data: unknown; error?: string }>(`/api/marketplace/admin/settlements/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   },
   customsRecords: {

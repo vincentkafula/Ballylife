@@ -13,6 +13,14 @@ type Tab = "overview" | "orders" | "products" | "find" | "import" | "inventory" 
 
 const fmtZAR = (n: number) => `R${Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Sellers are paid after the product and delivery are paid for and the return window has passed.
+const PAYOUT_STAGE: Record<string, string> = {
+  waiting_supplier: "Paid out after delivery",
+  waiting_delivery: "Paid out after delivery + return window",
+  ready: "Payout on its way",
+  refunded: "Refunded",
+};
+
 function StatCard({ label, value, icon, accent }: { label: string; value: string; icon: React.ReactNode; accent: string }) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4">
@@ -212,7 +220,7 @@ function SellerOrderRow({ order, onUpdated }: { order: R; onUpdated: () => void 
   };
   const status = String(order.status);
   const next: Record<string, string> = { pending: "confirmed", confirmed: "processing", processing: "shipped", shipped: "delivered" };
-  const e = order.sellerEarnings as { salesZar: number; commissionZar: number; productAndDeliveryZar: number; earningsZar: number; paidOut: boolean; ballylifeShips: boolean } | null;
+  const e = order.sellerEarnings as { salesZar: number; commissionZar: number; productAndDeliveryZar: number; earningsZar: number; paidOut: boolean; ballylifeShips: boolean; payoutStage?: string } | null;
 
   return (
     <tr className="border-b border-gray-50 last:border-0">
@@ -223,7 +231,7 @@ function SellerOrderRow({ order, onUpdated }: { order: R; onUpdated: () => void 
         {e ? (
           <div title={`Your sales ${fmtZAR(e.salesZar)} − commission ${fmtZAR(e.commissionZar)}${e.productAndDeliveryZar ? ` − product & delivery ${fmtZAR(e.productAndDeliveryZar)}` : ""}`}>
             <p className="font-bold" style={{ color: e.earningsZar > 0 ? "#0B5C2E" : "#DC2626" }}>{fmtZAR(e.earningsZar)}</p>
-            <p className="text-[10px] text-gray-400">{e.paidOut ? "Paid out" : "To be paid"}</p>
+            <p className="text-[10px] text-gray-400">{e.paidOut ? "Paid out" : PAYOUT_STAGE[e.payoutStage ?? ""] ?? "To be paid"}</p>
           </div>
         ) : <span className="text-xs text-gray-300">—</span>}
       </td>

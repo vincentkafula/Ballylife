@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
+import { sellerPayoutStage } from "../services/payoutWaterfall";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
@@ -339,6 +340,7 @@ const mapSettlement = (r: any) => ({
   sellerPayoutAmount: Number(r.seller_payout_amount), supplierPayoutStatus: r.supplier_payout_status, sellerPayoutStatus: r.seller_payout_status,
   supplierPayoutReference: r.supplier_payout_reference, sellerPayoutReference: r.seller_payout_reference,
   supplierPaidAt: r.supplier_paid_at, sellerPaidAt: r.seller_paid_at, createdAt: r.created_at,
+  sellerPayoutReadyAt: r.seller_payout_ready_at ?? null, sellerPayoutStage: sellerPayoutStage(r),
 });
 
 // Valid forward transitions for a customs record — mirrors the real
@@ -1762,11 +1764,15 @@ router.get("/sellers/:id/orders", requireAuth, requireSellerOwner, async (req: R
   // This seller's share of each order: their lines' sales, Ballylife's
   // commission, product + delivery for supplier-sourced lines, and what they earn.
   const { rows: st } = await pool!.query(
-    `SELECT s.order_id, s.gross_amount, s.platform_fee_amount, s.supplier_cost_amount_zar, s.seller_payout_amount, s.seller_payout_status, p.fulfillment_type
+    `SELECT s.order_id, s.gross_amount, s.platform_fee_amount, s.supplier_cost_amount_zar, s.seller_payout_amount, s.seller_payout_status, s.supplier_payout_status, p.fulfillment_type
      FROM mkt_order_line_settlements s JOIN mkt_products p ON p.id = s.product_id WHERE s.seller_id = $1`, [req.params.id]);
-  const earnings = new Map<string, { salesZar: number; commissionZar: number; productAndDeliveryZar: number; earningsZar: number; paidOut: boolean; ballylifeShips: boolean }>();
+  const STAGE_ORDER = ["waiting_supplier", "waiting_delivery", "ready", "paid", "refunded"];
+  const earnings = new Map<string, { salesZar: number; commissionZar: number; productAndDeliveryZar: number; earningsZar: number; paidOut: boolean; ballylifeShips: boolean; payoutStage: string }>();
   for (const r of st) {
-    const e = earnings.get(r.order_id) ?? { salesZar: 0, commissionZar: 0, productAndDeliveryZar: 0, earningsZar: 0, paidOut: true, ballylifeShips: true };
+    const e = earnings.get(r.order_id) ?? { salesZar: 0, commissionZar: 0, productAndDeliveryZar: 0, earningsZar: 0, paidOut: true, ballylifeShips: true, payoutStage: "refunded" };
+    // The order's stage is its least-advanced line.
+    const stage = sellerPayoutStage(r);
+    if (STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(e.payoutStage)) e.payoutStage = stage;
     e.salesZar = round2(e.salesZar + Number(r.gross_amount));
     e.commissionZar = round2(e.commissionZar + Number(r.platform_fee_amount));
     e.productAndDeliveryZar = round2(e.productAndDeliveryZar + Number(r.supplier_cost_amount_zar ?? 0));
@@ -3039,10 +3045,11 @@ router.get("/admin/settlements", requireAuth, requireRole(...MANAGER_ROLES), asy
   );
   const totals = rows.reduce((acc: any, r: any) => {
     acc.platformFeeTotal += Number(r.platform_fee_amount);
-    if (r.seller_payout_status === "pending") acc.sellerOwedTotal += Number(r.seller_payout_amount);
+    if (r.seller_payout_status === "pending" || r.seller_payout_status === "ready") acc.sellerOwedTotal += Number(r.seller_payout_amount);
+    if (r.seller_payout_status === "ready") acc.sellerReadyTotal += Number(r.seller_payout_amount);
     if (r.supplier_payout_status === "pending") acc.supplierOwedTotal += Number(r.supplier_cost_amount_zar ?? 0);
     return acc;
-  }, { platformFeeTotal: 0, sellerOwedTotal: 0, supplierOwedTotal: 0 });
+  }, { platformFeeTotal: 0, sellerOwedTotal: 0, sellerReadyTotal: 0, supplierOwedTotal: 0 });
   res.json({ success: true, data: rows.map(mapSettlement), meta: { total: rows.length, totals } });
 });
 
@@ -3051,6 +3058,11 @@ router.patch("/admin/settlements/:id", requireAuth, requireRole(...MANAGER_ROLES
   const { rows: beforeRows } = await pool!.query(`SELECT * FROM mkt_order_line_settlements WHERE id::text = $1`, [req.params.id]);
   if (!beforeRows.length) { res.status(404).json({ success: false, error: "Settlement not found" }); return; }
   const before = beforeRows[0];
+  // Payout order: the supplier is paid before the seller, always.
+  if (sellerPayoutStatus === "paid" && before.supplier_payout_status === "pending" && supplierPayoutStatus !== "paid") {
+    res.status(409).json({ success: false, error: "Pay the supplier first — the seller's share is paid only after the supplier cost is settled." }); return;
+  }
+  if (sellerPayoutStatus === "ready") { res.status(400).json({ success: false, error: "Payouts become ready automatically." }); return; }
   const sets: string[] = []; const vals: unknown[] = [];
   if (supplierPayoutStatus !== undefined) {
     vals.push(supplierPayoutStatus); sets.push(`supplier_payout_status = $${vals.length}`);

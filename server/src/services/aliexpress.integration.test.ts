@@ -214,6 +214,12 @@ describe("Importing products", () => {
          VALUES ($1, $2, 'sup-aliexpress', $3, 'sel-ballylife', 2, 24, 'wh-origin-cn', 'wh-dest-za')`,
         [orderId, listingId, p[0].supplier_product_id]
       );
+      await pool.query(
+        `INSERT INTO mkt_order_line_settlements (order_id, product_id, seller_id, supplier_id, quantity, gross_amount, platform_fee_pct, platform_fee_amount,
+           supplier_cost_amount, supplier_cost_currency, supplier_cost_amount_zar, seller_payout_amount, supplier_payout_status, seller_payout_status)
+         VALUES ($1, $2, 'sel-ballylife', 'sup-aliexpress', 2, 400, 8, 32, 24, 'USD', 444, -76, 'pending', 'pending')`,
+        [orderId, listingId]
+      );
 
       await fulfil.runAliExpressCycle();
       const call = lastCall("aliexpress.ds.order.create")!;
@@ -239,6 +245,9 @@ describe("Importing products", () => {
       expect(f[0]).toMatchObject({ status: "shipped", tracking_number: "LP00123456789CN", paid: true });
       const { rows: o } = await pool.query(`SELECT tracking_number, carrier, shipping_status FROM mkt_orders WHERE id = $1`, [orderId]);
       expect(o[0]).toMatchObject({ tracking_number: "LP00123456789CN", carrier: "Ballylife Shipping", shipping_status: "in_transit" });
+      // AliExpress shows it paid, so the supplier's share is settled first.
+      const { rows: s } = await pool.query(`SELECT supplier_payout_status, supplier_payout_reference FROM mkt_order_line_settlements WHERE order_id = $1`, [orderId]);
+      expect(s[0]).toMatchObject({ supplier_payout_status: "paid", supplier_payout_reference: "AliExpress 8123456789" });
     });
 
     it("an address AliExpress rejects goes to an admin, and can be retried", async () => {

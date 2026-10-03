@@ -181,6 +181,8 @@ async function start() {
   startSocialWorker();
   startWhatsAppHousekeeping();
   void import("./services/dpoProcessor").then(m => m.startDpoWorker()).catch(() => undefined);
+  // Seller shares become payable once the supplier is paid and the return window has passed.
+  void import("./services/payoutWaterfall").then(m => m.startPayoutWorker().unref()).catch(() => undefined);
   setInterval(() => { void import("./services/sourcing/sourcingService").then(m => m.pruneSourcingCache()).catch(() => undefined); }, 6 * 3600_000).unref();
   // Sellers' sourced products: price, options and stock from the supplier (never listed for Ballylife).
   setInterval(() => { void import("./services/sourcing/sourcingService").then(m => m.refreshSellerSourcedProducts()).catch(() => undefined); }, 3600_000).unref();

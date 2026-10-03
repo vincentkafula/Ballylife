@@ -7,6 +7,10 @@ import {
 } from "./cjDropshippingClient";
 import { parseExternalVariants, resolveVid } from "../utils/cjVariants";
 import { initialFulfilmentStatus, notifyAwaiting, AWAITING } from "./sourcing/orderRouting";
+import { markSupplierPaid } from "./payoutWaterfall";
+
+/** CJ order statuses that mean CJ has been paid (UNPAID / CREATED / IN_CART haven't). */
+const CJ_PAID = new Set(["UNSHIPPED", "SHIPPED", "DELIVERED"]);
 
 /**
  * Places paid customer orders with CJdropshipping using the platform's one
@@ -240,6 +244,7 @@ async function markPlaced(f: Row, order: Row, r: { orderId: string; orderStatus?
     await pool!.query(`UPDATE mkt_orders SET status = 'processing' WHERE id = $1 AND status = 'confirmed'`, [order.id]);
   }
   logger.info("cj.fulfillment_placed", { fulfillmentId: f.id, orderNumber: order.order_number, autoPaid: AUTO_PAY });
+  if (CJ_PAID.has(String(r.orderStatus ?? "").toUpperCase())) await markSupplierPaid(order.id, "cjdropshipping", r.orderId);
 }
 
 async function isAllSupplierOrder(order: Row): Promise<boolean> {
@@ -304,6 +309,9 @@ export async function syncOne(f: Row): Promise<void> {
        last_synced_at = now(), last_error = NULL, updated_at = now() WHERE id = $1`,
     [f.id, cjStatus, d.trackNumber || null, d.trackingUrl || null, d.logisticName || null, d.orderAmount ?? null]
   );
+
+  // Paid by auto-pay or by hand in CJ's dashboard: the supplier's share is settled.
+  if (CJ_PAID.has(cjStatus)) await markSupplierPaid(f.order_id, "cjdropshipping", f.cj_order_id);
 
   if (cjStatus === "CANCELLED") {
     await setStatus(f.id, "needs_attention", "The supplier cancelled this order. Re-place it or refund the customer.");

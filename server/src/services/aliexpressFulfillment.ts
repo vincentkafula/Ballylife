@@ -14,6 +14,7 @@
  * exist on AliExpress already, so an admin checks before anything is placed
  * twice. Customers see the tracking number under a white-labelled carrier.
  */
+import { markSupplierPaid } from "./payoutWaterfall";
 import { pool } from "../db/pool";
 import { logger } from "../utils/logger";
 import { sendEmail } from "./emailService";
@@ -188,6 +189,7 @@ export async function syncPlacedOrders(limit = 20): Promise<number> {
         `UPDATE aliexpress_fulfillments SET ae_status = $1, tracking_number = $2, logistics_service = $3, paid = $4, status = $5, last_synced_at = now(), updated_at = now() WHERE id = $6`,
         [status, tracking, service, Boolean(status && PAID.test(status)), next, f.id]
       );
+      if (status && PAID.test(status)) await markSupplierPaid(f.order_id, "aliexpress", ids.join(", ") || null);
       if (tracking && !f.tracking_number) {
         await pool!.query(`UPDATE mkt_orders SET tracking_number = COALESCE(tracking_number, $2), carrier = COALESCE(carrier, $3), shipping_status = 'in_transit', shipped_at = COALESCE(shipped_at, now()) WHERE id = $1`,
           [f.order_id, tracking, CARRIER]);

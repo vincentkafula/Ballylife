@@ -194,6 +194,12 @@ describe("Placing the paid order with CJ", () => {
 
     const { rows } = await pool.query(`SELECT status FROM mkt_orders WHERE id = $1`, [order.id]);
     expect(rows[0].status).toBe("processing"); // off local couriers' claimable list
+
+    // CJ hasn't been paid yet (UNPAID), so the seller can't be paid either.
+    const { rows: st } = await pool.query(`SELECT id, supplier_payout_status, seller_payout_status FROM mkt_order_line_settlements WHERE order_id = $1`, [order.id]);
+    expect(st[0]).toMatchObject({ supplier_payout_status: "pending", seller_payout_status: "pending" });
+    const early = await request(app).patch(`/api/marketplace/admin/settlements/${st[0].id}`).set("Authorization", `Bearer ${adminToken}`).send({ sellerPayoutStatus: "paid" });
+    expect(early.status).toBe(409);
   });
 
   it("never places the same order twice", async () => {
@@ -224,6 +230,34 @@ describe("Placing the paid order with CJ", () => {
     const { rows } = await pool.query(`SELECT status, shipping_status FROM mkt_orders WHERE id = $1`, [order.id]);
     expect(rows[0]).toMatchObject({ status: "delivered", shipping_status: "delivered" });
     expect((await fulfillmentFor(order.id)).status).toBe("delivered");
+  });
+
+  it("pays out in order: supplier, then Ballylife's commission, then the seller after the return window", async () => {
+    const { releaseSellerPayouts } = await import("./payoutWaterfall");
+    const settlement = async () => (await pool.query(`SELECT * FROM mkt_order_line_settlements WHERE order_id = $1`, [order.id])).rows[0];
+    // 1. CJ showed the order paid (it shipped), so the supplier side is settled with CJ's reference.
+    let s = await settlement();
+    expect(s.supplier_payout_status).toBe("paid");
+    expect(s.supplier_payout_reference).toBe(`CJ CJ-${order.orderNumber}`);
+    // 2. Ballylife's commission is the difference: gross - supplier - seller.
+    expect(Number(s.gross_amount) - Number(s.supplier_cost_amount_zar) - Number(s.seller_payout_amount)).toBeCloseTo(Number(s.platform_fee_amount), 2);
+    // 3. Delivered just now: still inside the return window.
+    await releaseSellerPayouts();
+    expect((await settlement()).seller_payout_status).toBe("pending");
+    const seller = async () => (await request(app).get(`/api/marketplace/sellers/${sellerId}/orders`).set("Authorization", `Bearer ${sellerToken}`)).body.data.find((o: { id: string }) => o.id === order.id).sellerEarnings;
+    expect((await seller()).payoutStage).toBe("waiting_delivery");
+
+    await pool.query(`UPDATE mkt_orders SET delivered_at = $2 WHERE id = $1`, [order.id, new Date(Date.now() - 8 * 86_400_000)]);
+    expect(await releaseSellerPayouts()).toBe(1);
+    s = await settlement();
+    expect(s.seller_payout_status).toBe("ready");
+    expect((await seller()).payoutStage).toBe("ready");
+    const list = await request(app).get("/api/marketplace/admin/settlements").query({ sellerPayoutStatus: "ready" }).set("Authorization", `Bearer ${adminToken}`);
+    expect(list.body.meta.totals.sellerReadyTotal).toBeCloseTo(Number(s.seller_payout_amount), 2);
+
+    const paid = await request(app).patch(`/api/marketplace/admin/settlements/${s.id}`).set("Authorization", `Bearer ${adminToken}`).send({ sellerPayoutStatus: "paid", sellerPayoutReference: "EFT-001" });
+    expect(paid.status).toBe(200);
+    expect((await seller()).paidOut).toBe(true);
   });
 
   it("shows the admin CJ cost vs what the customer paid", async () => {
