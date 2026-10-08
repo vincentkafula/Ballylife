@@ -233,6 +233,13 @@ describe("Sourcing list (market-research products, searched on CJ)", () => {
 });
 
 describe("Every-category sweep", () => {
+  beforeAll(async () => {
+    // The sweep starts only after every category top-up has run; mark the rest as done.
+    for (const t of catalog.CATEGORY_TOPUPS) {
+      await pool.query(`INSERT INTO app_flags (key, detail) VALUES ($1, 'done') ON CONFLICT (key) DO NOTHING`, [t.flag]);
+    }
+  });
+
   it("starts by itself once the first fill is done, and files products under their CJ category", async () => {
     // Make both products "stale" so the sweep re-fetches them rather than skipping.
     await pool.query(`UPDATE mkt_supplier_products SET updated_at = $1`, [new Date(Date.now() - 10 * 86400_000)]);

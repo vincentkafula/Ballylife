@@ -775,7 +775,49 @@ export const CATEGORY_TOPUPS: { flag: string; pages: number; items: SourcingItem
       "water gun toy", "bubble machine", "kite", "musical toys", "baby toys", "outdoor toys",
     ].map(keyword => ({ keyword, group: "toys", label: keyword[0].toUpperCase() + keyword.slice(1) })),
   },
+  // Import-opportunity list (SA + Zambia): small, high value-per-kg products
+  // that ship cheaply from China, instead of bulky whole appliances.
+  {
+    flag: "cj_topup_automotive_v1",
+    pages: 2,
+    items: topupItems("automotive", [
+      "car parking sensor", "car reverse camera", "led headlight bulb", "h4 led headlight", "h7 led headlight",
+      "led fog light car", "led light bar", "obd2 scanner", "car diagnostic tool", "car window switch",
+      "car door handle", "android car stereo", "car bluetooth fm transmitter", "tire pressure monitor",
+      "ignition coil", "spark plug", "car air filter", "brake pads", "car sensor", "car horn",
+    ]),
+  },
+  {
+    flag: "cj_topup_networking_v1",
+    pages: 2,
+    items: topupItems("networking", [
+      "4g lte router", "outdoor cpe router", "5g router", "portable wifi hotspot", "wifi repeater", "mesh wifi",
+      "gigabit switch", "poe switch", "poe injector", "fiber media converter", "sfp module", "cat6 cable",
+      "rj45 connector", "lte antenna", "network cabinet", "cctv camera", "nvr", "mini ups router",
+    ]),
+  },
+  {
+    flag: "cj_topup_business_pos_v1",
+    pages: 2,
+    items: topupItems("business", [
+      "thermal receipt printer", "barcode scanner", "label printer", "cash drawer", "pos terminal",
+      "keyboard mouse combo", "usb c pd charger",
+    ]),
+  },
+  {
+    flag: "cj_topup_solar_power_v1",
+    pages: 2,
+    items: topupItems("solar", [
+      "solar charge controller", "mppt controller", "mc4 connector", "solar cable", "dc circuit breaker",
+      "dc isolator switch", "battery monitor", "anderson connector", "12v dc fan", "12v water pump",
+      "rechargeable emergency light", "solar flood light",
+    ]),
+  },
 ];
+
+function topupItems(group: string, keywords: string[]): SourcingItem[] {
+  return keywords.map(keyword => ({ keyword, group, label: keyword[0].toUpperCase() + keyword.slice(1) }));
+}
 
 export interface KeywordStats {
   label: string; group: string; cjMatches: number; synced: number; listed: number; withVideo: number;
