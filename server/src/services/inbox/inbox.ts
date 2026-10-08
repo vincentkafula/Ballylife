@@ -15,6 +15,7 @@
  *    from the mailbox address and stay in the customer's thread.
  */
 import crypto from "crypto";
+import { promises as dns } from "dns";
 import { pool } from "../../db/pool";
 import { logger } from "../../utils/logger";
 import { sendEmail } from "../emailService";
@@ -240,6 +241,61 @@ async function saveAttachments(emailId: string, messageRowId: string): Promise<v
   }
 }
 
+// ── Outgoing attachments ───────────────────────────────────────────────────
+// Documents and pictures only. Executables, scripts, archives and HTML are
+// refused: spam and malware filters treat them as a red flag, and they are
+// the main reason a legitimate email with an attachment ends up in junk.
+export const MAX_OUTGOING_FILES = 5;
+export const MAX_OUTGOING_BYTES = 10 * 1024 * 1024; // all files together
+const ALLOWED_ATTACHMENT = /\.(pdf|docx?|xlsx?|pptx?|csv|txt|rtf|odt|ods|odp|jpe?g|png|gif|webp|heic)$/i;
+const CONTENT_TYPES: Record<string, string> = {
+  pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  csv: "text/csv", txt: "text/plain", rtf: "application/rtf", odt: "application/vnd.oasis.opendocument.text",
+  ods: "application/vnd.oasis.opendocument.spreadsheet", odp: "application/vnd.oasis.opendocument.presentation",
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", heic: "image/heic",
+};
+
+export interface OutgoingFile { filename: string; contentType: string; content: Buffer }
+
+/** Checks files a manager attached: [{ filename, contentBase64 }]. Throws InboxError with a plain reason. */
+export function cleanAttachments(input: unknown): OutgoingFile[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input)) throw new InboxError("Attachments must be a list of files.");
+  if (input.length > MAX_OUTGOING_FILES) throw new InboxError(`Attach at most ${MAX_OUTGOING_FILES} files per email.`);
+  let total = 0;
+  return input.map((raw: any) => {
+    const filename = String(raw?.filename ?? "").split(/[\\/]/).pop()!.replace(/[\x00-\x1f"<>|:*?]/g, "_").trim().slice(0, 150);
+    if (!filename) throw new InboxError("Every attachment needs a file name.");
+    if (!ALLOWED_ATTACHMENT.test(filename)) throw new InboxError(`"${filename}" can't be attached. Send PDF, Word, Excel, PowerPoint, CSV, text or image files.`);
+    const b64 = String(raw?.contentBase64 ?? "").replace(/^data:[^,]*,/, "");
+    if (!b64 || !/^[A-Za-z0-9+/=\s]+$/.test(b64)) throw new InboxError(`"${filename}" couldn't be read. Try attaching it again.`);
+    const content = Buffer.from(b64, "base64");
+    if (!content.length) throw new InboxError(`"${filename}" is empty.`);
+    // A renamed program ("invoice.pdf" that is really an .exe) is refused too.
+    if (content.subarray(0, 2).toString("latin1") === "MZ" || content.subarray(0, 4).toString("latin1") === "\x7fELF") {
+      throw new InboxError(`"${filename}" isn't a document. It can't be attached.`);
+    }
+    total += content.length;
+    if (total > MAX_OUTGOING_BYTES) throw new InboxError("Attachments can be 10 MB at most in total. Send large files as a link instead.");
+    const ext = filename.split(".").pop()!.toLowerCase();
+    return { filename, contentType: CONTENT_TYPES[ext] ?? "application/octet-stream", content };
+  });
+}
+
+async function storeSentAttachments(messageRowId: string, files: OutgoingFile[]): Promise<void> {
+  for (const f of files) {
+    let storageKey: string | null = null;
+    if (isDocumentStoreConfigured()) {
+      try { storageKey = await putDocument("inbox-sent", f.content, f.contentType); }
+      catch (err) { logger.warn("inbox.sent_attachment_store_failed", { error: err instanceof Error ? err.message : String(err) }); }
+    }
+    await pool!.query(`INSERT INTO email_attachments (message_id, filename, content_type, size, storage_key) VALUES ($1,$2,$3,$4,$5)`,
+      [messageRowId, f.filename, f.contentType, f.content.length, storageKey]);
+  }
+}
+
 // ── Sending ────────────────────────────────────────────────────────────────
 const newMessageId = () => `<${crypto.randomUUID()}@${DOMAIN}>`;
 const fromHeader = (mailbox: string) => `Ballylife <${mailbox}>`;
@@ -247,10 +303,12 @@ const fromHeader = (mailbox: string) => `Ballylife <${mailbox}>`;
 /** Plain text a manager typed -> simple HTML with Ballylife's signature. */
 function toHtml(text: string, mailbox: string): string {
   const body = escapeHtml(text.trim()).replace(/\r?\n/g, "<br>");
-  return `<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">${body}<br><br>— Ballylife<br><span style="color:#666">${escapeHtml(mailbox)} · www.ballylife.com</span></div>`;
+  // A complete, plain HTML document: spam filters score half-formed HTML and image-only mail worse.
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>`
+    + `<body style="margin:0;padding:0"><div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#111">${body}<br><br>— Ballylife<br><span style="color:#666">${escapeHtml(mailbox)} · www.ballylife.com</span></div></body></html>`;
 }
 
-async function sendInThread(threadId: string, opts: { text: string; sentBy: string | null; autoReply?: boolean; html?: string }): Promise<{ messageRowId: string }> {
+async function sendInThread(threadId: string, opts: { text: string; sentBy: string | null; autoReply?: boolean; html?: string; files?: OutgoingFile[] }): Promise<{ messageRowId: string }> {
   const { rows } = await pool!.query(`SELECT * FROM email_threads WHERE id = $1`, [threadId]);
   const t = rows[0];
   if (!t) throw new InboxError("Conversation not found", 404);
@@ -263,12 +321,15 @@ async function sendInThread(threadId: string, opts: { text: string; sentBy: stri
   if (refs.length) { headers["In-Reply-To"] = refs[refs.length - 1]; headers.References = refs.join(" "); }
   if (opts.autoReply) headers["Auto-Submitted"] = "auto-replied";
   const html = opts.html ?? toHtml(opts.text, t.mailbox);
-  const r = await sendEmail({ to: t.counterpart_email, subject, html, text: opts.text, from: fromHeader(t.mailbox), replyTo: t.mailbox, headers });
+  const files = opts.files ?? [];
+  const r = await sendEmail({ to: t.counterpart_email, subject, html, text: opts.text, from: fromHeader(t.mailbox), replyTo: t.mailbox, headers,
+    ...(files.length ? { attachments: files.map(f => ({ filename: f.filename, content: f.content, contentType: f.contentType })) } : {}) });
   if (!r.sent) throw new InboxError(`The email wasn't sent: ${r.error ?? "unknown error"}`, 502);
   const { rows: saved } = await pool!.query(
     `INSERT INTO email_messages (thread_id, direction, provider_id, message_id, in_reply_to, from_addr, to_addrs, subject, text_body, html_body, auto_reply, sent_by)
      VALUES ($1,'out',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [threadId, r.providerId ?? null, messageId, headers["In-Reply-To"] ?? null, t.mailbox, JSON.stringify([t.counterpart_email]), subject, opts.text, html, Boolean(opts.autoReply), opts.sentBy]);
+  if (files.length) await storeSentAttachments(saved[0].id, files);
   await pool!.query(`UPDATE email_threads SET last_message_at = now() WHERE id = $1`, [threadId]);
   return { messageRowId: saved[0].id };
 }
@@ -315,16 +376,19 @@ async function threadFor(threadId: string, access: MailboxAccess): Promise<any> 
   return t;
 }
 
-export async function replyToThread(threadId: string, text: string, managerId: string, access: MailboxAccess): Promise<void> {
+const ATTACHED_ONLY_TEXT = "Please find the attached document(s).";
+
+export async function replyToThread(threadId: string, text: string, managerId: string, access: MailboxAccess, attachments?: unknown): Promise<void> {
   await threadFor(threadId, access);
-  if (!text.trim()) throw new InboxError("Write a reply first.");
+  const files = cleanAttachments(attachments);
+  if (!text.trim() && !files.length) throw new InboxError("Write a reply first.");
   if (text.length > 20_000) throw new InboxError("That reply is too long.");
-  await sendInThread(threadId, { text, sentBy: managerId });
+  await sendInThread(threadId, { text: text.trim() ? text : ATTACHED_ONLY_TEXT, sentBy: managerId, files });
   await pool!.query(`UPDATE email_threads SET unread = false WHERE id = $1`, [threadId]);
 }
 
 /** A new email from one of our mailboxes to anyone (starts a conversation). */
-export async function composeEmail(input: { mailbox: string; to: string; subject: string; text: string }, managerId: string, access: MailboxAccess): Promise<string> {
+export async function composeEmail(input: { mailbox: string; to: string; subject: string; text: string; attachments?: unknown }, managerId: string, access: MailboxAccess): Promise<string> {
   const mailbox = input.mailbox.trim().toLowerCase();
   if (!mailbox.endsWith(`@${DOMAIN}`) || !/^[a-z0-9._+-]+@/.test(mailbox)) throw new InboxError(`Send from an @${DOMAIN} address.`);
   if (!canUseMailbox(access, mailbox)) throw new InboxError(`Your department can't send from ${mailbox}.`, 403);
@@ -332,10 +396,11 @@ export async function composeEmail(input: { mailbox: string; to: string; subject
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new InboxError("Enter a valid email address to send to.");
   const subject = input.subject.trim().slice(0, 200);
   if (!subject) throw new InboxError("Add a subject.");
-  if (!input.text.trim()) throw new InboxError("Write a message first.");
+  const files = cleanAttachments(input.attachments);
+  if (!input.text.trim() && !files.length) throw new InboxError("Write a message first.");
   const { rows } = await pool!.query(
     `INSERT INTO email_threads (mailbox, subject, counterpart_email, unread) VALUES ($1,$2,$3,false) RETURNING id`, [mailbox, subject, to]);
-  try { await sendInThread(rows[0].id, { text: input.text, sentBy: managerId }); }
+  try { await sendInThread(rows[0].id, { text: input.text.trim() ? input.text : ATTACHED_ONLY_TEXT, sentBy: managerId, files }); }
   catch (err) { await pool!.query(`DELETE FROM email_threads WHERE id = $1`, [rows[0].id]); throw err; }
   return rows[0].id;
 }
@@ -377,22 +442,113 @@ export async function listThreads(filter: { mailbox?: string; status?: string; q
   }));
 }
 
-const FINAL_DELIVERY = new Set(["delivered", "bounced", "complained", "failed", "canceled"]);
+// ── Delivery and read status ───────────────────────────────────────────────
+// Sent -> Delivered -> Opened ("Read"). Status only moves forward, except a
+// bounce or spam complaint, which always wins. "Clicked" counts as opened.
+const STATUS_RANK: Record<string, number> = {
+  queued: 0, scheduled: 0, sent: 1, delivery_delayed: 2, delivered: 3, opened: 4,
+  bounced: 9, complained: 9, failed: 9, canceled: 9,
+};
+const FINAL_STATUS = new Set(["opened", "bounced", "complained", "failed", "canceled"]);
+const normaliseStatus = (s: string) => {
+  const v = s.toLowerCase().replace(/^email\./, "");
+  return v === "clicked" ? "opened" : v;
+};
 
-/** Resend's latest delivery event for emails we sent (Delivered, Bounced...), saved once final. */
+/** Saves a delivery event for one email we sent (from Resend's webhook or a lookup). Returns true when it changed. */
+export async function recordDeliveryEvent(providerId: string, event: string, at?: string | Date): Promise<boolean> {
+  const status = normaliseStatus(event);
+  if (!(status in STATUS_RANK)) return false;
+  const { rows } = await pool!.query(`SELECT id, delivery_status, opened_at FROM email_messages WHERE provider_id = $1 AND direction = 'out'`, [providerId]);
+  const m = rows[0];
+  if (!m) return false;
+  const current = String(m.delivery_status ?? "");
+  const moves = STATUS_RANK[status] > (STATUS_RANK[current] ?? -1) || (STATUS_RANK[status] === 9 && current !== status);
+  const openedAt = status === "opened" && !m.opened_at ? new Date(at ?? Date.now()) : null;
+  if (!moves && !openedAt) return false;
+  await pool!.query(
+    `UPDATE email_messages SET delivery_status = $2, opened_at = COALESCE(opened_at, $3) WHERE id = $1`,
+    [m.id, moves ? status : current || status, openedAt]);
+  return true;
+}
+
+/** Asks Resend for the latest event of recent emails we sent, until each is read or failed. */
 async function refreshDeliveryStatus(msgs: any[]): Promise<void> {
-  const pending = msgs.filter(m => m.direction === "out" && m.provider_id && !FINAL_DELIVERY.has(String(m.delivery_status ?? ""))
-    && Date.now() - new Date(m.created_at).getTime() < 7 * 24 * 3600_000).slice(0, 10);
+  const pending = msgs.filter(m => m.direction === "out" && m.provider_id && !FINAL_STATUS.has(String(m.delivery_status ?? ""))
+    && Date.now() - new Date(m.created_at).getTime() < 14 * 24 * 3600_000).slice(0, 10);
   for (const m of pending) {
     try {
       const e = await resendGet(`/emails/${encodeURIComponent(m.provider_id)}`);
-      const status = String(e.last_event ?? "").toLowerCase() || null;
-      if (status && status !== m.delivery_status) {
-        await pool!.query(`UPDATE email_messages SET delivery_status = $2 WHERE id = $1`, [m.id, status]);
-        m.delivery_status = status;
+      const event = String(e.last_event ?? "");
+      if (event && await recordDeliveryEvent(m.provider_id, event)) {
+        const { rows } = await pool!.query(`SELECT delivery_status, opened_at FROM email_messages WHERE id = $1`, [m.id]);
+        m.delivery_status = rows[0]?.delivery_status ?? m.delivery_status;
+        m.opened_at = rows[0]?.opened_at ?? m.opened_at;
       }
     } catch { /* show what we have */ }
   }
+}
+
+// ── Deliverability ("don't land in spam") ──────────────────────────────────
+// Whether mail reaches the inbox is decided by the receiving provider, mostly
+// on: SPF and DKIM passing for ballylife.com, a DMARC policy, the domain's
+// sending reputation, and the content. This reports the parts we control.
+
+async function lookupDmarc(): Promise<{ found: boolean; policy: string | null; value: string | null }> {
+  try {
+    const txt = await Promise.race([
+      dns.resolveTxt(`_dmarc.${DOMAIN}`),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
+    ]);
+    const value = txt.map(parts => parts.join("")).find(v => /^v=DMARC1/i.test(v)) ?? null;
+    return { found: Boolean(value), policy: value?.match(/\bp=(\w+)/i)?.[1]?.toLowerCase() ?? null, value };
+  } catch { return { found: false, policy: null, value: null }; }
+}
+
+export interface DeliverabilityCheck { key: string; label: string; ok: boolean; detail: string }
+
+export async function deliverabilityStatus(): Promise<{ domain: string; readTracking: boolean | null; checks: DeliverabilityCheck[] }> {
+  const list = await resendCall("GET", "/domains");
+  if (!list.ok) throw new InboxError(list.status === 401 || list.status === 403 ? keyPermissionHint : `Resend: ${list.json?.message ?? `HTTP ${list.status}`}`, 502);
+  const d = ((list.json.data ?? []) as any[]).find(x => String(x.name).toLowerCase() === DOMAIN);
+  if (!d) throw new InboxError(`${DOMAIN} isn't in this Resend account.`, 404);
+  const one = await resendCall("GET", `/domains/${encodeURIComponent(d.id)}`);
+  const info = one.ok ? one.json : d;
+  const records = (info.records ?? []) as any[];
+  const verified = (pred: (r: any) => boolean) => {
+    const rs = records.filter(pred);
+    return { present: rs.length > 0, ok: rs.length > 0 && rs.every(r => String(r.status).toLowerCase() === "verified") };
+  };
+  const spf = verified(r => r.record === "SPF");
+  const dkim = verified(r => r.record === "DKIM");
+  const dmarc = await lookupDmarc();
+  const domainOk = String(info.status ?? d.status).toLowerCase() === "verified";
+  const checks: DeliverabilityCheck[] = [
+    { key: "domain", label: `${DOMAIN} verified for sending`, ok: domainOk,
+      detail: domainOk ? "Resend sends as ballylife.com." : "Add the DNS records Resend shows for ballylife.com, then press Verify in Resend." },
+    { key: "spf", label: "SPF (who may send for ballylife.com)", ok: spf.ok,
+      detail: spf.ok ? "Passing." : "Add Resend's SPF records (MX + TXT on the \"send\" subdomain) in your DNS." },
+    { key: "dkim", label: "DKIM (signature proving the email is really from you)", ok: dkim.ok,
+      detail: dkim.ok ? "Passing." : "Add Resend's DKIM TXT record (resend._domainkey) in your DNS." },
+    { key: "dmarc", label: "DMARC policy", ok: dmarc.found,
+      detail: dmarc.found
+        ? `Found (p=${dmarc.policy ?? "?"}).${dmarc.policy === "none" ? " Once everything passes for a few weeks, consider p=quarantine." : ""}`
+        : `Missing. Add a TXT record at _dmarc.${DOMAIN}: v=DMARC1; p=none; rua=mailto:dmarc@${DOMAIN}. Gmail and Yahoo expect one.` },
+  ];
+  const readTracking = typeof info.open_tracking === "boolean" ? info.open_tracking : null;
+  return { domain: DOMAIN, readTracking, checks };
+}
+
+/** Switches Resend's open tracking for ballylife.com on or off (needed for the "Read" mark). */
+export async function setReadTracking(on: boolean): Promise<Awaited<ReturnType<typeof deliverabilityStatus>>> {
+  const list = await resendCall("GET", "/domains");
+  if (!list.ok) throw new InboxError(list.status === 401 || list.status === 403 ? keyPermissionHint : `Resend: ${list.json?.message ?? `HTTP ${list.status}`}`, 502);
+  const d = ((list.json.data ?? []) as any[]).find(x => String(x.name).toLowerCase() === DOMAIN);
+  if (!d) throw new InboxError(`${DOMAIN} isn't in this Resend account.`, 404);
+  const r = await resendCall("PATCH", `/domains/${encodeURIComponent(d.id)}`, { open_tracking: on });
+  if (!r.ok) throw new InboxError(r.status === 401 || r.status === 403 ? keyPermissionHint : `Resend didn't change it: ${r.json?.message ?? `HTTP ${r.status}`}`, 502);
+  logger.info("inbox.read_tracking", { on });
+  return deliverabilityStatus();
 }
 
 export async function getThread(threadId: string, access: MailboxAccess) {
@@ -411,6 +567,7 @@ export async function getThread(threadId: string, access: MailboxAccess) {
       id: m.id, direction: m.direction, from: m.from_addr, to: m.to_addrs, cc: m.cc_addrs, subject: m.subject,
       text: m.text_body, html: m.html_body, autoReply: m.auto_reply, createdAt: m.created_at,
       deliveryStatus: m.direction === "out" ? (m.delivery_status ?? null) : null,
+      openedAt: m.direction === "out" ? (m.opened_at ?? null) : null,
       senderVerified: m.direction === "in" ? (m.auth_result ? String((m.auth_result as any).dmarc ?? (m.auth_result as any).dkim ?? "") === "pass" : null) : null,
       attachments: atts.filter((a: any) => a.message_id === m.id).map((a: any) => ({ id: a.id, filename: a.filename, contentType: a.content_type, size: a.size, available: Boolean(a.storage_key) })),
     })),

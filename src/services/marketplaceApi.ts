@@ -143,16 +143,20 @@ export const mktSellers = {
 
 // ── Email inbox (managers) ──
 type InboxRes = { success: boolean; data: any; error?: string };
+/** A file attached to an outgoing email: name + base64 content (no data: prefix). */
+export type InboxFile = { filename: string; contentBase64: string };
 export const mktInbox = {
   mailboxes: () => api<InboxRes>(`/api/marketplace/admin/inbox/mailboxes`),
   threads:   (p: Record<string, string>) => api<InboxRes>(`/api/marketplace/admin/inbox/threads?${new URLSearchParams(p)}`),
   thread:    (id: string) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}`),
-  reply:     (id: string, text: string) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}/reply`, { method: "POST", body: JSON.stringify({ text }) }),
+  reply:     (id: string, text: string, attachments: InboxFile[] = []) => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}/reply`, { method: "POST", body: JSON.stringify({ text, attachments }) }),
   setStatus: (id: string, status: "open" | "closed") => api<InboxRes>(`/api/marketplace/admin/inbox/threads/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   receiving: () => api<InboxRes>(`/api/marketplace/admin/inbox/receiving`),
   sync: () => api<InboxRes>(`/api/marketplace/admin/inbox/sync`, { method: "POST" }),
   enableReceiving: () => api<InboxRes>(`/api/marketplace/admin/inbox/receiving`, { method: "POST" }),
-  compose:   (body: { mailbox: string; to: string; subject: string; text: string }) => api<InboxRes>(`/api/marketplace/admin/inbox/compose`, { method: "POST", body: JSON.stringify(body) }),
+  compose:   (body: { mailbox: string; to: string; subject: string; text: string; attachments?: InboxFile[] }) => api<InboxRes>(`/api/marketplace/admin/inbox/compose`, { method: "POST", body: JSON.stringify(body) }),
+  deliverability: () => api<InboxRes>(`/api/marketplace/admin/inbox/deliverability`),
+  setReadTracking: (on: boolean) => api<InboxRes>(`/api/marketplace/admin/inbox/read-tracking`, { method: "POST", body: JSON.stringify({ on }) }),
 };
 
 // ── Manager departments (super admin) ──

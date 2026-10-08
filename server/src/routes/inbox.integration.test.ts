@@ -15,16 +15,26 @@ vi.mock("../db/pool", () => ({ pool, hasDb: true }));
 // ── Simulated Resend ───────────────────────────────────────────────────────
 const received = new Map<string, Record<string, unknown>>();
 let sentCount = 0; // Resend ids are unique across the whole run
-let receivingOn = false, domainsForbidden = false;
-let sent: { from: string; to: string[]; subject: string; text: string; headers?: Record<string, string>; reply_to?: string }[] = [];
+let receivingOn = false, domainsForbidden = false, openTracking = false;
+let sent: { from: string; to: string[]; subject: string; text: string; html?: string; headers?: Record<string, string>; reply_to?: string; attachments?: { filename: string; content: string }[] }[] = [];
 function fakeResend(url: string, init?: { body?: string; method?: string }) {
   const json = (b: unknown, s = 200) => Promise.resolve(new Response(JSON.stringify(b), { status: s }));
   if (url === "https://api.resend.com/domains") return domainsForbidden
     ? json({ message: "This API key is restricted to only send emails" }, 401)
     : json({ data: [{ id: "dom_1", name: "ballylife.com", status: "verified", capabilities: { sending: "enabled", receiving: receivingOn ? "enabled" : "disabled" } }] });
-  if (url === "https://api.resend.com/domains/dom_1" && init?.method === "PATCH") { receivingOn = JSON.parse(String(init.body)).capabilities?.receiving === "enabled"; return json({ id: "dom_1" }); }
-  if (url === "https://api.resend.com/domains/dom_1") return json({ id: "dom_1", status: "verified", capabilities: { receiving: receivingOn ? "enabled" : "disabled" },
-    records: [{ record: "Receiving", type: "MX", value: "inbound-smtp.eu-west-1.amazonaws.com", priority: 10, status: receivingOn ? "verified" : "not_started" }] });
+  if (url === "https://api.resend.com/domains/dom_1" && init?.method === "PATCH") {
+    const b = JSON.parse(String(init.body));
+    if (b.capabilities) receivingOn = b.capabilities.receiving === "enabled";
+    if ("open_tracking" in b) openTracking = Boolean(b.open_tracking);
+    return json({ id: "dom_1" });
+  }
+  if (url === "https://api.resend.com/domains/dom_1") return json({ id: "dom_1", status: "verified", open_tracking: openTracking, capabilities: { receiving: receivingOn ? "enabled" : "disabled" },
+    records: [
+      { record: "SPF", type: "MX", name: "send", value: "feedback-smtp.eu-west-1.amazonses.com", status: "verified" },
+      { record: "SPF", type: "TXT", name: "send", value: "v=spf1 include:amazonses.com ~all", status: "verified" },
+      { record: "DKIM", type: "TXT", name: "resend._domainkey", value: "p=MIGf...", status: "not_started" },
+      { record: "Receiving", type: "MX", value: "inbound-smtp.eu-west-1.amazonaws.com", priority: 10, status: receivingOn ? "verified" : "not_started" },
+    ] });
   if (url === "https://api.resend.com/domains/dom_1/verify") return json({ id: "dom_1" });
   if (url.startsWith("https://api.resend.com/emails/receiving?")) return json({ object: "list", has_more: false, data: [...received.values()].map(e => ({ id: e.id, created_at: new Date().toISOString() })).reverse() });
   const m = url.match(/\/emails\/receiving\/([^/?]+)(\/attachments)?/);
@@ -54,7 +64,7 @@ beforeAll(async () => {
   const authRouter = (await import("./authRouter")).default;
   const { inboundRouter, inboxAdminRouter } = await import("./inboxRouter");
   app = express();
-  app.use(express.json({ verify: (req, _res, buf) => { (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf); } }));
+  app.use(express.json({ limit: "15mb", verify: (req, _res, buf) => { (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf); } }));
   app.use("/api/auth", authRouter);
   app.use("/api/email", inboundRouter);
   app.use("/api/marketplace", inboxAdminRouter);
@@ -254,5 +264,89 @@ describe("Departments: managers only use their department's addresses", () => {
     expect((await request(app).delete(`/api/marketplace/admin/departments/${deptId}`).set(as(superToken))).status).toBe(200);
     // No departments left: managers have full access again.
     expect((await request(app).get("/api/marketplace/admin/inbox/mailboxes").set(auth())).body.data.access.all).toBe(true);
+  });
+});
+
+describe("Attachments, read receipts and email health", () => {
+  const pdf = Buffer.from("%PDF-1.4 quote for chairs").toString("base64");
+  let threadId: string;
+
+  beforeAll(async () => {
+    await deliver("in_att_1", {
+      from: "Chanda <chanda@example.com>", to: ["b2b@ballylife.com"], subject: "Quote please", text: "Send me a quote.",
+      message_id: "<att-1@example.com>", headers: { from: "Chanda <chanda@example.com>" }, attachments: [],
+    });
+    const { rows } = await pool.query(`SELECT id FROM email_threads WHERE counterpart_email = 'chanda@example.com'`);
+    threadId = rows[0].id;
+  });
+
+  it("sends a reply with a document attached and lists it in the conversation", async () => {
+    const r = await request(app).post(`/api/marketplace/admin/inbox/threads/${threadId}/reply`).set(auth())
+      .send({ text: "Quote attached.", attachments: [{ filename: "Quote BL.pdf", contentBase64: pdf }] });
+    expect(r.status).toBe(200);
+    expect(sent[0].attachments).toEqual([{ filename: "Quote BL.pdf", content: pdf, content_type: "application/pdf" }]);
+    expect(sent[0].text).toBe("Quote attached.");     // plain-text version always included
+    expect(sent[0].html).toMatch(/^<!doctype html><html lang="en">/);
+    const out = r.body.data.messages.filter((m: { direction: string; autoReply: boolean }) => m.direction === "out" && !m.autoReply).pop();
+    expect(out.attachments).toEqual([expect.objectContaining({ filename: "Quote BL.pdf", contentType: "application/pdf" })]);
+  });
+
+  it("can send attachments with no message text", async () => {
+    const r = await request(app).post(`/api/marketplace/admin/inbox/threads/${threadId}/reply`).set(auth())
+      .send({ text: "", attachments: [{ filename: "price-list.xlsx", contentBase64: Buffer.from("PK..").toString("base64") }] });
+    expect(r.status).toBe(200);
+    expect(sent[0].text).toBe("Please find the attached document(s).");
+  });
+
+  it("new emails carry attachments too", async () => {
+    const r = await request(app).post("/api/marketplace/admin/inbox/compose").set(auth())
+      .send({ mailbox: "b2b@ballylife.com", to: "buyer@example.com", subject: "Catalogue", text: "Hi", attachments: [{ filename: "catalogue.pdf", contentBase64: pdf }] });
+    expect(r.status).toBe(200);
+    expect(sent[0].attachments?.[0].filename).toBe("catalogue.pdf");
+  });
+
+  it("refuses programs, renamed programs, too many or too large files", async () => {
+    const send = (attachments: unknown) => request(app).post(`/api/marketplace/admin/inbox/threads/${threadId}/reply`).set(auth()).send({ text: "x", attachments });
+    expect((await send([{ filename: "setup.exe", contentBase64: pdf }])).body.error).toMatch(/can't be attached/);
+    expect((await send([{ filename: "invoice.pdf", contentBase64: Buffer.from("MZ\x90\x00binary").toString("base64") }])).body.error).toMatch(/isn't a document/);
+    expect((await send(Array.from({ length: 6 }, (_, i) => ({ filename: `f${i}.pdf`, contentBase64: pdf })))).status).toBe(400);
+    expect((await send([{ filename: "big.pdf", contentBase64: Buffer.alloc(11 * 1024 * 1024, 1).toString("base64") }])).body.error).toMatch(/10 MB/);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("marks a sent email Read when Resend reports it opened, and never moves it back", async () => {
+    const { rows } = await pool.query(`SELECT provider_id FROM email_messages WHERE thread_id = $1 AND direction = 'out' AND auto_reply = false ORDER BY created_at LIMIT 1`, [threadId]);
+    const id = rows[0].provider_id;
+    expect((await signedPost({ type: "email.opened", created_at: "2026-10-08T10:00:00Z", data: { email_id: id, created_at: "2026-10-08T10:00:00Z" } })).status).toBe(200);
+    await signedPost({ type: "email.delivered", data: { email_id: id } }); // arrives late: ignored
+    let t = await request(app).get(`/api/marketplace/admin/inbox/threads/${threadId}`).set(auth());
+    let m = t.body.data.messages.find((x: { direction: string; autoReply: boolean }) => x.direction === "out" && !x.autoReply);
+    expect(m.deliveryStatus).toBe("opened");
+    expect(new Date(m.openedAt).toISOString()).toBe("2026-10-08T10:00:00.000Z");
+
+    // A spam complaint still wins over "read".
+    await signedPost({ type: "email.complained", data: { email_id: id } });
+    t = await request(app).get(`/api/marketplace/admin/inbox/threads/${threadId}`).set(auth());
+    m = t.body.data.messages.find((x: { direction: string; autoReply: boolean }) => x.direction === "out" && !x.autoReply);
+    expect(m.deliveryStatus).toBe("complained");
+    expect(m.openedAt).toBeTruthy();
+  });
+
+  it("ignores delivery events for emails it didn't send, and unsigned ones", async () => {
+    expect((await signedPost({ type: "email.opened", data: { email_id: "someone_else" } })).status).toBe(200);
+    expect((await request(app).post("/api/email/inbound").send({ type: "email.opened", data: { email_id: "x" } })).status).toBe(401);
+  });
+
+  it("reports email health and switches read tracking on", async () => {
+    const h = await request(app).get("/api/marketplace/admin/inbox/deliverability").set(auth());
+    expect(h.status).toBe(200);
+    const byKey = Object.fromEntries(h.body.data.checks.map((c: { key: string; ok: boolean }) => [c.key, c.ok]));
+    expect(byKey).toMatchObject({ domain: true, spf: true, dkim: false });
+    expect(h.body.data.readTracking).toBe(false);
+
+    const on = await request(app).post("/api/marketplace/admin/inbox/read-tracking").set(auth()).send({ on: true });
+    expect(on.status).toBe(200);
+    expect(on.body.data.readTracking).toBe(true);
+    expect(receivingOn).toBe(true); // switching tracking on doesn't touch receiving
   });
 });

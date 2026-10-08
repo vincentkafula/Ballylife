@@ -6,9 +6,9 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Building2, Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
+import { ArrowLeft, Building2, CheckCheck, CircleCheck, CircleX, HeartPulse, Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Search, Send, ShieldAlert, X } from "lucide-react";
 import { DepartmentsCard } from "./DepartmentsCard";
-import { mktInbox, getMktToken, ApiConnectionError } from "../services/marketplaceApi";
+import { mktInbox, getMktToken, ApiConnectionError, type InboxFile } from "../services/marketplaceApi";
 import { API_BASE } from "../services/config";
 
 type R = Record<string, any>;
@@ -49,6 +49,103 @@ async function downloadAttachment(id: string, filename: string) {
   } catch { toast.error("Couldn't download the attachment."); }
 }
 
+// ── Attaching files to outgoing email ──────────────────────────────────────
+// Same rules as the server: documents and pictures, up to 5 files, 10 MB in total.
+const MAX_FILES = 5;
+const MAX_TOTAL = 10 * 1024 * 1024;
+const ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf,.odt,.ods,.odp,.jpg,.jpeg,.png,.gif,.webp,.heic";
+const ALLOWED = new RegExp(`\\.(${ACCEPT.replace(/\./g, "").split(",").join("|")})$`, "i");
+const kb = (n: number) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+
+function toPayload(files: File[]): Promise<InboxFile[]> {
+  return Promise.all(files.map(f => new Promise<InboxFile>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve({ filename: f.name, contentBase64: String(r.result).replace(/^data:[^,]*,/, "") });
+    r.onerror = () => reject(new Error(`Couldn't read ${f.name}`));
+    r.readAsDataURL(f);
+  })));
+}
+
+function AttachmentPicker({ files, onChange, disabled }: { files: File[]; onChange: (f: File[]) => void; disabled?: boolean }) {
+  const add = (picked: FileList | null) => {
+    if (!picked) return;
+    const next = [...files];
+    for (const f of Array.from(picked)) {
+      if (!ALLOWED.test(f.name)) { toast.error(`"${f.name}" can't be attached. Use PDF, Word, Excel, PowerPoint, CSV, text or image files.`); continue; }
+      if (next.length >= MAX_FILES) { toast.error(`At most ${MAX_FILES} files per email.`); break; }
+      if (next.reduce((n, x) => n + x.size, 0) + f.size > MAX_TOTAL) { toast.error("Attachments can be 10 MB at most in total."); continue; }
+      next.push(f);
+    }
+    onChange(next);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <label className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white ${disabled ? "opacity-40" : "cursor-pointer hover:bg-gray-50"}`}>
+        <Paperclip className="w-3.5 h-3.5" /> Attach
+        <input type="file" multiple accept={ACCEPT} disabled={disabled} className="hidden" onChange={e => { add(e.target.files); e.target.value = ""; }} />
+      </label>
+      {files.map((f, i) => (
+        <span key={`${f.name}-${i}`} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-gray-100 text-gray-700 max-w-[220px]">
+          <span className="truncate">{f.name}</span><span className="text-gray-400 shrink-0">({kb(f.size)})</span>
+          <button onClick={() => onChange(files.filter((_, j) => j !== i))} aria-label={`Remove ${f.name}`} className="shrink-0"><X className="w-3 h-3" /></button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── Email health: SPF / DKIM / DMARC and read tracking ─────────────────────
+function EmailHealth({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<R | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      try { const r = await mktInbox.deliverability(); if (r.success) setData(r.data); else setError(r.error ?? "Couldn't check."); }
+      catch (err) { setError(errMessage(err, "Couldn't check email health.")); }
+    })();
+  }, []);
+  const toggle = async (on: boolean) => {
+    setBusy(true);
+    try {
+      const r = await mktInbox.setReadTracking(on);
+      if (r.success) { setData(r.data); toast.success(on ? "Read receipts are on." : "Read receipts are off."); }
+      else toast.error(r.error ?? "Couldn't change it.");
+    } catch (err) { toast.error(errMessage(err, "Couldn't change it.")); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 text-xs space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="font-semibold text-gray-800 flex items-center gap-1.5"><HeartPulse className="w-4 h-4" /> Email health</p>
+        <button onClick={onClose} aria-label="Close"><X className="w-4 h-4 text-gray-500" /></button>
+      </div>
+      {error ? <p className="text-amber-700">{error}</p> : !data ? <Loader2 className="w-4 h-4 animate-spin text-gray-400" /> : (
+        <>
+          <ul className="space-y-1.5">
+            {(data.checks as R[]).map(c => (
+              <li key={c.key} className="flex items-start gap-2">
+                {c.ok ? <CircleCheck className="w-4 h-4 text-emerald-600 shrink-0" /> : <CircleX className="w-4 h-4 text-red-600 shrink-0" />}
+                <span><b className="text-gray-800">{c.label}</b> — <span className="text-gray-600">{c.detail}</span></span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-gray-200">
+            <span className="flex-1 min-w-[220px] text-gray-600">
+              <b className="text-gray-800">Read receipts:</b> {data.readTracking === null ? "unknown" : data.readTracking ? "on" : "off"}.
+              {" "}Shows <b>Read</b> when the recipient opens your email. Some mail apps block or pre-load images, so an email can be read without showing it, and occasionally show Read too early.
+            </span>
+            <button onClick={() => void toggle(!data.readTracking)} disabled={busy}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-40" style={{ background: "#14110D" }}>
+              {busy ? "Saving…" : data.readTracking ? "Turn off" : "Turn on read receipts"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function EmailInboxPanel() {
   const [mailboxes, setMailboxes] = useState<R[]>([]);
   const [receiving, setReceiving] = useState(true);
@@ -61,6 +158,8 @@ export function EmailInboxPanel() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [thread, setThread] = useState<R | null>(null);
   const [reply, setReply] = useState("");
+  const [replyFiles, setReplyFiles] = useState<File[]>([]);
+  const [showHealth, setShowHealth] = useState(false);
   const [busy, setBusy] = useState(false);
   const [composing, setComposing] = useState(false);
   const [recv, setRecv] = useState<R | null>(null);
@@ -105,16 +204,16 @@ export function EmailInboxPanel() {
 
   useEffect(() => { void loadMailboxes(); }, [loadMailboxes]);
   useEffect(() => { const t = setTimeout(() => void loadThreads(), 250); return () => clearTimeout(t); }, [loadThreads]);
-  useEffect(() => { if (openId) void loadThread(openId); }, [openId, loadThread]);
+  useEffect(() => { if (openId) void loadThread(openId); setReplyFiles([]); }, [openId, loadThread]);
   // New mail arrives by itself: refresh every minute.
   useEffect(() => { const t = setInterval(() => { void loadMailboxes(); void loadThreads(); }, 60_000); return () => clearInterval(t); }, [loadMailboxes, loadThreads]);
 
   const sendReply = async () => {
-    if (!thread || !reply.trim()) return;
+    if (!thread || (!reply.trim() && !replyFiles.length)) return;
     setBusy(true);
     try {
-      const r = await mktInbox.reply(thread.id, reply);
-      if (r.success) { setThread(r.data); setReply(""); toast.success(`Reply sent from ${thread.mailbox}`); void loadThreads(); }
+      const r = await mktInbox.reply(thread.id, reply, await toPayload(replyFiles));
+      if (r.success) { setThread(r.data); setReply(""); setReplyFiles([]); toast.success(`Reply sent from ${thread.mailbox}`); void loadThreads(); }
       else toast.error(r.error ?? "The reply wasn't sent.");
     } catch (err) { toast.error(errMessage(err, "The reply wasn't sent.")); }
     finally { setBusy(false); }
@@ -151,6 +250,12 @@ export function EmailInboxPanel() {
           Receiving isn't switched on yet: add RESEND_WEBHOOK_SECRET on the backend and point ballylife.com's MX record to Resend. Replies and new emails already work.
         </div>
       )}
+      <div className="px-4 py-1.5 border-b border-gray-100 flex justify-end">
+        <button onClick={() => setShowHealth(v => !v)} className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900">
+          <HeartPulse className="w-3.5 h-3.5" /> Email health & read receipts
+        </button>
+      </div>
+      {showHealth && <EmailHealth onClose={() => setShowHealth(false)} />}
       {access && (access.isSuperAdmin || !access.all) && (
         <div className="px-4 py-2 text-xs border-b border-gray-100 flex items-center gap-2 flex-wrap bg-gray-50">
           <Building2 className="w-3.5 h-3.5 text-gray-500" />
@@ -244,7 +349,7 @@ export function EmailInboxPanel() {
                             {m.direction === "in" && m.senderVerified === false && <span className="ml-2 text-amber-700">⚠ sender not verified — be careful with links</span>}
                           </span>
                           <span className="text-gray-500 shrink-0 flex items-center gap-2">
-                            {m.direction === "out" && <DeliveryBadge status={m.deliveryStatus} />}
+                            {m.direction === "out" && <DeliveryBadge status={m.deliveryStatus} openedAt={m.openedAt} />}
                             {new Date(m.createdAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" })}
                           </span>
                         </div>
@@ -267,9 +372,10 @@ export function EmailInboxPanel() {
                   <div className="p-3 border-t border-gray-100">
                     <textarea value={reply} onChange={e => setReply(e.target.value)} rows={4} placeholder={`Reply to ${thread.counterpartEmail} from ${thread.mailbox}…`}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1E7B4D]" />
+                    <div className="mt-2"><AttachmentPicker files={replyFiles} onChange={setReplyFiles} disabled={busy} /></div>
                     <div className="flex items-center justify-between mt-2">
                       <p className="text-[11px] text-gray-500">Sent from {thread.mailbox}, with the Ballylife signature, in the same email thread.</p>
-                      <button onClick={sendReply} disabled={busy || !reply.trim()} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-40" style={{ background: "#1E7B4D" }}>
+                      <button onClick={sendReply} disabled={busy || (!reply.trim() && !replyFiles.length)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-40" style={{ background: "#1E7B4D" }}>
                         {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send reply
                       </button>
                     </div>
@@ -294,6 +400,7 @@ export function EmailInboxPanel() {
 }
 
 const DELIVERY: Record<string, { label: string; cls: string }> = {
+  opened: { label: "Read", cls: "bg-sky-50 text-sky-700" },
   delivered: { label: "Delivered", cls: "bg-emerald-50 text-emerald-700" },
   sent: { label: "Sent", cls: "bg-gray-100 text-gray-600" },
   delivery_delayed: { label: "Delayed", cls: "bg-amber-50 text-amber-700" },
@@ -301,9 +408,15 @@ const DELIVERY: Record<string, { label: string; cls: string }> = {
   complained: { label: "Marked as spam", cls: "bg-red-50 text-red-700" },
   failed: { label: "Failed", cls: "bg-red-50 text-red-700" },
 };
-function DeliveryBadge({ status }: { status: string | null }) {
+function DeliveryBadge({ status, openedAt }: { status: string | null; openedAt?: string | null }) {
   const d = status ? DELIVERY[status] ?? { label: status, cls: "bg-gray-100 text-gray-600" } : { label: "Sending…", cls: "bg-gray-100 text-gray-500" };
-  return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${d.cls}`}>{d.label}</span>;
+  const readAt = openedAt ? new Date(openedAt).toLocaleString("en-ZA", { dateStyle: "medium", timeStyle: "short" }) : null;
+  return (
+    <span title={readAt ? `Opened by the recipient ${readAt}` : undefined}
+      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 ${d.cls}`}>
+      {status === "opened" && <CheckCheck className="w-3 h-3" />}{d.label}{status === "opened" && readAt ? ` · ${readAt}` : ""}
+    </span>
+  );
 }
 
 function ComposeDialog({ mailboxes, defaultMailbox, onClose, onSent }: { mailboxes: R[]; defaultMailbox: string; onClose: () => void; onSent: (t: R) => void }) {
@@ -311,11 +424,12 @@ function ComposeDialog({ mailboxes, defaultMailbox, onClose, onSent }: { mailbox
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const send = async () => {
     setBusy(true);
     try {
-      const r = await mktInbox.compose({ mailbox: from, to, subject, text });
+      const r = await mktInbox.compose({ mailbox: from, to, subject, text, attachments: await toPayload(files) });
       if (r.success) { toast.success(`Sent from ${from}`); onSent(r.data); } else toast.error(r.error ?? "The email wasn't sent.");
     } catch (err) { toast.error(errMessage(err, "The email wasn't sent.")); }
     finally { setBusy(false); }
@@ -336,9 +450,10 @@ function ComposeDialog({ mailboxes, defaultMailbox, onClose, onSent }: { mailbox
           <input value={subject} onChange={e => setSubject(e.target.value)} className="block w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm mt-1" />
         </label>
         <textarea value={text} onChange={e => setText(e.target.value)} rows={7} placeholder="Write your message…" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+        <AttachmentPicker files={files} onChange={setFiles} disabled={busy} />
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm border border-gray-200">Cancel</button>
-          <button onClick={send} disabled={busy || !to.trim() || !subject.trim() || !text.trim()} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-40" style={{ background: "#1E7B4D" }}>
+          <button onClick={send} disabled={busy || !to.trim() || !subject.trim() || (!text.trim() && !files.length)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-40" style={{ background: "#1E7B4D" }}>
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send
           </button>
         </div>

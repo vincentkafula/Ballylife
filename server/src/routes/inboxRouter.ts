@@ -5,6 +5,7 @@ import { getDocument } from "../services/documentStore";
 import {
   verifyResendSignature, ingestReceivedEmail, mailboxSummary, listThreads, getThread, replyToThread, composeEmail,
   setThreadStatus, attachmentFor, unreadCount, InboxError, receivingStatus, enableReceiving, syncReceivedEmails,
+  recordDeliveryEvent, deliverabilityStatus, setReadTracking,
 } from "../services/inbox/inbox";
 import { mailboxAccess, listDepartments, createDepartment, updateDepartment, deleteDepartment, DepartmentError } from "../services/departments";
 
@@ -34,7 +35,16 @@ inboundRouter.post("/inbound", async (req: Request, res: Response): Promise<void
     res.status(401).json({ success: false, error: "Invalid signature" });
     return;
   }
-  const event = req.body as { type?: string; data?: { email_id?: string } };
+  const event = req.body as { type?: string; created_at?: string; data?: { email_id?: string; created_at?: string } };
+  // Events about emails we sent: delivered, opened ("Read"), bounced, marked as spam...
+  if (event.type && event.type !== "email.received" && /^email\.(sent|delivered|delivery_delayed|opened|clicked|bounced|complained|failed)$/.test(event.type)) {
+    if (event.data?.email_id) {
+      try { await recordDeliveryEvent(event.data.email_id, event.type, event.data.created_at ?? event.created_at); }
+      catch (err) { logger.warn("inbox.delivery_event_failed", { type: event.type, error: err instanceof Error ? err.message : String(err) }); }
+    }
+    res.json({ success: true });
+    return;
+  }
   if (event.type !== "email.received" || !event.data?.email_id) { res.json({ success: true, ignored: event.type ?? "unknown" }); return; }
   try {
     await ingestReceivedEmail(event.data.email_id);
@@ -67,6 +77,17 @@ inboxAdminRouter.post("/admin/inbox/receiving", ...manager, async (_req: Request
   catch (err) { fail(res, err, "Couldn't switch receiving on."); }
 });
 
+// Email health: SPF / DKIM / DMARC and read tracking.
+inboxAdminRouter.get("/admin/inbox/deliverability", ...manager, async (_req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await deliverabilityStatus() }); }
+  catch (err) { fail(res, err, "Couldn't check email health."); }
+});
+
+inboxAdminRouter.post("/admin/inbox/read-tracking", ...manager, async (req: Request, res: Response): Promise<void> => {
+  try { res.json({ success: true, data: await setReadTracking(req.body?.on !== false) }); }
+  catch (err) { fail(res, err, "Couldn't change read tracking."); }
+});
+
 // "Check for new mail": pull anything Resend received that hasn't arrived yet.
 inboxAdminRouter.post("/admin/inbox/sync", ...manager, async (_req: Request, res: Response): Promise<void> => {
   try { res.json({ success: true, data: await syncReceivedEmails() }); }
@@ -87,7 +108,7 @@ inboxAdminRouter.get("/admin/inbox/threads/:id", ...manager, async (req: Request
 inboxAdminRouter.post("/admin/inbox/threads/:id/reply", ...manager, async (req: Request, res: Response): Promise<void> => {
   try {
     const a = await access(req);
-    await replyToThread(req.params.id, String(req.body?.text ?? ""), req.user!.userId, a);
+    await replyToThread(req.params.id, String(req.body?.text ?? ""), req.user!.userId, a, req.body?.attachments);
     res.json({ success: true, data: await getThread(req.params.id, a) });
   } catch (err) { fail(res, err, "Couldn't send the reply."); }
 });
@@ -103,7 +124,7 @@ inboxAdminRouter.post("/admin/inbox/compose", ...manager, async (req: Request, r
   const b = req.body ?? {};
   try {
     const a = await access(req);
-    const id = await composeEmail({ mailbox: String(b.mailbox ?? ""), to: String(b.to ?? ""), subject: String(b.subject ?? ""), text: String(b.text ?? "") }, req.user!.userId, a);
+    const id = await composeEmail({ mailbox: String(b.mailbox ?? ""), to: String(b.to ?? ""), subject: String(b.subject ?? ""), text: String(b.text ?? ""), attachments: b.attachments }, req.user!.userId, a);
     res.json({ success: true, data: await getThread(id, a) });
   } catch (err) { fail(res, err, "Couldn't send the email."); }
 });

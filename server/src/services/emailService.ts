@@ -52,6 +52,7 @@ async function sendViaResend(req: SendEmailRequest): Promise<SendEmailResult> {
         text: req.text ?? req.html.replace(/<[^>]+>/g, ""),
         ...(replyTo ? { reply_to: replyTo } : {}),
         ...(req.headers && Object.keys(req.headers).length ? { headers: req.headers } : {}),
+        ...(req.attachments?.length ? { attachments: req.attachments.map(a => ({ filename: a.filename, content: a.content.toString("base64"), ...(a.contentType ? { content_type: a.contentType } : {}) })) } : {}),
       }),
       signal: AbortSignal.timeout(20_000),
     });
@@ -92,6 +93,8 @@ export interface SendEmailRequest {
   replyTo?: string;
   /** Extra headers, e.g. Message-ID / In-Reply-To / References for threading. */
   headers?: Record<string, string>;
+  /** Files to attach (already validated by the caller). */
+  attachments?: { filename: string; content: Buffer; contentType?: string }[];
 }
 
 export interface SendEmailResult { sent: boolean; error?: string; providerId?: string }
@@ -105,7 +108,8 @@ export async function sendEmail(req: SendEmailRequest): Promise<SendEmailResult>
   }
   try {
     const replyTo = req.replyTo ?? REPLY_TO;
-    await t.sendMail({ from: req.from ?? EMAIL_FROM, to: req.to, subject: req.subject, html: req.html, text: req.text ?? req.html.replace(/<[^>]+>/g, ""), ...(replyTo ? { replyTo } : {}), ...(req.headers ? { headers: req.headers } : {}) });
+    await t.sendMail({ from: req.from ?? EMAIL_FROM, to: req.to, subject: req.subject, html: req.html, text: req.text ?? req.html.replace(/<[^>]+>/g, ""), ...(replyTo ? { replyTo } : {}), ...(req.headers ? { headers: req.headers } : {}),
+      ...(req.attachments?.length ? { attachments: req.attachments.map(a => ({ filename: a.filename, content: a.content, ...(a.contentType ? { contentType: a.contentType } : {}) })) } : {}) });
     return { sent: true };
   } catch (err) {
     console.error("[email] Send failed:", err);

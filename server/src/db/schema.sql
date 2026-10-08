@@ -1485,3 +1485,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL
 -- Payout order: supplier first, Ballylife keeps its commission, then the seller.
 -- seller_payout_status: pending -> ready (supplier paid + delivered + hold days) -> paid.
 ALTER TABLE mkt_order_line_settlements ADD COLUMN IF NOT EXISTS seller_payout_ready_at TIMESTAMPTZ;
+
+-- Inbox: when the recipient opened an email we sent (Resend open tracking).
+ALTER TABLE email_messages ADD COLUMN IF NOT EXISTS opened_at TIMESTAMPTZ;

@@ -65,6 +65,8 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 
 app.use(helmet());
 app.use(cors({ origin: (origin, cb) => cb(null, isAllowedOrigin(origin)), credentials: true }));
+// Inbox replies / new emails can carry up to 10 MB of attachments (base64 adds about a third).
+app.use(["/api/marketplace/admin/inbox/compose", "/api/marketplace/admin/inbox/threads"], express.json({ limit: "15mb" }));
 // WhatsApp webhooks are signed over the exact bytes Meta sent, so keep them for that route.
 app.use(express.json({
   limit: "2mb",
