@@ -39,7 +39,10 @@ inboundRouter.post("/inbound", async (req: Request, res: Response): Promise<void
   // Events about emails we sent: delivered, opened ("Read"), bounced, marked as spam...
   if (event.type && event.type !== "email.received" && /^email\.(sent|delivered|delivery_delayed|opened|clicked|bounced|complained|failed)$/.test(event.type)) {
     if (event.data?.email_id) {
-      try { await recordDeliveryEvent(event.data.email_id, event.type, event.data.created_at ?? event.created_at); }
+      try {
+        const changed = await recordDeliveryEvent(event.data.email_id, event.type, event.data.created_at ?? event.created_at);
+        logger.info("inbox.delivery_event", { type: event.type, changed });
+      }
       catch (err) { logger.warn("inbox.delivery_event_failed", { type: event.type, error: err instanceof Error ? err.message : String(err) }); }
     }
     res.json({ success: true });

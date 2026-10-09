@@ -205,6 +205,16 @@ export function EmailInboxPanel() {
   useEffect(() => { void loadMailboxes(); }, [loadMailboxes]);
   useEffect(() => { const t = setTimeout(() => void loadThreads(), 250); return () => clearTimeout(t); }, [loadThreads]);
   useEffect(() => { if (openId) void loadThread(openId); setReplyFiles([]); }, [openId, loadThread]);
+  // The open conversation refreshes by itself too, so Delivered / Read appear without clicking again.
+  useEffect(() => {
+    if (!openId) return;
+    const t = setInterval(async () => {
+      if (document.hidden) return;
+      try { const r = await mktInbox.thread(openId); if (r.success) setThread(cur => (cur && cur.id === openId ? r.data : cur)); }
+      catch { /* try again next time */ }
+    }, 20_000);
+    return () => clearInterval(t);
+  }, [openId]);
   // New mail arrives by itself: refresh every minute.
   useEffect(() => { const t = setInterval(() => { void loadMailboxes(); void loadThreads(); }, 60_000); return () => clearInterval(t); }, [loadMailboxes, loadThreads]);
 

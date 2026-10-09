@@ -485,7 +485,11 @@ async function refreshDeliveryStatus(msgs: any[]): Promise<void> {
         m.delivery_status = rows[0]?.delivery_status ?? m.delivery_status;
         m.opened_at = rows[0]?.opened_at ?? m.opened_at;
       }
-    } catch { /* show what we have */ }
+    } catch (err) {
+      // e.g. a sending-only API key can't look emails up; the webhook still updates them.
+      logger.warn("inbox.delivery_lookup_failed", { error: err instanceof Error ? err.message : String(err) });
+      break;
+    }
   }
 }
 
