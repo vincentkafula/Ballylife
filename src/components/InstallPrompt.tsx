@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { X, Download } from "lucide-react";
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import ballylifeLogo from "../imports/ballylife-mark.webp";
 
 // Chrome/Edge/Android fire "beforeinstallprompt" when the site qualifies
 // as an installable PWA (valid manifest + service worker + HTTPS) and the

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ApiConnectionError } from "../services/marketplaceApi";
 import { pathForView, viewForPath, TITLE_FOR_VIEW, setPageMeta, type MarketplaceView } from "../services/routes";
 import { track, ttProduct } from "../services/tracking";
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import ballylifeLogo from "../imports/ballylife-logo-compact.webp";
 import businessBoardroomAd from "../imports/business-boardroom-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
@@ -298,7 +298,7 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
       <div className="relative h-full flex items-center gap-[2.5%] px-[3%]">
         {/* Logo mark */}
         <div className="hidden sm:flex flex-col items-start shrink-0" style={{ maxWidth: "14%" }}>
-          <img src={ballylifeLogo} alt="" className="shrink-0" style={{ height: "7cqw", width: "auto", filter: "brightness(0) invert(1)" }} />
+          <img src={ballylifeLogo} alt="" className="shrink-0" style={{ height: "7cqw", width: "auto" }} />
         </div>
 
         {/* Headline */}

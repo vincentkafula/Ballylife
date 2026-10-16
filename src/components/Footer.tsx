@@ -1,4 +1,4 @@
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import ballylifeLogo from "../imports/ballylife-logo-compact.webp";
 
 const BG      = "#F5F6F8";
 const HEADING = "#211C16";
@@ -183,7 +183,7 @@ export function Footer({ onLinkClick }: { onLinkClick?: (label: string) => void 
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src={ballylifeLogo} alt="" style={{ height: 32, width: "auto", filter: "brightness(0) invert(1)" }} />
+            <img src={ballylifeLogo} alt="" style={{ height: 32, width: "auto" }} />
             <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 12 }}>© Ballylife Online (Pty) Ltd.</span>
           </div>
         </div>

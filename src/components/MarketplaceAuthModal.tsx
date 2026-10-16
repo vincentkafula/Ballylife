@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { X, User, Store, Loader2, Eye, EyeOff } from "lucide-react";
 import { mktAuth, type MktAuthUser } from "../services/marketplaceApi";
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import ballylifeLogo from "../imports/ballylife-logo-compact.webp";
 import { SellerApplicationWizard } from "./SellerApplicationWizard";
 
 // Public identifiers only -- never a secret -- so it's fine for these
