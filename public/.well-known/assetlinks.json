@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.ballylife.www.twa",
+      "sha256_cert_fingerprints": [
+        "D5:0A:5F:BB:04:CB:F4:92:E5:F7:01:B1:40:14:64:C2:D0:06:57:B7:7C:22:3D:C4:D6:5A:9D:DA:4B:03:0D:F3"
+      ]
+    }
+  }
+]
