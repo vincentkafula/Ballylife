@@ -66,6 +66,19 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # /.well-known/ is the standard public location for files other systems
+    # fetch to verify a site: Android's Digital Asset Links
+    # (/.well-known/assetlinks.json, which links the Play Store app to this
+    # domain so it opens full-screen instead of with a browser address bar),
+    # security.txt, etc. ^~ makes this prefix win over the dotfile-deny regex
+    # below, which would otherwise return 403 for it. Only files that really
+    # exist are served (no SPA fallback, so a missing file is a clean 404).
+    location ^~ /.well-known/ {
+        include /etc/nginx/security-headers.conf;
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
     # Deny access to sensitive files
     location ~ /\. {
         deny all;
