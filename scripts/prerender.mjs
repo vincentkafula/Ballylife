@@ -75,7 +75,7 @@ async function main() {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#14110D" />
+    <meta name="theme-color" content="#1E7B4D" />
     <meta name="description" content="${escapeHtml(description)}" />
     <link rel="canonical" href="${SITE_ORIGIN}${canonicalPath}" />
 

@@ -22,8 +22,8 @@ export default defineConfig(({ mode }) => {
           short_name: 'Ballylife',
           description: "A growing multi-vendor online marketplace serving South Africa and expanding across Africa.",
           categories: ['shopping'],
-          theme_color: '#14110D',
-          background_color: '#14110D',
+          theme_color: '#1E7B4D',      // status bar: same green as the site header
+          background_color: '#01360D', // splash: the icon's own edge green, so the icon has no visible box around it
           display: 'standalone',
           orientation: 'portrait',
           start_url: '/',
