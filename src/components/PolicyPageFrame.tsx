@@ -1,5 +1,5 @@
 import { useRef, type RefObject } from "react";
-import ballylifeLogo from "../imports/ballylife-logo-compact.webp";
+import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 
 // Shared wrapper for every standalone footer page (Contact, Terms,
 // Privacy, Returns, etc.) rendered via an iframe. Previously each page

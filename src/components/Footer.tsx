@@ -1,4 +1,4 @@
-import ballylifeLogo from "../imports/ballylife-logo-compact.webp";
+import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 
 const BG      = "#F5F6F8";
 const HEADING = "#211C16";

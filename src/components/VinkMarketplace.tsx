@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ApiConnectionError } from "../services/marketplaceApi";
 import { pathForView, viewForPath, TITLE_FOR_VIEW, setPageMeta, type MarketplaceView } from "../services/routes";
 import { track, ttProduct } from "../services/tracking";
-import ballylifeLogo from "../imports/ballylife-logo-compact.webp";
+import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 import businessBoardroomAd from "../imports/business-boardroom-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
