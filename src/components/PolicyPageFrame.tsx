@@ -1,5 +1,4 @@
 import { useRef, type RefObject } from "react";
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
 
 // Shared wrapper for every standalone footer page (Contact, Terms,
 // Privacy, Returns, etc.) rendered via an iframe. Previously each page
@@ -22,7 +21,6 @@ export function PolicyPageFrame({
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-white">
       <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-2.5 border-b border-gray-200 bg-white shadow-sm shrink-0">
-        <img src={ballylifeLogo} alt="Ballylife" className="h-8 w-auto shrink-0" />
         <button
           onClick={onBack}
           className="group flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-emerald-700 rounded-full pl-2.5 pr-3.5 py-1.5 hover:bg-emerald-50 transition-colors"

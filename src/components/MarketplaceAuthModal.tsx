@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { X, User, Store, Loader2, Eye, EyeOff } from "lucide-react";
 import { mktAuth, type MktAuthUser } from "../services/marketplaceApi";
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import { BrandLogo } from "./BrandLogo";
 import { SellerApplicationWizard } from "./SellerApplicationWizard";
 
 // Public identifiers only -- never a secret -- so it's fine for these
@@ -348,9 +348,9 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
       <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-          <img src={ballylifeLogo} alt="Ballylife" className="h-7 w-auto" />
-          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-gray-100"><X className="w-4 h-4 text-gray-500" /></button>
+        <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ background: "#1E7B4D" }}>
+          <BrandLogo className="h-10 w-auto" />
+          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-white/15"><X className="w-4 h-4 text-white" /></button>
         </div>
 
         {tab !== "forgot" && tab !== "reset" && tab !== "verify" && (

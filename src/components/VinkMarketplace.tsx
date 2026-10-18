@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ApiConnectionError } from "../services/marketplaceApi";
 import { pathForView, viewForPath, TITLE_FOR_VIEW, setPageMeta, type MarketplaceView } from "../services/routes";
 import { track, ttProduct } from "../services/tracking";
-import ballylifeLogo from "../imports/ballylife-logo-compact.png";
+import { BrandLogo } from "./BrandLogo";
 import businessBoardroomAd from "../imports/business-boardroom-ad.jpg";
 import {
   Search, ShoppingCart, Heart, Star, ChevronRight, ArrowLeft,
@@ -298,7 +298,7 @@ function PromoBanner({ onShop }: { onShop: () => void }) {
       <div className="relative h-full flex items-center gap-[2.5%] px-[3%]">
         {/* Logo mark */}
         <div className="hidden sm:flex flex-col items-start shrink-0" style={{ maxWidth: "14%" }}>
-          <img src={ballylifeLogo} alt="" className="shrink-0" style={{ height: "7cqw", width: "auto" }} />
+          <BrandLogo alt="" className="shrink-0" style={{ height: "7cqw", width: "auto" }} />
         </div>
 
         {/* Headline */}
@@ -2626,7 +2626,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           onClick={() => { setView("home"); }}
           className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity"
         >
-          <img src={ballylifeLogo} alt="Ballylife" className="h-10 sm:h-12 w-auto" />
+          <BrandLogo className="h-11 sm:h-14 w-auto" />
         </button>
 
         <div className="relative shrink-0" ref={countryMenuRef}>
