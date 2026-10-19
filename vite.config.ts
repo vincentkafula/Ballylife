@@ -35,6 +35,15 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
+          // A new release must take over as soon as it is installed. vite-plugin-pwa
+          // only switches these on by itself when IT registers the worker
+          // (injectRegister auto); this project registers it by hand in main.tsx
+          // (injectRegister: false), so without these two lines every new release
+          // sat "waiting" behind the old one and visitors kept seeing the previous
+          // site -- including the previous logo -- until every tab and installed-app
+          // window was closed. Reproduced in a browser before this change.
+          skipWaiting: true,
+          clientsClaim: true,
           // Never cache API calls -- prices, stock, and order state must
           // always come from the network, not a stale service-worker cache.
           navigateFallbackDenylist: [/^\/api\//],
