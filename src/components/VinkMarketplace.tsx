@@ -2626,7 +2626,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           onClick={() => { setView("home"); }}
           className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity order-1 sm:order-none"
         >
-          <BrandLogo className="h-12 sm:h-11 lg:h-14 w-auto shrink-0" />
+          <BrandLogo className="h-14 sm:h-16 lg:h-[76px] w-auto shrink-0" />
         </button>
 
         <div className="relative shrink-0 order-4 basis-full sm:basis-auto sm:order-none" ref={countryMenuRef}>

@@ -349,7 +349,7 @@ export function MarketplaceAuthModal({ onClose, onAuthenticated, initialTab = "s
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
       <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ background: "#1E7B4D" }}>
-          <BrandLogo className="h-10 w-auto" />
+          <BrandLogo className="h-14 w-auto" />
           <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-white/15"><X className="w-4 h-4 text-white" /></button>
         </div>
 
