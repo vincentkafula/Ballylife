@@ -2624,23 +2624,22 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
       <header className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-2 sm:gap-4 px-3 sm:px-4 py-2 flex-shrink-0 z-20" style={{ background: "#1E7B4D" }}>
         <button
           onClick={() => { setView("home"); }}
-          className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity"
+          className="flex items-center px-2 py-1 rounded shrink-0 hover:opacity-90 transition-opacity order-1 sm:order-none"
         >
-          <BrandLogo className="h-[22px] min-[340px]:h-7 min-[380px]:h-9 sm:h-11 lg:h-14 w-auto shrink-0" />
+          <BrandLogo className="h-12 sm:h-11 lg:h-14 w-auto shrink-0" />
         </button>
 
-        <div className="relative shrink-0" ref={countryMenuRef}>
+        <div className="relative shrink-0 order-4 basis-full sm:basis-auto sm:order-none" ref={countryMenuRef}>
           {/* Detected country + currency, on every screen size. Tapping it
               (hover doesn't exist on phones) opens a small menu to confirm
               it, refine it with live location, or pick a country by hand. */}
           <button type="button" onClick={() => setCountryMenuOpen(o => !o)} aria-expanded={countryMenuOpen} aria-haspopup="dialog"
-            className="flex flex-col items-start px-1.5 sm:px-2 py-1 rounded border border-transparent hover:border-white/40 text-white text-left">
-            <span className="hidden sm:flex items-center gap-1 text-[10px] text-white/75 leading-none">
+            className="flex flex-row sm:flex-col items-center sm:items-start gap-1.5 sm:gap-0 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border border-transparent hover:border-white/40 text-white text-left">
+            <span className="flex items-center gap-1 text-[11px] sm:text-[10px] text-white/75 leading-none">
               <MapPin className="w-3 h-3" /> Deliver to
             </span>
             <span className="flex items-center gap-1 text-xs font-bold leading-tight sm:mt-0.5">
-              <MapPin className="w-3 h-3 sm:hidden" />
-              <span className="hidden md:inline">{currency.country.country ?? currency.country.countryCode}</span>
+                            <span className="hidden md:inline">{currency.country.country ?? currency.country.countryCode}</span>
               <span className="md:hidden">{currency.country.countryCode}</span>
               <span className="text-white/80">· {currency.country.code}</span>
               <ChevronDown className="w-3 h-3" />
@@ -2667,7 +2666,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
         </div>
 
-        <div className="relative flex-1 flex items-stretch max-w-3xl h-10 sm:h-9 min-w-0 order-last basis-full sm:order-none sm:basis-auto">
+        <div className="relative flex-1 flex items-stretch max-w-3xl h-10 sm:h-9 min-w-0 order-3 basis-full sm:order-none sm:basis-auto">
           <div className="hidden sm:flex items-center bg-[#E8E8E8] hover:bg-[#DDD] px-2 text-[11px] text-gray-700 border-r border-gray-300 shrink-0 cursor-pointer relative group rounded-l">
             All <ChevronDown className="w-3 h-3 ml-1" />
             <div className="absolute top-full left-0 mt-0 w-56 bg-white text-gray-800 rounded-b shadow-2xl border border-gray-200 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-30">
@@ -2732,7 +2731,7 @@ export function VinkMarketplace({ initialAction, initialProductId }: VinkMarketp
           )}
         </div>
 
-        <div className="flex items-center gap-0.5 sm:gap-1 ml-auto shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 ml-auto shrink-0 order-2 sm:order-none">
           <div className="relative group hidden md:block">
             <button onClick={() => { if (!authUser) setShowAuthModal(true); }} className="flex flex-col items-start px-2 py-1 rounded border border-transparent hover:border-white/40 text-white">
               <span className="text-[10px] text-white/70 leading-none flex items-center gap-1">

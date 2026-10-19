@@ -40,6 +40,16 @@ export default defineConfig(({ mode }) => {
           navigateFallbackDenylist: [/^\/api\//],
           runtimeCaching: [
             {
+              // Hashed image files (logo, ads). A tab still running the previous
+              // release asks for the OLD filenames after a deploy replaced them;
+              // keeping what it already loaded avoids broken images in that gap.
+              // Hashed names never change content, so CacheFirst is safe here
+              // (un-hashed files like favicon.png are deliberately not matched).
+              urlPattern: /\/assets\/.*\.(png|webp|jpe?g|svg)$/i,
+              handler: 'CacheFirst',
+              options: { cacheName: 'hashed-images', expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 }, cacheableResponse: { statuses: [200] } },
+            },
+            {
               urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
               handler: 'CacheFirst',
               options: {
